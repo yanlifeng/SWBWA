@@ -35,7 +35,7 @@
 #include "bwt.h"
 #include "kvec.h"
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef HOST_USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
 
@@ -437,8 +437,6 @@ static bwtint_t fread_fix(FILE *fp, bwtint_t size, void *a)
 }
 
 
-#define use_cross_seg
-
 void bwt_restore_sa(const char *fn, bwt_t *bwt)
 {
 	char skipped[256];
@@ -454,13 +452,11 @@ void bwt_restore_sa(const char *fn, bwt_t *bwt)
 	xassert(primary == bwt->seq_len, "SA-BWT inconsistency: seq_len is not the same.");
 
 	bwt->n_sa = (bwt->seq_len + bwt->sa_intv) / bwt->sa_intv;
-#ifdef use_cross_seg
-    bwt->sa = (bwtint_t*)_sw_xmalloc(bwt->n_sa * sizeof(bwtint_t));
-    memset(bwt->sa, 0, bwt->n_sa * sizeof(bwtint_t));
-#else
+    size_t sa_bytes = bwt->n_sa * sizeof(*bwt->sa);
     bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
-#endif
-    fprintf(stderr, "sw malloc bwt->sa %lld, %p\n", bwt->n_sa * sizeof(bwtint_t), bwt->sa);
+    if (bwt->sa == NULL)
+        err_fatal(__func__, "failed to allocate BWT SA: bytes=%lld", (long long)sa_bytes);
+    fprintf(stderr, "malloc bwt->sa %lld, %p\n", (long long)sa_bytes, bwt->sa);
     bwt->sa[0] = -1;
     fread_fix(fp, sizeof(bwtint_t) * (bwt->n_sa - 1), bwt->sa + 1);
 	err_fclose(fp);
@@ -475,13 +471,11 @@ bwt_t *bwt_restore_bwt(const char *fn)
 	fp = xopen(fn, "rb");
 	err_fseek(fp, 0, SEEK_END);
 	bwt->bwt_size = (err_ftell(fp) - sizeof(bwtint_t) * 5) >> 2;
-#ifdef use_cross_seg
-    bwt->bwt = (uint32_t*)_sw_xmalloc(bwt->bwt_size * 4);
-    memset(bwt->bwt, 0, bwt->bwt_size * 4);
-#else
+    size_t bwt_bytes = bwt->bwt_size * sizeof(*bwt->bwt);
 	bwt->bwt = (uint32_t*)calloc(bwt->bwt_size, 4);
-#endif
-    fprintf(stderr, "sw malloc bwt->bwt %lld, %p\n", bwt->bwt_size * 4, bwt->bwt);
+    if (bwt->bwt == NULL)
+        err_fatal(__func__, "failed to allocate BWT data: bytes=%lld", (long long)bwt_bytes);
+    fprintf(stderr, "malloc bwt->bwt %lld, %p\n", (long long)bwt_bytes, bwt->bwt);
 	err_fseek(fp, 0, SEEK_SET);
 	err_fread_noeof(&bwt->primary, sizeof(bwtint_t), 1, fp);
 	err_fread_noeof(bwt->L2+1, sizeof(bwtint_t), 4, fp);

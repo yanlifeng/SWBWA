@@ -28,7 +28,7 @@ extern "C" {
 }
 #endif
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef SLAVE_USE_MALLOC_WRAPPERS
 #  ifdef calloc
 #    undef calloc
 #  endif
@@ -56,7 +56,7 @@ extern "C" {
 
 
 
-#endif /* USE_MALLOC_WRAPPERS */
+#endif /* SLAVE_USE_MALLOC_WRAPPERS */
 
 #endif /* MALLOC_WRAP_H */
 

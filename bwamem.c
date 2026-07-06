@@ -30,6 +30,9 @@
 #include <assert.h>
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
+#include <time.h>
+#include <unistd.h>
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
 #endif
@@ -41,13 +44,13 @@
 #include "kvec.h"
 #include "ksort.h"
 #include "utils.h"
+#include "swbwa_config.h"
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef HOST_USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
 
 #include <athread.h>
-#include <mpi.h>
 
 /* Theory on probability and scoring *ungapped* alignment
  *
@@ -1324,20 +1327,8 @@ typedef struct{
     long long block_size;
     long long block_size2;
     long long tmp_block_size;
-    long nns[384];
+    long nns[SWBWA_CPE_NUM];
 } Para_worker12_s;
-
-#define use_cgs_mode
-
-#ifdef use_cgs_mode
-# define cpe_num 384
-# define cg_num 6
-#else
-# define cpe_num 64
-# define cg_num 1
-#endif
-
-
 
 #define csr_copy_size (2 << 20)
 
@@ -1351,12 +1342,93 @@ unsigned long segment2_len = 0x000000000bc43fc8;
 
 __uncached int cpe_is_over[cpe_num];
 
-void* malloc_csr() {
+static void *checked_malloc_array(size_t count, size_t size, const char *name)
+{
+    void *p;
+    size_t bytes;
+    if (size != 0 && count > SIZE_MAX / size)
+        err_fatal(__func__, "allocation for %s is too large", name);
+    bytes = count * size;
+    if (bytes == 0)
+        return NULL;
+    p = malloc(bytes);
+    if (p == NULL)
+        err_fatal(__func__, "failed to allocate %s", name);
+    return p;
+}
+
+static void checked_free_array(void *p)
+{
+    if (p == NULL) return;
+    free(p);
+}
+
+typedef struct {
+    short *got_content;
+    unsigned long got_count;
+    unsigned long *tls_content;
+    unsigned long tls_count;
+} cpe_relocation_t;
+
+static void load_cpe_relocation(cpe_relocation_t *reloc)
+{
+    FILE *fp;
+
+    memset(reloc, 0, sizeof(*reloc));
+
+    fp = xopen("data.bin", "rb");
+    err_fread_noeof(&reloc->got_count, sizeof(reloc->got_count), 1, fp);
+    reloc->got_content = checked_malloc_array(reloc->got_count, sizeof(*reloc->got_content), "GOT relocation table");
+    err_fread_noeof(reloc->got_content, sizeof(*reloc->got_content), reloc->got_count, fp);
+    err_fclose(fp);
+
+    fp = xopen("data.bin2", "rb");
+    err_fread_noeof(&reloc->tls_count, sizeof(reloc->tls_count), 1, fp);
+    reloc->tls_content = checked_malloc_array(reloc->tls_count, sizeof(*reloc->tls_content), "TLS relocation table");
+    err_fread_noeof(reloc->tls_content, sizeof(*reloc->tls_content), reloc->tls_count, fp);
+    err_fclose(fp);
+}
+
+static void cpe_relocation_destroy(cpe_relocation_t *reloc)
+{
+    /* tls_content is handed to Para_worker12_s and must remain live for the CPE runtime. */
+    checked_free_array(reloc->got_content);
+    reloc->got_content = NULL;
+    reloc->got_count = 0;
+}
+
+static void worker_init(worker_t *w, const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns,
+                        const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs,
+                        const mem_pestat_t *pes)
+{
+    memset(w, 0, sizeof(*w));
+    w->regs = checked_malloc_array(n, sizeof(*w->regs), "alignment region vectors");
+    w->aux = checked_malloc_array(cpe_num, sizeof(*w->aux), "SMEM auxiliary buffers");
+    memset(w->aux, 0, cpe_num * sizeof(*w->aux));
+    w->opt = opt;
+    w->bwt = bwt;
+    w->bns = bns;
+    w->pac = pac;
+    w->seqs = seqs;
+    w->n_processed = n_processed;
+    w->pes = pes;
+}
+
+static void worker_destroy(worker_t *w)
+{
+    checked_free_array(w->regs);
+    checked_free_array(w->aux);
+    w->regs = NULL;
+    w->aux = NULL;
+}
+
+static void *malloc_csr(void) {
     asm volatile("memb\n\t":::);
     unsigned long len = csr_copy_size * cpe_num;
     unsigned long len_ = len + (1ul << 20);
-    //void *dest_ = (void*)malloc(len_);
-    void *dest_ = (void*)_sw_xmalloc(len_);
+    void *dest_ = malloc(len_);
+    if (dest_ == NULL)
+        err_fatal(__func__, "failed to allocate CPE CSR copy buffer: bytes=%lu", len_);
     void *dest = (void*)(((unsigned long)dest_ + 4095) & (~4095ul));
     //printf("csr dest %p\n", dest);
     //if(mprotect(dest, (len + 4095) & (~4095ul), PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {
@@ -1367,12 +1439,13 @@ void* malloc_csr() {
     return dest;
 }
 
-void* malloc_segments() {
+static void *malloc_segments(void) {
     asm volatile("memb\n\t":::);
     unsigned long len = segment2 + segment2_len - segment1;
     unsigned long len_ = len + (1ul << 20);
-    //void *dest_ = (void*)malloc(len_);
-    void *dest_ = (void*)_sw_xmalloc(len_);
+    void *dest_ = malloc(len_);
+    if (dest_ == NULL)
+        err_fatal(__func__, "failed to allocate CPE text segment buffer: bytes=%lu", len_);
     void *dest = (void*)(((unsigned long)dest_ + 4095) & (~4095ul));
     //printf("segments dest %p\n", dest);
     //if(mprotect(dest, (len + 4095) & (~4095ul), PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {
@@ -1383,15 +1456,15 @@ void* malloc_segments() {
     return dest;
 }
 
-void copy_segments(void* dest) {
+static void copy_segments(void *dest) {
     asm volatile("memb\n\t":::);
     unsigned long dist = segment2 - segment1;
-    memcpy(dest, (void*)segment1, segment1_len);
-    memcpy(dest + dist, (void*)segment2, segment2_len);
-    return;
+    char *dest_bytes = (char*)dest;
+    memcpy(dest_bytes, (void*)segment1, segment1_len);
+    memcpy(dest_bytes + dist, (void*)segment2, segment2_len);
 }
 
-void *change_got(unsigned long gp, unsigned long old_segments, unsigned long new_segments, short *got_content, unsigned long change_size) {
+static void change_got(unsigned long gp, unsigned long old_segments, unsigned long new_segments, short *got_content, unsigned long change_size) {
     //printf("#####change got#####\n");
     for(unsigned long i = 0; i < change_size; ++i) {
         short disp = got_content[i];
@@ -1417,7 +1490,7 @@ void *change_got(unsigned long gp, unsigned long old_segments, unsigned long new
 }
 
 
-void add_exec() {
+static void add_exec(void) {
     for(long spaid = 0; spaid < cg_num; ++spaid) {
         for(long speid = 0; speid < 64; ++speid) {
             long d_IOADDR_SLB_SPC_BASE = 0x800040004000 + (spaid << 40) + ((speid & 6) << 24) + ((speid & 0x30) << 7);
@@ -1442,9 +1515,9 @@ void add_exec() {
 
 
 
-void my_spawn_join(long fun_addr) {
+static void my_spawn_join(long fun_addr) {
 
-    printf("start my_spawn_join\n");
+    if (bwa_verbose >= 4) fprintf(stderr, "start my_spawn_join\n");
     for(int i = 0; i < cpe_num; i++) cpe_is_over[i] = 0;
 
     for(long cg_id = 0; cg_id < cg_num; cg_id++) {
@@ -1475,7 +1548,7 @@ void my_spawn_join(long fun_addr) {
 }
 
 
-void shuffle(int *array, int n) {
+static void shuffle(int *array, int n) {
 	srand((unsigned int)time(NULL));
     for (int i = n - 1; i > 0; i--) {
         int j = rand() % (i + 1);
@@ -1490,23 +1563,11 @@ void shuffle(int *array, int n) {
 
 void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)
 {
-    //extern void kt_for(int n_threads, void (*func)(void*,int,int), void *data, int n);
-    extern void kt_for_single(int n_threads, void (*func)(void*,int,int), void *data, int n);
-
-    int my_rank = 0;
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-
     //assert(n < (4 << 20));
     worker_t w;
     double ctime, rtime;
     ctime = cputime(); rtime = realtime();
-    w.regs = malloc(n * sizeof(mem_alnreg_v));
-    w.opt = opt; w.bwt = bwt; w.bns = bns; w.pac = pac;
-    w.seqs = seqs; w.n_processed = n_processed;
-    w.aux = malloc(cpe_num * sizeof(smem_aux_t));
-    for (int i = 0; i < cpe_num; ++i) {
-        w.aux[i] = 0;
-    }
+    worker_init(&w, opt, bwt, bns, pac, n_processed, n, seqs, NULL);
 
     long nn = (opt->flag&MEM_F_PE)? n>>1 : n;
     double t0 = GetTime();
@@ -1526,13 +1587,13 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
 
     cntt++;
     if(cntt == 1) {
-        para = (Para_worker12_s*)malloc(sizeof(Para_worker12_s));
+        para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
     }
 
     para->nn = nn;
     para->data = (void*)&w;
-    para->cpe_sams = (char**)malloc(n * sizeof(char*));
-    para->sam_lens = (int*)malloc(n * sizeof(int));
+    para->cpe_sams = checked_malloc_array(n, sizeof(*para->cpe_sams), "CPE SAM pointers");
+    para->sam_lens = checked_malloc_array(n, sizeof(*para->sam_lens), "CPE SAM lengths");
     para->pes0 = pes0;
     for(int i = 0; i < n; i++) para->sam_lens[i] = 0;
 
@@ -1568,44 +1629,11 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
 
         //printf("gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
 
-        FILE *f = fopen("data.bin", "r");
-        if (f == NULL) {
-            perror("Error opening file");
-            exit(EXIT_FAILURE);
-        }
+        cpe_relocation_t relocation;
+        load_cpe_relocation(&relocation);
 
-        unsigned long change_size;
-        fread(&change_size, sizeof(unsigned long), 1, f);
-        short *got_content = (short*)malloc(change_size * sizeof(short));
-        //printf("got change size = %lu\n", change_size);
-        int pos = 0;
-        for(unsigned long i = 0; i < change_size; ++i) {
-            short disp;
-            fread(&disp, sizeof(short), 1, f);
-            got_content[pos++] = disp;
-        }
-        fclose(f);
-
-        f = fopen("data.bin2", "r");
-        if (f == NULL) {
-            perror("Error opening file");
-            exit(EXIT_FAILURE);
-        }
-        unsigned long tls_size;
-        fread(&tls_size, sizeof(unsigned long), 1, f);
-        unsigned long *tls_content = (unsigned long*)malloc(tls_size * sizeof(unsigned long));
-        //printf("got tls size = %lu\n", tls_size);
-        pos = 0;
-        for(unsigned long i = 0; i < tls_size; ++i) {
-            unsigned long disp;
-            fread(&disp, sizeof(unsigned long), 1, f);
-            tls_content[pos++] = disp;
-            //printf("tls contend %lx %lx\n", disp, *((unsigned long*)disp));
-        }
-        fclose(f);
-
-        para->tls_content = tls_content;
-        para->tls_size = tls_size;
+        para->tls_content = relocation.tls_content;
+        para->tls_size = relocation.tls_count;
 
 
         __real_athread_spawn_cgs((void*)slave_pass_para, para, 1);
@@ -1613,7 +1641,8 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         //printf("pass para done\n");
 
         copy_segments((void*)new_segments);
-        change_got(host_gp, segment1, (unsigned long)new_segments, got_content, change_size);
+        change_got(host_gp, segment1, (unsigned long)new_segments, relocation.got_content, relocation.got_count);
+        cpe_relocation_destroy(&relocation);
 
         athread_spawn_cgs(copy_priv_segment, para);
         athread_join_cgs();
@@ -1635,7 +1664,7 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     __real_athread_spawn((void*)slave_worker12_s_pre_fast, para, 1);
     athread_join();
 #endif
-    fprintf(stderr, "slave pre done\n");
+    if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
     t_work1_2 += GetTime() - tt0;
 
 
@@ -1649,8 +1678,7 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         size_t len = para->sam_lens[i] + 10;
         if (current_offset + len > BLOCK_SIZE) {
             //current_block = wrap_malloc(BLOCK_SIZE);
-            current_block = malloc(BLOCK_SIZE);
-            if(current_block == NULL) fprintf(stderr, "GG malloc %d\n", BLOCK_SIZE);
+            current_block = checked_malloc_array(BLOCK_SIZE, sizeof(*current_block), "SAM output block");
             current_offset = 0;
             w.seqs[i].is_new_addr = 1;
             memset(current_block, 'A', BLOCK_SIZE);
@@ -1683,10 +1711,9 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
 
 
     tt0 = GetTime();
-    free(para->sam_lens);
-    free(para->cpe_sams);
-    free(w.regs);
-    free(w.aux);
+    checked_free_array(para->sam_lens);
+    checked_free_array(para->cpe_sams);
+    worker_destroy(&w);
     t_work1_5 += GetTime() - tt0;
 
 
@@ -1700,28 +1727,14 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
 void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int *n2, bseq1_t **seqs2,
                              char* block_buffer, char* block_buffer2, long long block_size, long long block_size2, const mem_pestat_t *pes0)
 {
-    //extern void kt_for(int n_threads, void (*func)(void*,int,int), void *data, int n);
-    extern void kt_for_single(int n_threads, void (*func)(void*,int,int), void *data, int n);
-
-    int my_rank = 0;
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-
     int n = 2000000;
     //assert(n < (4 << 20));
     worker_t w;
     double ctime, rtime;
     ctime = cputime(); rtime = realtime();
-    w.regs = malloc(n * sizeof(mem_alnreg_v));
-    w.opt = opt; w.bwt = bwt; w.bns = bns; w.pac = pac;
+    worker_init(&w, opt, bwt, bns, pac, n_processed, n, NULL, NULL);
 //    w.seqs = seqs;
-    w.seqs = malloc(1ll * n * sizeof(bseq1_t));
-    if(w.seqs == NULL) printf("malloc FGGG\n");
-    else printf("malloc seqs %p\n", w.seqs);
-    w.n_processed = n_processed;
-    w.aux = malloc(cpe_num * sizeof(smem_aux_t));
-    for (int i = 0; i < cpe_num; ++i) {
-        w.aux[i] = 0;
-    }
+    w.seqs = checked_malloc_array(n, sizeof(*w.seqs), "formatted reads");
 
     long nn = (opt->flag&MEM_F_PE)? n>>1 : n;
     double t0 = GetTime();
@@ -1746,19 +1759,19 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
     cntt++;
     if(cntt == 1) {
-        tmp_block_buffer = malloc(f_buffer_size);
-        tmp_block_buffer2 = malloc(f_buffer_size);
+        tmp_block_buffer = checked_malloc_array(f_buffer_size, sizeof(*tmp_block_buffer), "temporary FASTQ block");
+        tmp_block_buffer2 = checked_malloc_array(f_buffer_size, sizeof(*tmp_block_buffer2), "temporary paired FASTQ block");
         for(int i = 0; i < 5; i++) {
-            sam_blocks_static[i] = malloc(f_buffer_size);
+            sam_blocks_static[i] = checked_malloc_array(f_buffer_size, sizeof(*sam_blocks_static[i]), "static SAM block");
             memset(sam_blocks_static[i], 'A', f_buffer_size);
         }
-        para = (Para_worker12_s*)malloc(sizeof(Para_worker12_s));
+        para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
     }
 
     para->nn = nn;
     para->data = (void*)&w;
-    para->cpe_sams = (char**)malloc(n * sizeof(char*));
-    para->sam_lens = (int*)malloc(n * sizeof(int));
+    para->cpe_sams = checked_malloc_array(n, sizeof(*para->cpe_sams), "CPE SAM pointers");
+    para->sam_lens = checked_malloc_array(n, sizeof(*para->sam_lens), "CPE SAM lengths");
     para->pes0 = pes0;
     para->block_buffer = block_buffer;
     para->block_buffer2 = block_buffer2;
@@ -1778,7 +1791,7 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
         void *priv_addr = malloc_csr();
         new_segments = malloc_segments();
-        printf("new_text is %p\n", new_segments);
+        if (bwa_verbose >= 4) fprintf(stderr, "new_text is %p\n", new_segments);
 
 
         new_slave_fun0 = ((long)slave_cpe_format_pre_cross - (long)segment1) + (long)new_segments;
@@ -1790,10 +1803,12 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         //new_slave_fun2 = (long)slave_worker12_s_fast_cross;
 
 
-        printf("offset is %lu\n", (long)new_segments - segment1);
-        printf("fun0 is %p\n", (void*)new_slave_fun0);
-        printf("fun1 is %p\n", (void*)new_slave_fun1);
-        printf("fun2 is %p\n", (void*)new_slave_fun2);
+        if (bwa_verbose >= 4) {
+            fprintf(stderr, "offset is %lu\n", (long)new_segments - segment1);
+            fprintf(stderr, "fun0 is %p\n", (void*)new_slave_fun0);
+            fprintf(stderr, "fun1 is %p\n", (void*)new_slave_fun1);
+            fprintf(stderr, "fun2 is %p\n", (void*)new_slave_fun2);
+        }
 
         asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
 
@@ -1804,60 +1819,29 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         para->priv_addr = priv_addr;
 
 
-        printf("gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
+        if (bwa_verbose >= 4)
+            fprintf(stderr, "gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
 
-        FILE *f = fopen("data.bin", "r");
-        if (f == NULL) {
-            perror("Error opening file");
-            exit(EXIT_FAILURE);
-        }
+        cpe_relocation_t relocation;
+        load_cpe_relocation(&relocation);
 
-        unsigned long change_size;
-        fread(&change_size, sizeof(unsigned long), 1, f);
-        short *got_content = (short*)malloc(change_size * sizeof(short));
-        printf("got change size = %lu\n", change_size);
-        int pos = 0;
-        for(unsigned long i = 0; i < change_size; ++i) {
-            short disp;
-            fread(&disp, sizeof(short), 1, f);
-            got_content[pos++] = disp;
-        }
-        fclose(f);
-
-        f = fopen("data.bin2", "r");
-        if (f == NULL) {
-            perror("Error opening file");
-            exit(EXIT_FAILURE);
-        }
-        unsigned long tls_size;
-        fread(&tls_size, sizeof(unsigned long), 1, f);
-        unsigned long *tls_content = (unsigned long*)malloc(tls_size * sizeof(unsigned long));
-        printf("got tls size = %lu\n", tls_size);
-        pos = 0;
-        for(unsigned long i = 0; i < tls_size; ++i) {
-            unsigned long disp;
-            fread(&disp, sizeof(unsigned long), 1, f);
-            tls_content[pos++] = disp;
-            printf("tls contend %lx %lx\n", disp, *((unsigned long*)disp));
-        }
-        fclose(f);
-
-        para->tls_content = tls_content;
-        para->tls_size = tls_size;
+        para->tls_content = relocation.tls_content;
+        para->tls_size = relocation.tls_count;
 
 
         __real_athread_spawn_cgs((void*)slave_pass_para, para, 1);
         athread_join_cgs();
-        printf("pass para done\n");
+        if (bwa_verbose >= 4) fprintf(stderr, "pass para done\n");
 
         copy_segments((void*)new_segments);
-        change_got(host_gp, segment1, (unsigned long)new_segments, got_content, change_size);
+        change_got(host_gp, segment1, (unsigned long)new_segments, relocation.got_content, relocation.got_count);
+        cpe_relocation_destroy(&relocation);
 
         athread_spawn_cgs(copy_priv_segment, para);
         athread_join_cgs();
         athread_spawn_cgs(change_priv_segment, para);
         athread_join_cgs();
-        printf("cross time cost %.4f\n", GetTime() - cross_time_begin);
+        if (bwa_verbose >= 4) fprintf(stderr, "cross time cost %.4f\n", GetTime() - cross_time_begin);
 
     }
 #endif
@@ -1885,13 +1869,13 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     __real_athread_spawn((void*)slave_worker12_s_pre_fast, para, 1);
     athread_join();
 #endif
-    fprintf(stderr, "slave pre done\n");
+    if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
     t_work1_3 += GetTime() - tt0;
 
     tt0 = GetTime();
 
     n = (opt->flag&MEM_F_PE) ? para->nn << 1 : para->nn;
-    printf("now n is %d\n", n);
+    if (bwa_verbose >= 4) fprintf(stderr, "now n is %d\n", n);
 
 //#define BLOCK_SIZE (64 * 1024) // 64KB
 //    char *current_block = NULL;
@@ -1953,15 +1937,14 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     t_work1_5 += GetTime() - tt0;
 
     *n2 = n;
-    printf("processed %d\n", *n2);
+    if (bwa_verbose >= 4) fprintf(stderr, "processed %d\n", *n2);
 
     *seqs2 = w.seqs;
 
     tt0 = GetTime();
-    free(para->sam_lens);
-    free(para->cpe_sams);
-    free(w.regs);
-    free(w.aux);
+    checked_free_array(para->sam_lens);
+    checked_free_array(para->cpe_sams);
+    worker_destroy(&w);
     t_work1_6 += GetTime() - tt0;
 
 
@@ -1973,24 +1956,11 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
 void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)
 {
-	//extern void kt_for(int n_threads, void (*func)(void*,int,int), void *data, int n);
-	extern void kt_for_single(int n_threads, void (*func)(void*,int,int), void *data, int n);
-
-    int my_rank = 0;
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-
 	worker_t w;
 	mem_pestat_t pes[4];
 	double ctime, rtime;
 	ctime = cputime(); rtime = realtime();
-	w.regs = malloc(n * sizeof(mem_alnreg_v));
-    w.opt = opt; w.bwt = bwt; w.bns = bns; w.pac = pac;
-	w.seqs = seqs; w.n_processed = n_processed;
-	w.pes = &pes[0];
-	w.aux = malloc(cpe_num * sizeof(smem_aux_t));
-	for (int i = 0; i < cpe_num; ++i) {
-		w.aux[i] = 0;
-    }
+    worker_init(&w, opt, bwt, bns, pac, n_processed, n, seqs, &pes[0]);
 
     long nn = (opt->flag&MEM_F_PE)? n>>1 : n;
     double t0 = GetTime();
@@ -2011,12 +1981,12 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 
     cntt++;
     if(cntt == 1) {
-        para = (Para_worker12_s*)malloc(sizeof(Para_worker12_s));
+        para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
     }
  
     para->nn = nn;
     para->data = (void*)&w;
-    para->cpe_regs = (mem_alnreg_v*)malloc(n * sizeof(mem_alnreg_v));
+    para->cpe_regs = checked_malloc_array(n, sizeof(*para->cpe_regs), "CPE alignment region vectors");
 
     for(int i = 0; i < n; i++) {
         para->cpe_regs[i].n = 0;
@@ -2032,7 +2002,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 
         void *priv_addr = malloc_csr();
         new_segments = malloc_segments();
-        printf("new_text is %p\n", new_segments);
+        if (bwa_verbose >= 4) fprintf(stderr, "new_text is %p\n", new_segments);
 
         new_slave_fun1 = ((long)slave_worker1_s_pre_fast_cross - (long)segment1) + (long)new_segments;
         new_slave_fun2 = ((long)slave_worker1_s_fast_cross - (long)segment1) + (long)new_segments;
@@ -2044,11 +2014,13 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
         //new_slave_fun4 = (long)slave_worker2_s_fast_cross;
 
 
-        printf("offset is %lu\n", (long)new_segments - segment1);
-        printf("fun1 is %p\n", (void*)new_slave_fun1);
-        printf("fun2 is %p\n", (void*)new_slave_fun2);
-        printf("fun3 is %p\n", (void*)new_slave_fun3);
-        printf("fun4 is %p\n", (void*)new_slave_fun4);
+        if (bwa_verbose >= 4) {
+            fprintf(stderr, "offset is %lu\n", (long)new_segments - segment1);
+            fprintf(stderr, "fun1 is %p\n", (void*)new_slave_fun1);
+            fprintf(stderr, "fun2 is %p\n", (void*)new_slave_fun2);
+            fprintf(stderr, "fun3 is %p\n", (void*)new_slave_fun3);
+            fprintf(stderr, "fun4 is %p\n", (void*)new_slave_fun4);
+        }
 
         asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
 
@@ -2059,60 +2031,29 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
         para->priv_addr = priv_addr;
 
 
-        printf("gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
+        if (bwa_verbose >= 4)
+            fprintf(stderr, "gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
 
-        FILE *f = fopen("data.bin", "r");
-        if (f == NULL) {
-            perror("Error opening file");
-            exit(EXIT_FAILURE);
-        }
+        cpe_relocation_t relocation;
+        load_cpe_relocation(&relocation);
 
-        unsigned long change_size;
-        fread(&change_size, sizeof(unsigned long), 1, f);
-        short *got_content = (short*)malloc(change_size * sizeof(short));
-        printf("got change size = %lu\n", change_size);
-        int pos = 0;
-        for(unsigned long i = 0; i < change_size; ++i) {
-            short disp;
-            fread(&disp, sizeof(short), 1, f);
-            got_content[pos++] = disp;
-        }
-        fclose(f);
-
-        f = fopen("data.bin2", "r");
-        if (f == NULL) {
-            perror("Error opening file");
-            exit(EXIT_FAILURE);
-        }
-        unsigned long tls_size;
-        fread(&tls_size, sizeof(unsigned long), 1, f);
-        unsigned long *tls_content = (unsigned long*)malloc(tls_size * sizeof(unsigned long));
-        printf("got tls size = %lu\n", tls_size);
-        pos = 0;
-        for(unsigned long i = 0; i < tls_size; ++i) {
-            unsigned long disp;
-            fread(&disp, sizeof(unsigned long), 1, f);
-            tls_content[pos++] = disp;
-            printf("tls contend %lx %lx\n", disp, *((unsigned long*)disp));
-        }
-        fclose(f);
-
-        para->tls_content = tls_content;
-        para->tls_size = tls_size;
+        para->tls_content = relocation.tls_content;
+        para->tls_size = relocation.tls_count;
 
 
         __real_athread_spawn_cgs((void*)slave_pass_para, para, 1);
         athread_join_cgs();
-        printf("pass para done\n");
+        if (bwa_verbose >= 4) fprintf(stderr, "pass para done\n");
 
         copy_segments((void*)new_segments);
-        change_got(host_gp, segment1, (unsigned long)new_segments, got_content, change_size);
+        change_got(host_gp, segment1, (unsigned long)new_segments, relocation.got_content, relocation.got_count);
+        cpe_relocation_destroy(&relocation);
 
         athread_spawn_cgs(copy_priv_segment, para);
         athread_join_cgs();
         athread_spawn_cgs(change_priv_segment, para);
         athread_join_cgs();
-        printf("cross time cost %.4f\n", GetTime() - cross_time_begin);
+        if (bwa_verbose >= 4) fprintf(stderr, "cross time cost %.4f\n", GetTime() - cross_time_begin);
 
     }
 #endif
@@ -2128,17 +2069,13 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     __real_athread_spawn((void*)slave_worker1_s_pre_fast, para, 1);
     athread_join();
 #endif
-    fprintf(stderr, "slave pre done\n");
+    if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
     t_work1_2 += GetTime() - tt0;
       
     tt0 = GetTime();
     for(int i = 0; i < n; i++) {
         w.regs[i].m = para->cpe_regs[i].n;
-        w.regs[i].a = malloc(sizeof(mem_alnreg_t) * w.regs[i].m);
-        if(w.regs[i].a == NULL) {
-            fprintf(stderr, "rank %d GG malloc %d size : %d = %d (%d) x %d null\n", my_rank, i, sizeof(mem_alnreg_t) * w.regs[i].m, para->cpe_regs[i].n, w.regs[i].m, sizeof(mem_alnreg_t));
-            exit(0);
-        }
+        w.regs[i].a = checked_malloc_array(w.regs[i].m, sizeof(*w.regs[i].a), "alignment regions for read");
         w.regs[i].n = 0;
     }
     t_work1_3 += GetTime() - tt0;
@@ -2152,15 +2089,16 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     __real_athread_spawn((void*)slave_worker1_s_fast, para, 1);
     athread_join();
 #endif
-    fprintf(stderr, "slave round done\n");
+    if (bwa_verbose >= 4) fprintf(stderr, "slave round done\n");
     t_work1_4 += GetTime() - tt0;
 
     tt0 = GetTime();
-    free(para->cpe_regs);
+    checked_free_array(para->cpe_regs);
     t_work1_5 += GetTime() - tt0;
 
     tt0 = GetTime();
-	free(w.aux);
+	checked_free_array(w.aux);
+    w.aux = NULL;
 	if (opt->flag&MEM_F_PE) { // infer insert sizes if not provided
 		if (pes0) memcpy(pes, pes0, 4 * sizeof(mem_pestat_t));
 		else mem_pestat(opt, bns->l_pac, n, w.regs, pes);
@@ -2171,8 +2109,8 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 
     t0 = GetTime();
 
-    para->cpe_sams = (char**)malloc(n * sizeof(char*));
-    para->sam_lens = (int*)malloc(n * sizeof(int));
+    para->cpe_sams = checked_malloc_array(n, sizeof(*para->cpe_sams), "CPE SAM pointers");
+    para->sam_lens = checked_malloc_array(n, sizeof(*para->sam_lens), "CPE SAM lengths");
     for(int i = 0; i < n; i++) para->sam_lens[i] = 0;
 
     double tt1 = GetTime();
@@ -2190,8 +2128,9 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 
     tt1 = GetTime();
     for(int i = 0; i < n; i++) {
-        w.seqs[i].sam = malloc((para->sam_lens[i]) * sizeof(char) + 1);
-        memset(w.seqs[i].sam, 'A', (para->sam_lens[i]) * sizeof(char));
+        w.seqs[i].sam = checked_malloc_array(para->sam_lens[i] + 1, sizeof(*w.seqs[i].sam), "SAM record");
+        w.seqs[i].is_new_addr = 1;
+        memset(w.seqs[i].sam, 'A', para->sam_lens[i] * sizeof(*w.seqs[i].sam));
         w.seqs[i].sam[(para->sam_lens[i])] = '\0';
     }
     t_work2_2 += GetTime() - tt1;
@@ -2209,14 +2148,14 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 
     tt1 = GetTime();
     for(int i = 0; i < n; i++) {
-        free(w.regs[i].a);
+        checked_free_array(w.regs[i].a);
     }
-    free(para->sam_lens);
-    free(para->cpe_sams);
+    checked_free_array(para->sam_lens);
+    checked_free_array(para->cpe_sams);
     t_work2_4 += GetTime() - tt1;
 
     tt1 = GetTime();
-	free(w.regs);
+    worker_destroy(&w);
     t_work2_5 += GetTime() - tt1;
 
     t_work2 += GetTime() - t0;

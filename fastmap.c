@@ -32,6 +32,9 @@
 #include <limits.h>
 #include <ctype.h>
 #include <math.h>
+#include <errno.h>
+#include <fcntl.h>
+#include "swbwa_config.h"
 #include "bwa.h"
 #include "bwamem.h"
 #include "kvec.h"
@@ -46,17 +49,9 @@ KSEQ_DECLARE(int)
 
 extern unsigned char nst_nt4_table[256];
 
-
-
-#define cpe_num 384
-extern int cpe_is_over[cpe_num];
-
-
-#define use_cgs_mode
-//#define use_cpe_step0
-//#define use_my_mpi
-
-//#define use_lwpf3
+#ifndef O_DIRECT
+#define O_DIRECT 0
+#endif
 
 #ifdef use_lwpf3
 #define LWPF_UNITS U(TEST)
@@ -107,11 +102,11 @@ int kclose(void *a);
 void kt_pipeline(int n_threads, void *(*func)(void*, int, void*), void *shared_data, int n_steps);
 void kt_pipeline_single(int n_threads, void *(*func)(void*, int, void*), void *shared_data, int n_steps);
 void kt_pipeline_thread(int n_threads, void *(*func)(void*, int, void*), void *shared_data, int n_steps);
+void kt_pipeline_queue(int n_threads, void *(*func)(void*, int, void*), void *shared_data, int n_steps);
 
 
-FILE *file_out_sam = NULL;
-int file_out_fd = -1;
-char sam_out_file_name[256];
+static int file_out_fd = -1;
+static char sam_out_file_name[256];
 
 typedef struct {
 	kseq_t *ks, *ks2;
@@ -132,44 +127,41 @@ typedef struct {
     long long block_size2;
 } ktp_data_t;
 
-void SkipToLineEnd(char *data_, long long *pos_, const long long size_) {
+static void skip_to_line_end(char *data_, long long *pos_, const long long size_) {
     while (*pos_ < size_ && data_[*pos_] != '\n') {
         ++(*pos_);
     }
 }
 
-int64_t GetNextFastq(char *data_, long long pos_, const long long size_) {
+static int64_t get_next_fastq(char *data_, long long pos_, const long long size_) {
     if(pos_ < 0) pos_ = 0;
-    SkipToLineEnd(data_, &pos_, size_);
+    skip_to_line_end(data_, &pos_, size_);
     ++pos_;
 
     // find beginning of the next record
     while (data_[pos_] != '@') {
-        SkipToLineEnd(data_, &pos_, size_);
+        skip_to_line_end(data_, &pos_, size_);
         ++pos_;
     }
     int64_t pos0 = pos_;
 
-    SkipToLineEnd(data_, &pos_, size_);
+    skip_to_line_end(data_, &pos_, size_);
     ++pos_;
 
     if (data_[pos_] == '@')// previous one was a quality field
         return pos_;
     //-----[haoz:] is the following code necessary??-------------//
-    SkipToLineEnd(data_, &pos_, size_);
+    skip_to_line_end(data_, &pos_, size_);
     ++pos_;
-    if (data_[pos_] != '+') printf("GetNextFastq core dump is pos: %d\n",  pos_);
+    if (data_[pos_] != '+') fprintf(stderr, "GetNextFastq core dump is pos: %lld\n", pos_);
     assert(data_[pos_] == '+');// pos0 was the start of tag
     return pos0;
 }
 
-#define pre_cpe_read_num 1024
 
-#define eval_read_size 300
+static FILE *file1_ptr;
+static FILE *file2_ptr;
 
-
-FILE *file1_ptr;
-FILE *file2_ptr;
 
 static void *process(void *shared, int step, void *_data)
 {
@@ -181,14 +173,14 @@ static void *process(void *shared, int step, void *_data)
 #ifdef use_cpe_step0
         static long long now_file1_pos = 0;
         static long long now_file2_pos = 0;
-        static long long tot_block_size = cpe_num * pre_cpe_read_num * eval_read_size;
-        static long long block_size = pre_cpe_read_num * eval_read_size;
+        static long long tot_block_size = SWBWA_CPE_NUM * SWBWA_PRE_CPE_READ_NUM * SWBWA_EVAL_READ_SIZE;
+        static long long block_size = SWBWA_PRE_CPE_READ_NUM * SWBWA_EVAL_READ_SIZE;
         char* block_buffer = (char*)malloc(tot_block_size + 1024);
         char* block_buffer2 = (char*)malloc(tot_block_size + 1024);
         ktp_data_t *ret;
         ret = calloc(1, sizeof(ktp_data_t));
         if (bwa_verbose >= 3)
-            fprintf(stderr, "[M::%s] read block (%ld)...\n", __func__, tot_block_size);
+            fprintf(stderr, "[M::%s] read block (%lld)...\n", __func__, tot_block_size);
 
 //        printf("file ptr %p %p\n", file1_ptr, file2_ptr);
 //        printf("seek pos %lld %lld\n", now_file1_pos, now_file2_pos);
@@ -199,7 +191,7 @@ static void *process(void *shared, int step, void *_data)
         if(read_size != tot_block_size) {
             real_size = read_size;
         } else {
-            real_size = GetNextFastq(block_buffer, read_size - (1 << 10), read_size);
+            real_size = get_next_fastq(block_buffer, read_size - (1 << 10), read_size);
         }
         now_file1_pos += real_size;
 //        printf("file1 read size %lld, real size %lld\n", read_size, real_size);
@@ -211,7 +203,7 @@ static void *process(void *shared, int step, void *_data)
         if(read_size2 != tot_block_size) {
             real_size2 = read_size2;
         } else {
-            real_size2 = GetNextFastq(block_buffer2, read_size2 - (1 << 10), read_size2);
+            real_size2 = get_next_fastq(block_buffer2, read_size2 - (1 << 10), read_size2);
         }
         now_file2_pos += real_size2;
 //        printf("file2 read size %lld, real size %lld\n", read_size2, real_size2);
@@ -290,7 +282,10 @@ static void *process(void *shared, int step, void *_data)
             double t1 = GetTime();
             //if (data->seqs[i].sam) err_fputs(data->seqs[i].sam, file_out_sam);
 //            printf("sam %p\n", data->seqs[i].sam);
-            if (data->seqs[i].sam) my_align_write(data->seqs[i].sam, file_out_fd, 0);
+            if (data->seqs[i].sam) {
+                if (file_out_fd >= 0) my_align_write(data->seqs[i].sam, file_out_fd, 0, NULL);
+                else err_fputs(data->seqs[i].sam, stdout);
+            }
             t_step3_1 += GetTime() - t1;
             //}
 			//if (data->seqs[i].sam) err_fputs(data->seqs[i].sam, stdout);
@@ -310,7 +305,7 @@ static void *process(void *shared, int step, void *_data)
         t_step3 += GetTime() - t0;
 		return 0;
 	} else if(step == 3) {
-        my_align_write(NULL, file_out_fd, 1, sam_out_file_name);
+        if (file_out_fd >= 0) my_align_write(NULL, file_out_fd, 1, sam_out_file_name);
     }
 	return 0;
 }
@@ -336,6 +331,68 @@ typedef struct{
     char* big_buffer;
     long long cpe_buffer_size;
 } Para_malloc;
+
+static void open_sam_output(const char *path, int rank)
+{
+    int n;
+#ifdef use_my_mpi
+    n = snprintf(sam_out_file_name, sizeof(sam_out_file_name), "%s_%d", path, rank);
+#else
+    n = snprintf(sam_out_file_name, sizeof(sam_out_file_name), "%s", path);
+#endif
+    if (n < 0 || (size_t)n >= sizeof(sam_out_file_name))
+        err_fatal(__func__, "output path is too long: '%s'", path);
+    file_out_fd = open(sam_out_file_name, O_CREAT | O_RDWR | O_DIRECT, 0666);
+    if (file_out_fd == -1)
+        err_fatal(__func__, "failed to open output file '%s': %s", sam_out_file_name, strerror(errno));
+    fprintf(stderr, "the output file is %s\n", sam_out_file_name);
+}
+
+static void open_fastq_input(const char *path, int rank, FILE **file_ptr, void **ko, int *fd)
+{
+    char resolved_path[PATH_MAX];
+    int n;
+#ifdef use_my_mpi
+    n = snprintf(resolved_path, sizeof(resolved_path), "%s_%d", path, rank);
+#else
+    n = snprintf(resolved_path, sizeof(resolved_path), "%s", path);
+#endif
+    if (n < 0 || (size_t)n >= sizeof(resolved_path))
+        err_fatal(__func__, "input path is too long: '%s'", path);
+    fprintf(stderr, "the input file is %s\n", resolved_path);
+
+    *file_ptr = fopen(resolved_path, "r");
+    if (*file_ptr == NULL)
+        err_fatal(__func__, "failed to open input file '%s': %s", resolved_path, strerror(errno));
+
+    *ko = kopen(resolved_path, fd);
+    if (*ko == NULL)
+        err_fatal(__func__, "failed to open input stream '%s'", resolved_path);
+}
+
+static void init_athread_runtime(void)
+{
+#ifdef use_cgs_mode
+    athread_init_cgs();
+#else
+    athread_init();
+#endif
+}
+
+static void init_cpe_malloc_pool(void)
+{
+#ifdef use_cgs_mode
+    char *big_buffer = (char*)malloc(SWBWA_CPE_MALLOC_TOTAL_SIZE);
+    Para_malloc p_malloc;
+    if (big_buffer == NULL)
+        err_fatal(__func__, "failed to allocate CPE malloc buffer: bytes=%lld", (long long)SWBWA_CPE_MALLOC_TOTAL_SIZE);
+    memset(big_buffer, 0, SWBWA_CPE_MALLOC_TOTAL_SIZE);
+    p_malloc.big_buffer = big_buffer;
+    p_malloc.cpe_buffer_size = SWBWA_CPE_MALLOC_TOTAL_SIZE / SWBWA_CPE_NUM;
+    __real_athread_spawn_cgs((void*)slave_state_init, &p_malloc, 1);
+    athread_join_cgs();
+#endif
+}
 
 int main_mem(int argc, char *argv[])
 {
@@ -391,29 +448,9 @@ int main_mem(int argc, char *argv[])
 		else if (c == 's') opt->split_width = atoi(optarg), opt0.split_width = 1;
 		else if (c == 'G') opt->max_chain_gap = atoi(optarg), opt0.max_chain_gap = 1;
 		else if (c == 'N') opt->max_chain_extend = atoi(optarg), opt0.max_chain_extend = 1;
-#ifdef use_my_mpi
         else if (c == 'o' || c == 'f') {
-            sprintf(sam_out_file_name, "%s_%d", optarg, local_my_rank);
-            //file_out_sam = fopen(sam_out_file_name, "wb");
-            file_out_fd = open(sam_out_file_name, O_CREAT | O_RDWR | O_DIRECT, 0666);
-            if (file_out_fd == -1) {
-                perror("Failed to open file");
-                fprintf(stderr, "Error code: %d\n", errno);
-            }
-            fprintf(stderr, "the output file is %s\n", sam_out_file_name);
+            open_sam_output(optarg, local_my_rank);
         }
-#else
-        else if (c == 'o' || c == 'f') {
-            //file_out_sam = fopen(optarg, "wb");
-            sprintf(sam_out_file_name, "%s", optarg);
-            file_out_fd = open(sam_out_file_name, O_CREAT | O_RDWR | O_DIRECT, 0666);
-            if (file_out_fd == -1) {
-                perror("Failed to open file");
-                fprintf(stderr, "Error code: %d\n", errno);
-            }
-            fprintf(stderr, "the output file is %s\n", sam_out_file_name);
-        }
-#endif
         //xreopen(optarg, "wb", stdout);
         else if (c == 'W') opt->min_chain_weight = atoi(optarg), opt0.min_chain_weight = 1;
         else if (c == 'y') opt->max_mem_intv = atol(optarg), opt0.max_mem_intv = 1;
@@ -587,6 +624,8 @@ int main_mem(int argc, char *argv[])
 	} else update_a(opt, &opt0);
 	bwa_fill_scmat(opt->a, opt->b, opt->mat);
 
+    init_athread_runtime();
+
 	aux.idx = bwa_idx_load_from_shm(argv[optind]);
 	if (aux.idx == 0) {
 		if ((aux.idx = bwa_idx_load(argv[optind], BWA_IDX_ALL)) == 0) return 1; // FIXME: memory leak
@@ -599,21 +638,7 @@ int main_mem(int argc, char *argv[])
     int in_rank = local_my_rank + 1;
     //int in_rank = (local_my_rank + 1 + 1) % 6 + 1;
     //int in_rank = 2;
-#ifdef use_my_mpi
-    char in_filename1[256];
-    sprintf(in_filename1, "%s_%d", argv[optind + 1], in_rank);
-    fprintf(stderr, "the input file1 is %s\n", in_filename1);
-    file1_ptr = fopen(in_filename1, "r");
-	ko = kopen(in_filename1, &fd);
-#else
-    file1_ptr = fopen(argv[optind + 1], "r");
-	ko = kopen(argv[optind + 1], &fd);
-#endif
-    
-	if (ko == 0) {
-		if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 1]);
-		return 1;
-	}
+    open_fastq_input(argv[optind + 1], in_rank, &file1_ptr, &ko, &fd);
 	//fp = gzdopen(fd, "r");
 	//aux.ks = kseq_init(fp);
 	aux.ks = kseq_init(fd);
@@ -622,20 +647,7 @@ int main_mem(int argc, char *argv[])
 			if (bwa_verbose >= 2)
 				fprintf(stderr, "[W::%s] when '-p' is in use, the second query file is ignored.\n", __func__);
 		} else {
-#ifdef use_my_mpi
-            char in_filename2[256];
-            sprintf(in_filename2, "%s_%d", argv[optind + 2], in_rank);
-            fprintf(stderr, "the input file2 is %s\n", in_filename2);
-            file2_ptr = fopen(in_filename2, "r");
-            ko2 = kopen(in_filename2, &fd2);
-#else
-            file2_ptr = fopen(argv[optind + 2], "r");
-            ko2 = kopen(argv[optind + 2], &fd2);
-#endif
-			if (ko2 == 0) {
-				if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 2]);
-				return 1;
-			}
+            open_fastq_input(argv[optind + 2], in_rank, &file2_ptr, &ko2, &fd2);
 			//fp2 = gzdopen(fd2, "r");
 			//aux.ks2 = kseq_init(fp2);
 			aux.ks2 = kseq_init(fd2);
@@ -645,25 +657,7 @@ int main_mem(int argc, char *argv[])
 	//bwa_print_sam_hdr(aux.idx->bns, hdr_line);
 	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
 
-#ifdef use_cgs_mode
-    athread_init_cgs();
-#else
-    athread_init();
-#endif
-
-
-#define cpe_malloc_tot_size (1ll * 384 * (24ll << 20))
-
-#ifdef use_cgs_mode
-    char* big_buffer = (char*)_sw_xmalloc(cpe_malloc_tot_size);
-    memset(big_buffer, 0, cpe_malloc_tot_size);
-    Para_malloc p_malloc;
-    p_malloc.big_buffer = big_buffer;
-    p_malloc.cpe_buffer_size = cpe_malloc_tot_size / cpe_num;
-    __real_athread_spawn_cgs((void*)slave_state_init, &p_malloc, 1);
-    athread_join_cgs();
-#endif
-
+    init_cpe_malloc_pool();
 
 #ifdef use_lwpf3
     lwpf_init(NULL);
@@ -746,12 +740,13 @@ int main_mem(int argc, char *argv[])
 	kseq_destroy(aux.ks);
 	//err_gzclose(fp);
     kclose(ko);
+    if (file1_ptr) fclose(file1_ptr);
 	if (aux.ks2) {
 		kseq_destroy(aux.ks2);
 		//err_gzclose(fp2);
         kclose(ko2);
+        if (file2_ptr) fclose(file2_ptr);
 	}
-    if(file_out_sam != NULL) fclose(file_out_sam);
     //if(file_out_fd != -1) close(file_out_fd);
 	return 0;
 }
@@ -762,7 +757,8 @@ int main_fastmap(int argc, char *argv[])
 	uint64_t max_intv = 0;
 	kseq_t *seq;
 	bwtint_t k;
-	gzFile fp;
+	int fd;
+	void *ko;
 	smem_i *itr;
 	const bwtintv_v *a;
 	bwaidx_t *idx;
@@ -790,8 +786,12 @@ int main_fastmap(int argc, char *argv[])
 		return 1;
 	}
 
-	fp = xzopen(argv[optind + 1], "r");
-	seq = kseq_init(fp);
+	ko = kopen(argv[optind + 1], &fd);
+	if (ko == 0) {
+		if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 1]);
+		return 1;
+	}
+	seq = kseq_init(fd);
 	if ((idx = bwa_idx_load(argv[optind], BWA_IDX_BWT|BWA_IDX_BNS)) == 0) return 1;
 	itr = smem_itr_init(idx->bwt);
 	smem_config(itr, min_intv, max_len, max_intv);
@@ -829,6 +829,6 @@ int main_fastmap(int argc, char *argv[])
 	smem_itr_destroy(itr);
 	bwa_idx_destroy(idx);
 	kseq_destroy(seq);
-	err_gzclose(fp);
+	kclose(ko);
 	return 0;
 }

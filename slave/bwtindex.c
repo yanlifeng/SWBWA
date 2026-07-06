@@ -41,7 +41,7 @@
 #include "divsufsort.h"
 #endif
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef SLAVE_USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
 

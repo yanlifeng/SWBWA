@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <zlib.h>
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef HOST_USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
 

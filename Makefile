@@ -1,65 +1,83 @@
-CC=		 	mpicc
-CXX= 	    mpicxx
-#CC=			clang --analyze
-CFLAGS= -w -g -Wall -Wno-unused-function -O2 -D_GNU_SOURCE -I/home/export/online1/mdt00/shisuan/sweq/ylf/someGit/lwpf3
-#CFLAGS= -w -g -Wall -Wno-unused-function -O2 -D_GNU_SOURCE  -I/home/swtest/lwpf3
+# Toolchain
+CC       = mpicc
+CXX      = mpicxx
+AR       = ar
 
-#-fprofile-swperf
-#CFLAGS=		-g -Wall -Wno-unused-function
-#WRAP_MALLOC=-DUSE_MALLOC_WRAPPERS
-AR=			ar
-DFLAGS=		-DHAVE_PTHREAD $(WRAP_MALLOC)
+# Build options
+LWPF3_DIR ?= /home/export/online1/mdt00/shisuan/sweq/ylf/someGit/lwpf3
 
-LOBJS=		utils.o kthread.o kstring.o ksw.o bwt.o bntseq.o bwa.o bwamem.o bwamem_pair.o bwamem_extra.o malloc_wrap.o \
-			QSufSort.o bwt_gen.o rope.o rle.o is.o bwtindex.o
-AOBJS=		bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o \
-			bwape.o kopen.o pemerge.o maxk.o \
-			bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o bwt_lite.o \
-			bwtsw2_chain.o fastmap.o bwtsw2_pair.o
-PROG=		SWBWA	
-INCLUDES=	
-LIBS= -Wl,-q -lm -lz -lpthread -lm_slave
-#-lswperf
-SUBDIRS=	.
+OPTFLAGS  ?= -O2
+WARNFLAGS ?= -w -Wall -Wno-unused-function
+DBGFLAGS  ?= -g
 
+# malloc wrapper switches.
+HOST_WRAP_MALLOC  ?= -DHOST_USE_MALLOC_WRAPPERS
+# SLAVE_WRAP_MALLOC ?= -DSLAVE_USE_MALLOC_WRAPPERS
 
-SLAVE_DIR = slave
+CPPFLAGS +=
+INCLUDES += -I$(LWPF3_DIR)
+DFLAGS   += -DHAVE_PTHREAD
+CFLAGS   += $(WARNFLAGS) $(DBGFLAGS) $(OPTFLAGS) -D_GNU_SOURCE
+CXXFLAGS += -std=c++11
+LDFLAGS  +=
+
+HOST_ARCH_FLAGS  = -mhost -fPIC -mieee -mftz -faddress_align=32
+SLAVE_ARCH_FLAGS = -mslave -msimd -fPIC -mieee -mftz -faddress_align=64
+HYBRID_FLAGS     = -mhybrid
+
+LIBS = -Wl,-q -lm -lz -lpthread -lm_slave
+ifeq ($(shell uname -s),Linux)
+LIBS += -lrt
+endif
+
+# Targets and objects
+PROG = SWBWA
+
+LIB_OBJS = \
+	utils.o kthread.o kstring.o ksw.o bwt.o bntseq.o bwa.o bwamem.o \
+	bwamem_pair.o bwamem_extra.o malloc_wrap.o QSufSort.o bwt_gen.o \
+	rope.o rle.o is.o bwtindex.o
+
+APP_OBJS = \
+	bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o \
+	kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o \
+	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o
+
+SLAVE_DIR     = slave
 SLAVE_SOURCES = $(wildcard $(SLAVE_DIR)/*.c)
 SLAVE_OBJECTS = $(SLAVE_SOURCES:.c=.o)
 
-ifeq ($(shell uname -s),Linux)
-	LIBS += -lrt
-endif
+.PHONY: all clean depend
+.SUFFIXES:
 
-.SUFFIXES:.c .o .cc
+all: $(PROG)
 
-.cpp.o:
-		$(CXX) -mhost -fPIC -mieee -mftz -faddress_align=32 -c $(CFLAGS) -std=c++11 $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
-
-
-.c.o:
-		$(CC) -mhost -fPIC -mieee -mftz -faddress_align=32 -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
-
+# Compile rules
 $(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c
-		$(CC) -mslave -msimd -fPIC -mieee -mftz -faddress_align=64 -c $(CFLAGS) -DUSE_MALLOC_WRAPPERS $< -o $@
+	$(CC) $(SLAVE_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(SLAVE_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
+%.o: %.c
+	$(CC) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(HOST_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-all:$(PROG)
+%.o: %.cpp
+	$(CXX) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(HOST_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-SWBWA:libbwa.a $(AOBJS) main.o $(SLAVE_OBJECTS)
-		$(CXX) -mhybrid $(CFLAGS) $(LDFLAGS) $(AOBJS) main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS)
+# Link/archive rules
+$(PROG): libbwa.a $(APP_OBJS) main.o $(SLAVE_OBJECTS)
+	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS)
 
-bwamem-lite:libbwa.a example.o
-		$(CC) $(CFLAGS) $(LDFLAGS) example.o -o $@ -L. -lbwa $(LIBS)
+bwamem-lite: libbwa.a example.o
+	$(CC) $(CFLAGS) $(LDFLAGS) example.o -o $@ -L. -lbwa $(LIBS)
 
-libbwa.a:$(LOBJS)
-		$(AR) -csru $@ $(LOBJS)
+libbwa.a: $(LIB_OBJS)
+	$(AR) -csru $@ $(LIB_OBJS)
 
+# Maintenance
 clean:
-		rm -f gmon.out *.o a.out $(PROG) *~ *.a slave/*.o
+	rm -f gmon.out *.o a.out $(PROG) *~ *.a $(SLAVE_DIR)/*.o
 
 depend:
-	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(DFLAGS) $(CPPFLAGS) -- *.c )
+	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(DFLAGS) $(HOST_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) -- *.c )
 
 # DO NOT DELETE THIS LINE -- make depend depends on it.
 
@@ -69,7 +87,7 @@ bntseq.o: bntseq.h utils.h kseq.h malloc_wrap.h khash.h
 bwa.o: bntseq.h bwa.h bwt.h ksw.h utils.h kstring.h malloc_wrap.h kvec.h
 bwa.o: kseq.h
 bwamem.o: kstring.h malloc_wrap.h bwamem.h bwt.h bntseq.h bwa.h ksw.h kvec.h
-bwamem.o: ksort.h utils.h kbtree.h
+bwamem.o: ksort.h utils.h kbtree.h swbwa_config.h
 bwamem_extra.o: bwa.h bntseq.h bwt.h bwamem.h kstring.h malloc_wrap.h
 bwamem_pair.o: kstring.h malloc_wrap.h bwamem.h bwt.h bntseq.h bwa.h kvec.h
 bwamem_pair.o: utils.h ksw.h
@@ -94,7 +112,7 @@ bwtsw2_main.o: bwt.h bwtsw2.h bntseq.h bwt_lite.h utils.h bwa.h
 bwtsw2_pair.o: utils.h bwt.h bntseq.h bwtsw2.h bwt_lite.h kstring.h
 bwtsw2_pair.o: malloc_wrap.h ksw.h
 example.o: bwamem.h bwt.h bntseq.h bwa.h kseq.h malloc_wrap.h
-fastmap.o: bwa.h bntseq.h bwt.h bwamem.h kvec.h malloc_wrap.h utils.h kseq.h
+fastmap.o: bwa.h bntseq.h bwt.h bwamem.h kvec.h malloc_wrap.h utils.h kseq.h swbwa_config.h
 is.o: malloc_wrap.h
 kopen.o: malloc_wrap.h
 kstring.o: kstring.h malloc_wrap.h

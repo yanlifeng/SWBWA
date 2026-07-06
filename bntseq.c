@@ -39,7 +39,7 @@ KSEQ_DECLARE(gzFile)
 #include "khash.h"
 KHASH_MAP_INIT_STR(str, int)
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef HOST_USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
 

@@ -35,7 +35,7 @@
 #include "kstring.h"
 #include "kvec.h"
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef HOST_USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
 
@@ -290,8 +290,6 @@ bwt_t *bwa_idx_load_bwt(const char *hint)
 	return bwt;
 }
 
-#define use_cross_seg
-
 bwaidx_t *bwa_idx_load_from_disk(const char *hint, int which)
 {
 	bwaidx_t *idx;
@@ -311,14 +309,12 @@ bwaidx_t *bwa_idx_load_from_disk(const char *hint, int which)
 		if (bwa_verbose >= 3)
 			fprintf(stderr, "[M::%s] read %d ALT contigs\n", __func__, c);
 		if (which & BWA_IDX_PAC) {
-#ifdef use_cross_seg
-            idx->pac = _sw_xmalloc(idx->bns->l_pac/4+1 * 1);
-            memset(idx->pac, 0, idx->bns->l_pac/4+1 * 1);
-#else
-			idx->pac = calloc(idx->bns->l_pac/4+1, 1);
-#endif
-            fprintf(stderr, "sw malloc %lld, %p\n", idx->bns->l_pac/4+1 * 1, idx->pac);
-            err_fread_noeof(idx->pac, 1, idx->bns->l_pac/4+1, idx->bns->fp_pac); // concatenated 2-bit encoded sequence
+			size_t pac_len = idx->bns->l_pac / 4 + 1;
+			idx->pac = calloc(pac_len, 1);
+            if (idx->pac == NULL)
+                err_fatal(__func__, "failed to allocate PAC data: bytes=%lld", (long long)pac_len);
+            fprintf(stderr, "malloc pac %lld, %p\n", (long long)pac_len, idx->pac);
+            err_fread_noeof(idx->pac, 1, pac_len, idx->bns->fp_pac); // concatenated 2-bit encoded sequence
 			err_fclose(idx->bns->fp_pac);
 			idx->bns->fp_pac = 0;
 		}

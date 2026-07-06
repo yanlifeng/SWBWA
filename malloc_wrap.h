@@ -9,9 +9,9 @@ extern "C" {
 #endif
 
 
-    void htmalloccount_init();
+    void htmalloccount_init(void);
 
-    void htmalloccount_print();
+    void htmalloccount_print(void);
 
     void *wrap_calloc(size_t nmemb, size_t size,
                         const char *file, unsigned int line, const char *func);
@@ -28,7 +28,7 @@ extern "C" {
 }
 #endif
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef HOST_USE_MALLOC_WRAPPERS
 #  ifdef calloc
 #    undef calloc
 #  endif
@@ -56,8 +56,7 @@ extern "C" {
 
 
 
-#endif /* USE_MALLOC_WRAPPERS */
+#endif /* HOST_USE_MALLOC_WRAPPERS */
 
 #endif /* MALLOC_WRAP_H */
-
 

@@ -3,6 +3,7 @@
 
 #include "bwt.h"
 #include "bwamem.h"
+#include "../swbwa_config.h"
 
 #include "lwpf3_my_cpe.h"
 
@@ -34,7 +35,7 @@ typedef struct{
     long long block_size;
     long long block_size2;
     long long tmp_block_size;
-    long nns[384];
+    long nns[SWBWA_CPE_NUM];
 } Para_worker12_s;
 
 typedef struct{
@@ -52,13 +53,9 @@ extern unsigned long segment2_len;
 /***********************************************************/
 
 
-#define use_cgs_mode
-
 #ifdef use_cgs_mode
-#define cpe_num_slave 384
 #define global_pen (_CGN * 64 + _PEN)
 #else
-#define cpe_num_slave 64
 #define global_pen (_PEN)
 #endif
 

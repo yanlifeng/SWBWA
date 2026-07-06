@@ -83,6 +83,7 @@ extern "C" {
 	int err_fflush(FILE *stream);
 	int err_fclose(FILE *stream);
 	int err_gzclose(gzFile file);
+	void my_align_write(char *s, int out_fd, int tag, char *out_file);
 
 	double cputime(void);
 	double realtime(void);

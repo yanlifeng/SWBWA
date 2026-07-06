@@ -41,6 +41,7 @@
 #include "kvec.h"
 #include "ksort.h"
 #include "utils.h"
+#include "../swbwa_config.h"
 
 #include <slave.h>
 #include <crts.h>
@@ -50,7 +51,7 @@
 
 #include "lwpf3_my_cpe.h"
 
-#ifdef USE_MALLOC_WRAPPERS
+#ifdef SLAVE_USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
 
@@ -1810,8 +1811,6 @@ int neoGetLine(char* buffer, long long *pos, long long tot_len) {
 }
 
 __uncached long format_seq_count = 0;
-
-#define use_cgs_mode
 
 int format_seqs(char* buffer, long long buffer_size, char* buffer2, long long buffer_size2, char* tmp_buffer, char* tmp_buffer2, long long tmp_buffer_size, void* data) {
     if(_MYID == 0) format_seq_count = 0;

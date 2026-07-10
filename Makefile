@@ -1,68 +1,121 @@
 # Toolchain
-CC       = mpicc
-CXX      = mpicxx
-AR       = ar
+CC  = mpicc
+CXX = mpicxx
+AR  = ar
 
-# Build options
+# SWBWA configuration
+#
+# EXEC_MODE:    single | cgs | cgs_cross
+# FORMAT_MODE:  host | cpe
+# CPE_ALLOCATOR: system | pool
+EXEC_MODE           ?= cgs_cross
+FORMAT_MODE         ?= host
+CPE_ALLOCATOR       ?= system
+HOST_MALLOC_WRAPPER ?= 1
+LWPF                 ?= 0
+
+VALID_EXEC_MODES     := single cgs cgs_cross
+VALID_FORMAT_MODES   := host cpe
+VALID_CPE_ALLOCATORS := system pool
+VALID_BOOLEAN_VALUES := 0 1
+
+ifeq ($(filter $(EXEC_MODE),$(VALID_EXEC_MODES)),)
+$(error EXEC_MODE must be one of: $(VALID_EXEC_MODES))
+endif
+ifeq ($(filter $(FORMAT_MODE),$(VALID_FORMAT_MODES)),)
+$(error FORMAT_MODE must be one of: $(VALID_FORMAT_MODES))
+endif
+ifeq ($(filter $(CPE_ALLOCATOR),$(VALID_CPE_ALLOCATORS)),)
+$(error CPE_ALLOCATOR must be one of: $(VALID_CPE_ALLOCATORS))
+endif
+ifeq ($(filter $(HOST_MALLOC_WRAPPER),$(VALID_BOOLEAN_VALUES)),)
+$(error HOST_MALLOC_WRAPPER must be 0 or 1)
+endif
+ifeq ($(filter $(LWPF),$(VALID_BOOLEAN_VALUES)),)
+$(error LWPF must be 0 or 1)
+endif
+
+EXEC_MODE_VALUE_single    := SWBWA_EXEC_SINGLE_CG
+EXEC_MODE_VALUE_cgs       := SWBWA_EXEC_CGS
+EXEC_MODE_VALUE_cgs_cross := SWBWA_EXEC_CGS_CROSS
+FORMAT_MODE_VALUE_host    := SWBWA_FORMAT_HOST
+FORMAT_MODE_VALUE_cpe     := SWBWA_FORMAT_CPE
+CPE_ALLOC_VALUE_system    := SWBWA_CPE_ALLOC_SYSTEM
+CPE_ALLOC_VALUE_pool      := SWBWA_CPE_ALLOC_POOL
+CPE_MALLOC_WRAPPER_system := 0
+CPE_MALLOC_WRAPPER_pool   := 1
+
+SWBWA_CPPFLAGS := \
+	-DSWBWA_EXEC_MODE=$(EXEC_MODE_VALUE_$(EXEC_MODE)) \
+	-DSWBWA_FORMAT_MODE=$(FORMAT_MODE_VALUE_$(FORMAT_MODE)) \
+	-DSWBWA_CPE_ALLOC_MODE=$(CPE_ALLOC_VALUE_$(CPE_ALLOCATOR)) \
+	-DSWBWA_ENABLE_HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER) \
+	-DSWBWA_ENABLE_CPE_MALLOC_WRAPPER=$(CPE_MALLOC_WRAPPER_$(CPE_ALLOCATOR)) \
+	-DSWBWA_ENABLE_LWPF=$(LWPF)
+
+# Compiler and linker options
 LWPF3_DIR ?= /home/export/online1/mdt00/shisuan/sweq/ylf/someGit/lwpf3
 
 OPTFLAGS  ?= -O2
-WARNFLAGS ?= -w -Wall -Wno-unused-function
+WARNFLAGS ?= -Wall -Wno-unused-function
 DBGFLAGS  ?= -g
 
-# malloc wrapper switches.
-HOST_WRAP_MALLOC  ?= -DHOST_USE_MALLOC_WRAPPERS
-# SLAVE_WRAP_MALLOC ?= -DSLAVE_USE_MALLOC_WRAPPERS
-
-CPPFLAGS +=
+CPPFLAGS += -include swbwa_config.h $(SWBWA_CPPFLAGS)
 INCLUDES += -I$(LWPF3_DIR)
 DFLAGS   += -DHAVE_PTHREAD
 CFLAGS   += $(WARNFLAGS) $(DBGFLAGS) $(OPTFLAGS) -D_GNU_SOURCE
 CXXFLAGS += -std=c++11
 LDFLAGS  +=
 
-HOST_ARCH_FLAGS  = -mhost -fPIC -mieee -mftz -faddress_align=32
-SLAVE_ARCH_FLAGS = -mslave -msimd -fPIC -mieee -mftz -faddress_align=64
-HYBRID_FLAGS     = -mhybrid
+HOST_ARCH_FLAGS  := -mhost -fPIC -mieee -mftz -faddress_align=32
+SLAVE_ARCH_FLAGS := -mslave -msimd -fPIC -mieee -mftz -faddress_align=64
+HYBRID_FLAGS     := -mhybrid
 
-LIBS = -Wl,-q -lm -lz -lpthread -lm_slave
+LIBS := -Wl,-q -lm -lz -lpthread -lm_slave
 ifeq ($(shell uname -s),Linux)
 LIBS += -lrt
 endif
 
 # Targets and objects
-PROG = SWBWA
+PROG := SWBWA
 
-LIB_OBJS = \
+LIB_OBJS := \
 	utils.o kthread.o kstring.o ksw.o bwt.o bntseq.o bwa.o bwamem.o \
 	bwamem_pair.o bwamem_extra.o malloc_wrap.o QSufSort.o bwt_gen.o \
 	rope.o rle.o is.o bwtindex.o
 
-APP_OBJS = \
+APP_OBJS := \
 	bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o \
 	kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o \
 	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o
 
-SLAVE_DIR     = slave
-SLAVE_SOURCES = $(wildcard $(SLAVE_DIR)/*.c)
-SLAVE_OBJECTS = $(SLAVE_SOURCES:.c=.o)
+SLAVE_DIR     := slave
+SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
+SLAVE_OBJECTS := $(SLAVE_SOURCES:.c=.o)
 
-.PHONY: all clean depend
+.PHONY: all clean depend print-config
 .SUFFIXES:
 
 all: $(PROG)
 
+print-config:
+	@echo "EXEC_MODE=$(EXEC_MODE)"
+	@echo "FORMAT_MODE=$(FORMAT_MODE)"
+	@echo "CPE_ALLOCATOR=$(CPE_ALLOCATOR)"
+	@echo "HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER)"
+	@echo "LWPF=$(LWPF)"
+
 # Compile rules
-$(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c
-	$(CC) $(SLAVE_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(SLAVE_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) $< -o $@
+$(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c swbwa_config.h
+	$(CC) $(SLAVE_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-%.o: %.c
-	$(CC) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(HOST_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) $< -o $@
+%.o: %.c swbwa_config.h
+	$(CC) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-%.o: %.cpp
-	$(CXX) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(HOST_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) $< -o $@
+%.o: %.cpp swbwa_config.h
+	$(CXX) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-# Link/archive rules
+# Link and archive rules
 $(PROG): libbwa.a $(APP_OBJS) main.o $(SLAVE_OBJECTS)
 	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS)
 
@@ -77,7 +130,7 @@ clean:
 	rm -f gmon.out *.o a.out $(PROG) *~ *.a $(SLAVE_DIR)/*.o
 
 depend:
-	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(DFLAGS) $(HOST_WRAP_MALLOC) $(INCLUDES) $(CPPFLAGS) -- *.c )
+	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) -- *.c )
 
 # DO NOT DELETE THIS LINE -- make depend depends on it.
 
@@ -87,7 +140,8 @@ bntseq.o: bntseq.h utils.h kseq.h malloc_wrap.h khash.h
 bwa.o: bntseq.h bwa.h bwt.h ksw.h utils.h kstring.h malloc_wrap.h kvec.h
 bwa.o: kseq.h
 bwamem.o: kstring.h malloc_wrap.h bwamem.h bwt.h bntseq.h bwa.h ksw.h kvec.h
-bwamem.o: ksort.h utils.h kbtree.h swbwa_config.h
+bwamem.o: ksort.h utils.h kbtree.h swbwa_config.h swbwa_cpe.h swbwa_cpe_layout.h
+bwamem.o: swbwa_runtime.h
 bwamem_extra.o: bwa.h bntseq.h bwt.h bwamem.h kstring.h malloc_wrap.h
 bwamem_pair.o: kstring.h malloc_wrap.h bwamem.h bwt.h bntseq.h bwa.h kvec.h
 bwamem_pair.o: utils.h ksw.h
@@ -112,7 +166,8 @@ bwtsw2_main.o: bwt.h bwtsw2.h bntseq.h bwt_lite.h utils.h bwa.h
 bwtsw2_pair.o: utils.h bwt.h bntseq.h bwtsw2.h bwt_lite.h kstring.h
 bwtsw2_pair.o: malloc_wrap.h ksw.h
 example.o: bwamem.h bwt.h bntseq.h bwa.h kseq.h malloc_wrap.h
-fastmap.o: bwa.h bntseq.h bwt.h bwamem.h kvec.h malloc_wrap.h utils.h kseq.h swbwa_config.h
+fastmap.o: bwa.h bntseq.h bwt.h bwamem.h kvec.h malloc_wrap.h utils.h kseq.h
+fastmap.o: swbwa_config.h swbwa_cpe.h swbwa_runtime.h
 is.o: malloc_wrap.h
 kopen.o: malloc_wrap.h
 kstring.o: kstring.h malloc_wrap.h

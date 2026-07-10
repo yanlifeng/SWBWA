@@ -6,9 +6,7 @@
 #include <string.h>
 #include "simd.h"
 
-//#define use_float16_vec
-
-# ifdef use_float16_vec
+# if SWBWA_ENABLE_FLOAT16_VECTOR
 
 typedef union m128i {
     float16v32 val;
@@ -124,17 +122,15 @@ typedef union m128i {
     intv16 val;
 } __m128i;
 
-//#define use_2_int8
-
 uintv16 v_min = 0;
 uintv16 v_max = 0xFFFFFFFF;
 
 intv16 v_low8 = 255;
 intv16 v_mid8 = 255 << 16;
 
-#  define my_int int16_t
+#  define SWBWA_SIMD_INT_TYPE int16_t
 
-#  ifdef use_2_int8
+#  if SWBWA_ENABLE_PACKED_INT8
 static inline __m128i _mm_set1_epi32(int32_t n) {
 	assert(n >= 0 && n <= 255);
 	__m128i r;
@@ -208,10 +204,10 @@ static inline __m128i _mm_max_epu8(__m128i a, __m128i b) {
     //int val2[16];
     //simd_store(b.val, &(val2[0]));
     //for(int i = 0; i < 16; i++) {
-    //    my_int v1 = val1[i] & 0xFF;
-    //    my_int v2 = (val1[i] >> 16) & 0xFF;
-    //    my_int v3 = val2[i] & 0xFF;
-    //    my_int v4 = (val2[i] >> 16) & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v1 = val1[i] & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v2 = (val1[i] >> 16) & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v3 = val2[i] & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v4 = (val2[i] >> 16) & 0xFF;
     //    val1[i] = (v1 > v3 ? v1 : v3) + ((v2 > v4 ? v2 : v4) << 16);
     //}
     //__m128i r;
@@ -249,10 +245,10 @@ static inline __m128i _mm_min_epu8(__m128i a, __m128i b) {
     //int val2[16];
     //simd_store(b.val, &(val2[0]));
     //for(int i = 0; i < 16; i++) {
-    //    my_int v1 = val1[i] & 0xFF;
-    //    my_int v2 = (val1[i] >> 16) & 0xFF;
-    //    my_int v3 = val2[i] & 0xFF;
-    //    my_int v4 = (val2[i] >> 16) & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v1 = val1[i] & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v2 = (val1[i] >> 16) & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v3 = val2[i] & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v4 = (val2[i] >> 16) & 0xFF;
     //    val1[i] = (v1 < v3 ? v1 : v3) + ((v2 < v4 ? v2 : v4) << 16);
     //}
     //__m128i r;
@@ -266,8 +262,8 @@ static inline uint8_t m128i_max_u8(__m128i a) {
     simd_store(a.val, &(val[0]));
 	int max = 0;
 	for (int i = 0; i < 16; i++) {
-        my_int v1 = val[i] & 0xFF;
-        my_int v2 = (val[i] >> 16) & 0xFF;
+        SWBWA_SIMD_INT_TYPE v1 = val[i] & 0xFF;
+        SWBWA_SIMD_INT_TYPE v2 = (val[i] >> 16) & 0xFF;
         if(v1 > max) max = v1;
         if(v2 > max) max = v2;
     }
@@ -312,10 +308,10 @@ static inline __m128i _mm_adds_epu8(__m128i a, __m128i b) {
     //int val2[16];
     //simd_store(b.val, &(val2[0]));
     //for(int i = 0; i < 16; i++) {
-    //    my_int v1 = val1[i] & 0xFF;
-    //    my_int v2 = (val1[i] >> 16) & 0xFF;
-    //    my_int v3 = val2[i] & 0xFF;
-    //    my_int v4 = (val2[i] >> 16) & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v1 = val1[i] & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v2 = (val1[i] >> 16) & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v3 = val2[i] & 0xFF;
+    //    SWBWA_SIMD_INT_TYPE v4 = (val2[i] >> 16) & 0xFF;
     //    v1 += v3;
     //    if(v1 > 255) v1 = 255;
     //    v2 += v4;

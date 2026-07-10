@@ -22,7 +22,7 @@ KSEQ_DECLARE(gzFile)
 #define __left_lt(a, b) ((a).end > (b).end)
 KSORT_INIT(hit, bsw2hit_t, __left_lt)
 
-#ifdef HOST_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 

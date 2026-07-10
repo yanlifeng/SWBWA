@@ -35,7 +35,7 @@
 #endif
 #include "ksw.h"
 
-#ifdef SLAVE_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 
@@ -81,7 +81,7 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 
 	size = size > 1? 2 : 1;
 	p = 8 * (3 - size); // # values per __m128i
-#if defined(use_2_int8) || defined(use_float16_vec)
+#if SWBWA_ENABLE_PACKED_INT8 || SWBWA_ENABLE_FLOAT16_VECTOR
     // TODO p << 2 ?
     p <<= 1;
 #endif
@@ -112,9 +112,9 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 	//  {{0,3,6,9,12,15,18,-1},{1,4,7,10,13,16,-1,-1},{2,5,8,11,14,17,-1,-1}}
 	if (size == 1) {
 		//int8_t *t = (int8_t*)q->qp;
-#ifdef use_2_int8
+#if SWBWA_ENABLE_PACKED_INT8
 		int16_t *t = (int16_t*)q->qp;
-#elif defined(use_float16_vec)
+#elif SWBWA_ENABLE_FLOAT16_VECTOR
 		_Float16 *t = (_Float16*)q->qp;
 #else
 		int *t = (int*)q->qp;
@@ -175,7 +175,7 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 #define allzero_16(xx) (m128i_allzero((xx)))
 #endif
 
-#if defined(use_2_int8) || defined(use_float16_vec)
+#if SWBWA_ENABLE_PACKED_INT8 || SWBWA_ENABLE_FLOAT16_VECTOR
     const int p_new = 32;
 #else
     const int p_new = 16;
@@ -268,9 +268,9 @@ end_loop16:
 	if (r.score != 255) { // get a->qe, the end of query match; find the 2nd best score
 		int max = -1, tmp, low, high, qlen = slen * p_new;
 		//uint8_t *t = (uint8_t*)Hmax;
-#ifdef use_2_int8
+#if SWBWA_ENABLE_PACKED_INT8
 		uint16_t *t = (uint16_t*)Hmax;
-#elif defined(use_float16_vec)
+#elif SWBWA_ENABLE_FLOAT16_VECTOR
         _Float16 *t = (_Float16*)Hmax;
 #else
 		int *t = (int*)Hmax;
@@ -419,7 +419,7 @@ static inline void revseq(int l, uint8_t *s)
 
 kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int xtra, kswq_t **qry)
 {
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_ksw_1);
 #endif
 	int size;
@@ -427,11 +427,11 @@ kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, co
 	kswr_t r, rr;
 	kswr_t (*func)(kswq_t*, int, const uint8_t*, int, int, int, int, int);
 	q = (qry && *qry)? *qry : ksw_qinit((xtra&KSW_XBYTE)? 1 : 2, qlen, query, m, mat);
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_ksw_1);
 #endif
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_ksw_2);
 #endif
 	if (qry && *qry == 0) *qry = q;
@@ -440,13 +440,13 @@ kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, co
 	r = func(q, tlen, target, o_del, e_del, o_ins, e_ins, xtra);
 	if (qry == 0) free(q);
 	//if (qry == 0) ldm_free(q, 32 << 10);
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_ksw_2);
 #endif
 
 	if ((xtra&KSW_XSTART) == 0 || ((xtra&KSW_XSUBO) && r.score < (xtra&0xffff))) return r;
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_ksw_3);
 #endif
     lwpf_start(l_ksw_3_1);
@@ -456,11 +456,11 @@ kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, co
     lwpf_start(l_ksw_3_2);
 	q = ksw_qinit(size, r.qe + 1, query, m, mat);
     lwpf_stop(l_ksw_3_2);
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_ksw_3);
 #endif
 
-	#ifdef use_lwpf3
+	#if SWBWA_ENABLE_LWPF
     lwpf_start(l_ksw_4);
 #endif
 	rr = func(q, tlen, target, o_del, e_del, o_ins, e_ins, KSW_XSTOP | r.score);
@@ -469,7 +469,7 @@ kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, co
 	//ldm_free(q, 32 << 10);
 	if (r.score == rr.score)
 		r.tb = r.te - rr.te, r.qb = r.qe - rr.qe;
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_ksw_4);
 #endif
 
@@ -615,7 +615,7 @@ static inline uint32_t *push_cigar(int *n_cigar, int *m_cigar, uint32_t *cigar, 
 
 int ksw_global2(int qlen, const uint8_t *query, int tlen, const uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w, int *n_cigar_, uint32_t **cigar_)
 {
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_ksw_global2);
 #endif
 	
@@ -718,7 +718,7 @@ int ksw_global2(int qlen, const uint8_t *query, int tlen, const uint8_t *target,
 		*n_cigar_ = n_cigar, *cigar_ = cigar;
 	}
 	free(eh); free(qp); free(z);
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_ksw_global2);
 #endif
 	return score;

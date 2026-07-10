@@ -37,12 +37,9 @@
 
 #include "lwpf3_my_cpe.h"
 
-#ifdef SLAVE_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
-
-#define use_my_prefetch
-#define my_prefetch_dis 8
 
 extern double t_extend;
 extern double t_bwt_sa;
@@ -404,7 +401,7 @@ static void bwt_reverse_intvs(bwtintv_v *p)
 
 
 
-#ifdef use_2_pass_batch
+#if SWBWA_ENABLE_TWO_PASS_BATCH
 __thread_local_fix bwtintv_t p1[8][128];
 __thread_local_fix bwtintv_t p2[8][128];
 
@@ -455,7 +452,7 @@ void bwt_smem1a_batch(int bs, const bwt_t *bwt, int len, const uint8_t *q, int *
                     }
                 }
                 ik = ok[c]; ik.info = i + 1;
-#ifdef use_my_prefetch
+#if SWBWA_ENABLE_CPE_PREFETCH
                 bwtint_t k1 = ok[c].x[0] - 1;
                 if(k1 != -1) __builtin_prefetch(bwt_occ_intv(bwt, k1 - (k1 >= bwt->primary)), 0, 3);
                 bwtint_t l1 = ok[c].x[0] - 1 + ok[c].x[2];
@@ -513,7 +510,7 @@ void bwt_smem1a_batch(int bs, const bwt_t *bwt, int len, const uint8_t *q, int *
                 } else if (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2]) {
                     ok[c].info = p->info;
                     kv_push(bwtintv_t, *curr, ok[c]);
-#ifdef use_my_prefetch
+#if SWBWA_ENABLE_CPE_PREFETCH
                     bwtint_t k1 = ok[c].x[0] - 1;
                     if(k1 != -1) __builtin_prefetch(bwt_occ_intv(bwt, k1 - (k1 >= bwt->primary)), 0, 3);
                     bwtint_t l1 = ok[c].x[0] - 1 + ok[c].x[2];
@@ -568,7 +565,7 @@ int bwt_smem1a(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv,
                 }
 			}
 			ik = ok[c]; ik.info = i + 1;
-#ifdef use_my_prefetch
+#if SWBWA_ENABLE_CPE_PREFETCH
             bwtint_t k1 = ok[c].x[0] - 1;
             if(k1 != -1) __builtin_prefetch(bwt_occ_intv(bwt, k1 - (k1 >= bwt->primary)), 0, 3);
             bwtint_t l1 = ok[c].x[0] - 1 + ok[c].x[2];
@@ -595,9 +592,8 @@ int bwt_smem1a(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv,
 		c = i < 0? -1 : q[i] < 4? q[i] : -1; // c==-1 if i<0 or q[i] is an ambiguous base
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
 			bwtintv_t *p = &prev->a[j];
-//#ifdef use_my_prefetch
-//            if(c >= 0 && j + my_prefetch_dis < prev->n) {
-//                bwtintv_t *pp = &prev->a[j + my_prefetch_dis];
+//            if(c >= 0 && j + SWBWA_CPE_PREFETCH_DISTANCE < prev->n) {
+//                bwtintv_t *pp = &prev->a[j + SWBWA_CPE_PREFETCH_DISTANCE];
 //                bwtint_t k1 = pp->x[0] - 1;
 //                if(k1 != -1) __builtin_prefetch(bwt_occ_intv(bwt, k1 - (k1 >= bwt->primary)), 0, 3);
 //                bwtint_t l1 = pp->x[0] - 1 + pp->x[2];
@@ -616,7 +612,7 @@ int bwt_smem1a(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv,
 			} else if (curr->n == 0 || ok[c].x[2] != curr->a[curr->n-1].x[2]) {
 				ok[c].info = p->info;
 				kv_push(bwtintv_t, *curr, ok[c]);
-#ifdef use_my_prefetch
+#if SWBWA_ENABLE_CPE_PREFETCH
                 bwtint_t k1 = ok[c].x[0] - 1;
                 if(k1 != -1) __builtin_prefetch(bwt_occ_intv(bwt, k1 - (k1 >= bwt->primary)), 0, 3);
                 bwtint_t l1 = ok[c].x[0] - 1 + ok[c].x[2];
@@ -635,7 +631,7 @@ int bwt_smem1a(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv,
 	return ret;
 }
 
-#ifdef use_2_pass_batch
+#if SWBWA_ENABLE_TWO_PASS_BATCH
 void bwt_smem1_batch(int bs, const bwt_t *bwt, int len, const uint8_t *q, int *x, int *min_intv, bwtintv_v *mem)
 {
 	bwt_smem1a_batch(bs, bwt, len, q, x, min_intv, 0, mem);
@@ -669,7 +665,6 @@ int bwt_seed_strategy1(const bwt_t *bwt, int len, const uint8_t *q, int x, int m
                 return min_len + x + 1 < len ? min_len + x + 1 : len;
             }
 			
-//#ifdef use_my_prefetch
 //            bwtint_t k1 = ok[c].x[0] - 1;
 //            if(k1 != -1) __builtin_prefetch(bwt_occ_intv(bwt, k1 - (k1 >= bwt->primary)), 0, 3);
 //            bwtint_t l1 = ok[c].x[0] - 1 + ok[c].x[2];

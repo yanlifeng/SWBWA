@@ -8,12 +8,10 @@
 #include <cstdint>
 #include <climits>
 #include <pthread.h>
-#include <sched.h>
 #include <cstring>
 
 #include <atomic>
 #include <cassert>
-#include <mpi.h>
 
 
 /************
@@ -145,7 +143,7 @@ extern "C" void kt_pipeline_single(int n_threads, void* (*func)(void*, int, void
 
 using DataType = void*;
 
-const int queue_item_limit = 4;
+const int queue_item_limit = SWBWA_PIPELINE_QUEUE_CAPACITY;
 
 
 
@@ -159,24 +157,6 @@ struct MyQueue {
     std::atomic_int q_p2;
     std::atomic_int q_num;
 };
-
-int get_target_cpu() {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    return rank;
-}
-
-void set_thread_affinity(int cpu_id) {
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(cpu_id, &cpuset);
-
-    pthread_t thread = pthread_self();
-    int result = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
-    if (result != 0) {
-        std::cerr << "Error setting CPU affinity: " << strerror(result) << std::endl;
-    }
-}
 
 std::mutex mtx;
 
@@ -202,7 +182,6 @@ void reader_thread(ktp_t* p, MyQueue& queue, std::atomic<bool>& done_reading) {
 
 
 void processor_thread(ktp_t* p, MyQueue& read_queue, MyQueue& write_queue, std::atomic<bool>& done_reading, std::atomic<bool>& done_processing) {
-    //set_thread_affinity(get_target_cpu());
     DataType item = nullptr;
     bool overWhile = 0;
     while (true) {

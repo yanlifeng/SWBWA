@@ -2,81 +2,131 @@
 #define SWBWA_CONFIG_H
 
 /*
- * Build-time configuration shared by the MPE and CPE code.
+ * Central build-time configuration shared by MPE and CPE code.
  *
- * Override these from the compiler command line when needed, for example:
- *   -DSWBWA_USE_CGS_MODE=0 -DSWBWA_ENABLE_LWPF3=1
+ * Prefer the Makefile interface instead of defining these values directly:
  *
- * The lower-case compatibility macros are kept so the existing code can be
- * migrated gradually instead of carrying scattered local #defines forever.
+ *   make EXEC_MODE=single FORMAT_MODE=host CPE_ALLOCATOR=system
+ *   make EXEC_MODE=cgs FORMAT_MODE=host CPE_ALLOCATOR=system
+ *   make EXEC_MODE=cgs_cross FORMAT_MODE=cpe CPE_ALLOCATOR=pool
  */
 
-#ifndef SWBWA_USE_CGS_MODE
-#define SWBWA_USE_CGS_MODE 1
+#define SWBWA_EXEC_SINGLE_CG  1
+#define SWBWA_EXEC_CGS        2
+#define SWBWA_EXEC_CGS_CROSS  3
+
+#ifndef SWBWA_EXEC_MODE
+#define SWBWA_EXEC_MODE SWBWA_EXEC_CGS_CROSS
 #endif
 
-#if SWBWA_USE_CGS_MODE
-#define SWBWA_CPE_NUM 384
-#define SWBWA_CG_NUM 6
-#ifndef use_cgs_mode
-#define use_cgs_mode 1
+#if SWBWA_EXEC_MODE != SWBWA_EXEC_SINGLE_CG && \
+    SWBWA_EXEC_MODE != SWBWA_EXEC_CGS && \
+    SWBWA_EXEC_MODE != SWBWA_EXEC_CGS_CROSS
+#error "invalid SWBWA_EXEC_MODE"
 #endif
+
+#if SWBWA_EXEC_MODE == SWBWA_EXEC_SINGLE_CG
+#define SWBWA_USE_CGS 0
+#define SWBWA_CPE_COUNT 64
+#define SWBWA_CG_COUNT 1
 #else
-#define SWBWA_CPE_NUM 64
-#define SWBWA_CG_NUM 1
+#define SWBWA_USE_CGS 1
+#define SWBWA_CPE_COUNT 384
+#define SWBWA_CG_COUNT 6
 #endif
 
-#ifndef SWBWA_ENABLE_CPE_STEP0
-#define SWBWA_ENABLE_CPE_STEP0 0
+#if SWBWA_EXEC_MODE == SWBWA_EXEC_CGS_CROSS
+#define SWBWA_USE_CROSS_SEGMENT 1
+#else
+#define SWBWA_USE_CROSS_SEGMENT 0
 #endif
-#if SWBWA_ENABLE_CPE_STEP0
-#ifndef use_cpe_step0
-#define use_cpe_step0 1
+
+#define SWBWA_FORMAT_HOST 1
+#define SWBWA_FORMAT_CPE  2
+
+#ifndef SWBWA_FORMAT_MODE
+#define SWBWA_FORMAT_MODE SWBWA_FORMAT_HOST
+#endif
+
+#if SWBWA_FORMAT_MODE != SWBWA_FORMAT_HOST && \
+    SWBWA_FORMAT_MODE != SWBWA_FORMAT_CPE
+#error "invalid SWBWA_FORMAT_MODE"
+#endif
+
+#if SWBWA_FORMAT_MODE == SWBWA_FORMAT_CPE
+#define SWBWA_ENABLE_CPE_FORMAT 1
+#else
+#define SWBWA_ENABLE_CPE_FORMAT 0
+#endif
+
+#define SWBWA_CPE_ALLOC_SYSTEM 1
+#define SWBWA_CPE_ALLOC_POOL   2
+
+#ifndef SWBWA_CPE_ALLOC_MODE
+#define SWBWA_CPE_ALLOC_MODE SWBWA_CPE_ALLOC_SYSTEM
+#endif
+
+#if SWBWA_CPE_ALLOC_MODE != SWBWA_CPE_ALLOC_SYSTEM && \
+    SWBWA_CPE_ALLOC_MODE != SWBWA_CPE_ALLOC_POOL
+#error "invalid SWBWA_CPE_ALLOC_MODE"
+#endif
+
+#ifndef SWBWA_ENABLE_HOST_MALLOC_WRAPPER
+#define SWBWA_ENABLE_HOST_MALLOC_WRAPPER 1
+#endif
+
+#ifndef SWBWA_ENABLE_CPE_MALLOC_WRAPPER
+#if SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+#define SWBWA_ENABLE_CPE_MALLOC_WRAPPER 1
+#else
+#define SWBWA_ENABLE_CPE_MALLOC_WRAPPER 0
 #endif
 #endif
 
-#ifndef SWBWA_ENABLE_MY_MPI
-#define SWBWA_ENABLE_MY_MPI 0
-#endif
-#if SWBWA_ENABLE_MY_MPI
-#ifndef use_my_mpi
-#define use_my_mpi 1
-#endif
+#ifndef SWBWA_ENABLE_LWPF
+#define SWBWA_ENABLE_LWPF 0
 #endif
 
-#ifndef SWBWA_ENABLE_LWPF3
-#define SWBWA_ENABLE_LWPF3 0
-#endif
-#if SWBWA_ENABLE_LWPF3
-#ifndef use_lwpf3
-#define use_lwpf3 1
-#endif
+/* Internal CPE tuning. These are intentionally not Makefile-level modes. */
+#define SWBWA_ENABLE_DYNAMIC_SCHEDULING 1
+#define SWBWA_ENABLE_CPE_PREFETCH       1
+#define SWBWA_ENABLE_TWO_PASS_BATCH     0
+#define SWBWA_ENABLE_WORKER2_LDM        0
+#define SWBWA_ENABLE_FLOAT16_VECTOR     0
+#define SWBWA_ENABLE_PACKED_INT8        0
+#define SWBWA_ENABLE_SWLU               0
+
+#define SWBWA_READS_PER_DYNAMIC_TASK    1
+#define SWBWA_MAX_TASKS_PER_CPE          (50 << 10)
+#define SWBWA_CPE_PREFETCH_DISTANCE      8
+#define SWBWA_TWO_PASS_BATCH_SIZE        8
+#define SWBWA_PIPELINE_QUEUE_CAPACITY    4
+#define SWBWA_PIPELINE_BUFFER_COUNT      (SWBWA_PIPELINE_QUEUE_CAPACITY + 1)
+
+#ifndef SWBWA_READS_PER_CPE_BLOCK
+#define SWBWA_READS_PER_CPE_BLOCK 1024
 #endif
 
-#ifndef SWBWA_PRE_CPE_READ_NUM
-#define SWBWA_PRE_CPE_READ_NUM 1024
+#ifndef SWBWA_ESTIMATED_FASTQ_RECORD_BYTES
+#define SWBWA_ESTIMATED_FASTQ_RECORD_BYTES 300
 #endif
 
-#ifndef SWBWA_EVAL_READ_SIZE
-#define SWBWA_EVAL_READ_SIZE 300
+#ifndef SWBWA_CPE_POOL_BYTES_PER_CPE
+#define SWBWA_CPE_POOL_BYTES_PER_CPE (24LL << 20)
 #endif
 
-#ifndef SWBWA_CPE_MALLOC_PER_CPE
-#define SWBWA_CPE_MALLOC_PER_CPE (24LL << 20)
+#ifndef SWBWA_CPE_FORMAT_BUFFER_BYTES
+#define SWBWA_CPE_FORMAT_BUFFER_BYTES (512LL << 20)
 #endif
 
-#define SWBWA_CPE_MALLOC_TOTAL_SIZE (1LL * SWBWA_CPE_NUM * SWBWA_CPE_MALLOC_PER_CPE)
-
-#ifndef cpe_num
-#define cpe_num SWBWA_CPE_NUM
+#ifndef SWBWA_SAM_OUTPUT_BLOCK_BYTES
+#define SWBWA_SAM_OUTPUT_BLOCK_BYTES (64LL << 10)
 #endif
 
-#ifndef cg_num
-#define cg_num SWBWA_CG_NUM
-#endif
+#define SWBWA_SAM_RECORD_SLACK_BYTES 10
+#define SWBWA_MAX_READS_PER_BATCH    2000000
 
-#ifndef cpe_num_slave
-#define cpe_num_slave SWBWA_CPE_NUM
-#endif
+#define SWBWA_CPE_POOL_TOTAL_BYTES \
+    (1LL * SWBWA_CPE_COUNT * SWBWA_CPE_POOL_BYTES_PER_CPE)
 
-#endif
+#endif /* SWBWA_CONFIG_H */

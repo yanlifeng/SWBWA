@@ -115,8 +115,7 @@ double GetTime() {
     gettimeofday(&tv, NULL);
     return (double) tv.tv_sec + (double) tv.tv_usec / 1000000;
 }
-//#define use_swlu
-#ifdef use_swlu
+#if SWBWA_ENABLE_SWLU
 #include "swlu.h"
 #endif
 

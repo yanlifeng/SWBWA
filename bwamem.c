@@ -45,8 +45,11 @@
 #include "ksort.h"
 #include "utils.h"
 #include "swbwa_config.h"
+#include "swbwa_cpe.h"
+#include "swbwa_cpe_layout.h"
+#include "swbwa_runtime.h"
 
-#ifdef HOST_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 
@@ -1299,48 +1302,12 @@ extern void SLAVE_FUN(pass_para());
 extern void SLAVE_FUN(copy_priv_segment());
 extern void SLAVE_FUN(change_priv_segment());
 
-typedef struct{
-    long nn;
-    void* data;
-    int* real_sizes;
-    mem_alnreg_v* cpe_regs;
-    char** cpe_sams;
-    int *sam_lens;
-    const mem_pestat_t *pes0;
-	int *s_ids;
+unsigned long swbwa_cpe_text_start = SWBWA_CPE_TEXT_START_ADDRESS;
+unsigned long swbwa_cpe_text_size = SWBWA_CPE_TEXT_SEGMENT_BYTES;
+unsigned long swbwa_cpe_data_start = SWBWA_CPE_DATA_START_ADDRESS;
+unsigned long swbwa_cpe_data_size = SWBWA_CPE_DATA_SEGMENT_BYTES;
 
-    // for cross_copy
-    int *tag;
-    void *new_gp;
-    unsigned long offset_seg;
-    void *priv_addr;
-    int tls_size;
-    unsigned long *tls_content;
-    char* big_buffer;
-    long long cpe_buffer_size;
-
-    // for cpe format
-    char* block_buffer;
-    char* block_buffer2;
-    char* tmp_block_buffer;
-    char* tmp_block_buffer2;
-    long long block_size;
-    long long block_size2;
-    long long tmp_block_size;
-    long nns[SWBWA_CPE_NUM];
-} Para_worker12_s;
-
-#define csr_copy_size (2 << 20)
-
-
-/***********************************************************/
-unsigned long segment1 = 0x00004ffff0410000;
-unsigned long segment1_len = 0x00000000002b1a38;
-unsigned long segment2 = 0x0000500000004040;
-unsigned long segment2_len = 0x000000000bc43fc8;
-/***********************************************************/
-
-__uncached int cpe_is_over[cpe_num];
+__uncached int swbwa_cpe_completion_flags[SWBWA_CPE_COUNT];
 
 static void *checked_malloc_array(size_t count, size_t size, const char *name)
 {
@@ -1366,7 +1333,7 @@ static void checked_free_array(void *p)
 typedef struct {
     short *got_content;
     unsigned long got_count;
-    unsigned long *tls_content;
+    unsigned long *tls_relocations;
     unsigned long tls_count;
 } cpe_relocation_t;
 
@@ -1384,14 +1351,14 @@ static void load_cpe_relocation(cpe_relocation_t *reloc)
 
     fp = xopen("data.bin2", "rb");
     err_fread_noeof(&reloc->tls_count, sizeof(reloc->tls_count), 1, fp);
-    reloc->tls_content = checked_malloc_array(reloc->tls_count, sizeof(*reloc->tls_content), "TLS relocation table");
-    err_fread_noeof(reloc->tls_content, sizeof(*reloc->tls_content), reloc->tls_count, fp);
+    reloc->tls_relocations = checked_malloc_array(reloc->tls_count, sizeof(*reloc->tls_relocations), "TLS relocation table");
+    err_fread_noeof(reloc->tls_relocations, sizeof(*reloc->tls_relocations), reloc->tls_count, fp);
     err_fclose(fp);
 }
 
 static void cpe_relocation_destroy(cpe_relocation_t *reloc)
 {
-    /* tls_content is handed to Para_worker12_s and must remain live for the CPE runtime. */
+    /* TLS relocations remain live for the lifetime of the CPE runtime. */
     checked_free_array(reloc->got_content);
     reloc->got_content = NULL;
     reloc->got_count = 0;
@@ -1403,8 +1370,8 @@ static void worker_init(worker_t *w, const mem_opt_t *opt, const bwt_t *bwt, con
 {
     memset(w, 0, sizeof(*w));
     w->regs = checked_malloc_array(n, sizeof(*w->regs), "alignment region vectors");
-    w->aux = checked_malloc_array(cpe_num, sizeof(*w->aux), "SMEM auxiliary buffers");
-    memset(w->aux, 0, cpe_num * sizeof(*w->aux));
+    w->aux = checked_malloc_array(SWBWA_CPE_COUNT, sizeof(*w->aux), "SMEM auxiliary buffers");
+    memset(w->aux, 0, SWBWA_CPE_COUNT * sizeof(*w->aux));
     w->opt = opt;
     w->bwt = bwt;
     w->bns = bns;
@@ -1422,50 +1389,43 @@ static void worker_destroy(worker_t *w)
     w->aux = NULL;
 }
 
-static void *malloc_csr(void) {
+static void *swbwa_allocate_private_segment_copies(void)
+{
     asm volatile("memb\n\t":::);
-    unsigned long len = csr_copy_size * cpe_num;
+    unsigned long len = SWBWA_CPE_CSR_COPY_BYTES * SWBWA_CPE_COUNT;
     unsigned long len_ = len + (1ul << 20);
     void *dest_ = malloc(len_);
     if (dest_ == NULL)
         err_fatal(__func__, "failed to allocate CPE CSR copy buffer: bytes=%lu", len_);
     void *dest = (void*)(((unsigned long)dest_ + 4095) & (~4095ul));
-    //printf("csr dest %p\n", dest);
-    //if(mprotect(dest, (len + 4095) & (~4095ul), PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {
-    //    printf("mprotect fail\n");
-    //    exit(0);
-    //}
-    //printf("csr mprotect done\n");
     return dest;
 }
 
-static void *malloc_segments(void) {
+static void *swbwa_allocate_cross_segments(void)
+{
     asm volatile("memb\n\t":::);
-    unsigned long len = segment2 + segment2_len - segment1;
+    unsigned long len = swbwa_cpe_data_start + swbwa_cpe_data_size - swbwa_cpe_text_start;
     unsigned long len_ = len + (1ul << 20);
     void *dest_ = malloc(len_);
     if (dest_ == NULL)
         err_fatal(__func__, "failed to allocate CPE text segment buffer: bytes=%lu", len_);
     void *dest = (void*)(((unsigned long)dest_ + 4095) & (~4095ul));
-    //printf("segments dest %p\n", dest);
-    //if(mprotect(dest, (len + 4095) & (~4095ul), PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {
-    //    printf("mprotect fail\n");
-    //    exit(0);
-    //}
-    //printf("segments mprotect done\n");
     return dest;
 }
 
-static void copy_segments(void *dest) {
+static void swbwa_copy_segments(void *dest)
+{
     asm volatile("memb\n\t":::);
-    unsigned long dist = segment2 - segment1;
+    unsigned long dist = swbwa_cpe_data_start - swbwa_cpe_text_start;
     char *dest_bytes = (char*)dest;
-    memcpy(dest_bytes, (void*)segment1, segment1_len);
-    memcpy(dest_bytes + dist, (void*)segment2, segment2_len);
+    memcpy(dest_bytes, (void*)swbwa_cpe_text_start, swbwa_cpe_text_size);
+    memcpy(dest_bytes + dist, (void*)swbwa_cpe_data_start, swbwa_cpe_data_size);
 }
 
-static void change_got(unsigned long gp, unsigned long old_segments, unsigned long new_segments, short *got_content, unsigned long change_size) {
-    //printf("#####change got#####\n");
+static void swbwa_relocate_got(unsigned long gp, unsigned long old_segments,
+                               unsigned long new_segments, short *got_content,
+                               unsigned long change_size)
+{
     for(unsigned long i = 0; i < change_size; ++i) {
         short disp = got_content[i];
 
@@ -1473,36 +1433,31 @@ static void change_got(unsigned long gp, unsigned long old_segments, unsigned lo
         unsigned long *addr1 = (unsigned long*)(gp - old_segments + new_segments + disp);
 
         unsigned long content0 = *addr0;
-        //if(*addr0 != *addr1) printf("addr %p %p, content %lx %lx\n", addr0, addr1, *addr0, *addr1);
         assert(content0 == *addr1);
 
-        //if(content0 >= 0x580000000000)
         if(content0 >= 0x500000000000)
             continue;
 
         unsigned long content1 = content0 - old_segments + new_segments;
         *addr1 = content1;
 
-        //printf("%d -> addr0: %p, addr1: %p. content0: %p, content1:%p. disp: %d\n", i, addr0, addr1, (void*)content0, (void*)content1, disp);
     }
     asm volatile("memb\n\t":::);
-    //printf("#####change got#####\n");
 }
 
-
-static void add_exec(void) {
-    for(long spaid = 0; spaid < cg_num; ++spaid) {
+static void swbwa_enable_cross_execution(void)
+{
+    for(long spaid = 0; spaid < SWBWA_CG_COUNT; ++spaid) {
         for(long speid = 0; speid < 64; ++speid) {
             long d_IOADDR_SLB_SPC_BASE = 0x800040004000 + (spaid << 40) + ((speid & 6) << 24) + ((speid & 0x30) << 7);
 
             long d_IOADDR = d_IOADDR_SLB_SPC_BASE + 0x600;
-            long d_IO_ADDR_lo = d_IOADDR;;
+            long d_IO_ADDR_lo = d_IOADDR;
             long d_IO_ADDR_hi = d_IOADDR + 0x80;
 
             long *plo = (long*)d_IO_ADDR_lo;
             long *phi = (long*)d_IO_ADDR_hi;
 
-            long lo = *plo;
             long hi = *phi;
 
             hi |= (7ul << 32);
@@ -1515,22 +1470,23 @@ static void add_exec(void) {
 
 
 
-static void my_spawn_join(long fun_addr) {
+static void swbwa_cross_run(long fun_addr)
+{
 
-    if (bwa_verbose >= 4) fprintf(stderr, "start my_spawn_join\n");
-    for(int i = 0; i < cpe_num; i++) cpe_is_over[i] = 0;
+    if (bwa_verbose >= 4) fprintf(stderr, "start swbwa_cross_run\n");
+    for(int i = 0; i < SWBWA_CPE_COUNT; i++) swbwa_cpe_completion_flags[i] = 0;
 
-    for(long cg_id = 0; cg_id < cg_num; cg_id++) {
+    for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
         for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
             *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 3;
         }
     }
-    for(long cg_id = 0; cg_id < cg_num; cg_id++) {
+    for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
         for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
             *((long*)(0x800000008000 + (cg_id << 40ll) + (cpe_id << 24ll))) = fun_addr;
         }
     }
-    for(long cg_id = 0; cg_id < cg_num; cg_id++) {
+    for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
         for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
             *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 0;
         }
@@ -1539,12 +1495,63 @@ static void my_spawn_join(long fun_addr) {
 
     while(1) {
         int sum = 0;
-        for(int i = 0; i < cpe_num; i++)
-            sum += cpe_is_over[i];
-        //printf("mpe sum %d\n", sum);
-        if(sum == cpe_num) break;
+        for(int i = 0; i < SWBWA_CPE_COUNT; i++)
+            sum += swbwa_cpe_completion_flags[i];
+        if(sum == SWBWA_CPE_COUNT) break;
         usleep(100);
     }
+}
+
+typedef struct {
+    void *segments;
+    int initialized;
+} swbwa_cross_runtime_t;
+
+static void swbwa_cross_runtime_init(swbwa_cross_runtime_t *runtime,
+                                     swbwa_cpe_task_t *params)
+{
+    unsigned long host_gp;
+    cpe_relocation_t relocation;
+    double start_time;
+
+    if (runtime->initialized) return;
+
+    start_time = GetTime();
+    swbwa_enable_cross_execution();
+    runtime->segments = swbwa_allocate_cross_segments();
+
+    params->private_segment_copies = swbwa_allocate_private_segment_copies();
+    params->completion_flags = swbwa_cpe_completion_flags;
+
+    asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
+    params->relocated_gp = (void*)((unsigned long)runtime->segments + host_gp -
+                                  swbwa_cpe_text_start);
+    params->segment_offset = (unsigned long)runtime->segments - swbwa_cpe_text_start;
+
+    load_cpe_relocation(&relocation);
+    params->tls_relocations = relocation.tls_relocations;
+    params->tls_relocation_count = relocation.tls_count;
+
+    swbwa_cpe_run((void*)slave_pass_para, params);
+    swbwa_copy_segments(runtime->segments);
+    swbwa_relocate_got(host_gp, swbwa_cpe_text_start,
+                       (unsigned long)runtime->segments,
+                       relocation.got_content, relocation.got_count);
+    cpe_relocation_destroy(&relocation);
+
+    swbwa_cpe_run((void*)slave_copy_priv_segment, params);
+    swbwa_cpe_run((void*)slave_change_priv_segment, params);
+
+    runtime->initialized = 1;
+    if (bwa_verbose >= 4)
+        fprintf(stderr, "[M::%s] initialized cross-segment runtime in %.3f sec\n",
+                __func__, GetTime() - start_time);
+}
+
+static long swbwa_cross_entry(const swbwa_cross_runtime_t *runtime,
+                              const void *entry)
+{
+    return (long)entry - (long)swbwa_cpe_text_start + (long)runtime->segments;
 }
 
 
@@ -1558,8 +1565,6 @@ static void shuffle(int *array, int n) {
     }
 }
 
-
-#define f_buffer_size (512 << 20)
 
 void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)
 {
@@ -1576,143 +1581,82 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
 
     tt0 = GetTime();
 
-    // copy .text* and data to cross segment
-    static void *new_segments;
-    static long new_slave_fun1;
-    static long new_slave_fun2;
-    static int cntt = 0;
-    static unsigned long host_gp;
-    static Para_worker12_s *para;
-    static int pre_nn;
+    static swbwa_cpe_task_t *para;
+#if SWBWA_USE_CROSS_SEGMENT
+    static swbwa_cross_runtime_t cross_runtime;
+    long pre_entry;
+    long write_entry;
+#endif
 
-    cntt++;
-    if(cntt == 1) {
+    if (para == NULL) {
         para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
     }
 
-    para->nn = nn;
-    para->data = (void*)&w;
-    para->cpe_sams = checked_malloc_array(n, sizeof(*para->cpe_sams), "CPE SAM pointers");
-    para->sam_lens = checked_malloc_array(n, sizeof(*para->sam_lens), "CPE SAM lengths");
-    para->pes0 = pes0;
-    for(int i = 0; i < n; i++) para->sam_lens[i] = 0;
+    para->work_item_count = nn;
+    para->worker_data = (void*)&w;
+    para->sam_records = checked_malloc_array(n, sizeof(*para->sam_records), "CPE SAM pointers");
+    para->sam_lengths = checked_malloc_array(n, sizeof(*para->sam_lengths), "CPE SAM lengths");
+    para->pes = pes0;
+    for(int i = 0; i < n; i++) para->sam_lengths[i] = 0;
 
 
-#ifdef use_cgs_mode
-    if(cntt == 1) {
-//    if(0) {
-        double cross_time_begin = GetTime();
-        add_exec();
-
-        void *priv_addr = malloc_csr();
-        new_segments = malloc_segments();
-        //printf("new_text is %p\n", new_segments);
-
-        new_slave_fun1 = ((long)slave_worker12_s_pre_fast_cross - (long)segment1) + (long)new_segments;
-        new_slave_fun2 = ((long)slave_worker12_s_fast_cross - (long)segment1) + (long)new_segments;
-        //new_slave_fun1 = (long)slave_worker12_s_pre_fast_cross;
-        //new_slave_fun2 = (long)slave_worker12_s_fast_cross;
-
-
-        //printf("offset is %lu\n", (long)new_segments - segment1);
-        //printf("fun1 is %p\n", (void*)new_slave_fun1);
-        //printf("fun2 is %p\n", (void*)new_slave_fun2);
-
-        asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
-
-        para->tag = cpe_is_over;
-        para->new_gp = (void*)((unsigned long)new_segments + host_gp - segment1);
-        //para->new_gp = (void*)host_gp;
-        para->offset_seg = (unsigned long)new_segments - segment1;
-        para->priv_addr = priv_addr;
-
-
-        //printf("gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
-
-        cpe_relocation_t relocation;
-        load_cpe_relocation(&relocation);
-
-        para->tls_content = relocation.tls_content;
-        para->tls_size = relocation.tls_count;
-
-
-        __real_athread_spawn_cgs((void*)slave_pass_para, para, 1);
-        athread_join_cgs();
-        //printf("pass para done\n");
-
-        copy_segments((void*)new_segments);
-        change_got(host_gp, segment1, (unsigned long)new_segments, relocation.got_content, relocation.got_count);
-        cpe_relocation_destroy(&relocation);
-
-        athread_spawn_cgs(copy_priv_segment, para);
-        athread_join_cgs();
-        athread_spawn_cgs(change_priv_segment, para);
-        athread_join_cgs();
-        //printf("cross time cost %.4f\n", GetTime() - cross_time_begin);
-
-    }
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_cross_runtime_init(&cross_runtime, para);
+    pre_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_pre_fast_cross);
+    write_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_fast_cross);
 #endif
     t_work1_1 += GetTime() - tt0;
 
 
     tt0 = GetTime();
-#ifdef use_cgs_mode
-    my_spawn_join(new_slave_fun1);
-//    __real_athread_spawn_cgs((void*)slave_worker12_s_pre_fast, para, 1);
-//    athread_join_cgs();
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_cross_run(pre_entry);
 #else
-    __real_athread_spawn((void*)slave_worker12_s_pre_fast, para, 1);
-    athread_join();
+    swbwa_cpe_run((void*)slave_worker12_s_pre_fast, para);
 #endif
     if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
     t_work1_2 += GetTime() - tt0;
 
 
-#define BLOCK_SIZE (64 * 1024) // 64KB
     tt0 = GetTime();
 	char *current_block = NULL;
-    size_t current_offset = BLOCK_SIZE;
+    size_t current_offset = SWBWA_SAM_OUTPUT_BLOCK_BYTES;
 
     for (int i = 0; i < n; i++) {
-        //TODO why + 1 is wrong!
-        size_t len = para->sam_lens[i] + 10;
-        if (current_offset + len > BLOCK_SIZE) {
-            //current_block = wrap_malloc(BLOCK_SIZE);
-            current_block = checked_malloc_array(BLOCK_SIZE, sizeof(*current_block), "SAM output block");
+        size_t len = para->sam_lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES;
+        if (current_offset + len > SWBWA_SAM_OUTPUT_BLOCK_BYTES) {
+            current_block = checked_malloc_array(SWBWA_SAM_OUTPUT_BLOCK_BYTES, sizeof(*current_block), "SAM output block");
             current_offset = 0;
             w.seqs[i].is_new_addr = 1;
-            memset(current_block, 'A', BLOCK_SIZE);
+            memset(current_block, 'A', SWBWA_SAM_OUTPUT_BLOCK_BYTES);
         } else {
             w.seqs[i].is_new_addr = 0;
         }
         w.seqs[i].sam = current_block + current_offset;
         current_offset += len;
-        w.seqs[i].sam[(para->sam_lens[i])] = '\0';
+        w.seqs[i].sam[(para->sam_lengths[i])] = '\0';
     }
     
     //for(int i = 0; i < n; i++) {
-    //    w.seqs[i].sam = malloc((para->sam_lens[i]) * sizeof(char) + 1);
-    //    memset(w.seqs[i].sam, 'A', (para->sam_lens[i]) * sizeof(char));
-    //    w.seqs[i].sam[(para->sam_lens[i])] = '\0';
+    //    w.seqs[i].sam = malloc((para->sam_lengths[i]) * sizeof(char) + 1);
+    //    memset(w.seqs[i].sam, 'A', (para->sam_lengths[i]) * sizeof(char));
+    //    w.seqs[i].sam[(para->sam_lengths[i])] = '\0';
     //}
     t_work1_3 += GetTime() - tt0;
 
 
     tt0 = GetTime();
-#ifdef use_cgs_mode
-    my_spawn_join(new_slave_fun2);
-//    __real_athread_spawn_cgs((void*)slave_worker12_s_fast, para, 1);
-//    athread_join_cgs();
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_cross_run(write_entry);
 #else
-    __real_athread_spawn((void*)slave_worker12_s_fast, para, 1);
-    athread_join();
+    swbwa_cpe_run((void*)slave_worker12_s_fast, para);
 #endif
     t_work1_4 += GetTime() - tt0;
 
 
     tt0 = GetTime();
-    checked_free_array(para->sam_lens);
-    checked_free_array(para->cpe_sams);
+    checked_free_array(para->sam_lengths);
+    checked_free_array(para->sam_records);
     worker_destroy(&w);
     t_work1_5 += GetTime() - tt0;
 
@@ -1727,7 +1671,7 @@ void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
 void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int *n2, bseq1_t **seqs2,
                              char* block_buffer, char* block_buffer2, long long block_size, long long block_size2, const mem_pestat_t *pes0)
 {
-    int n = 2000000;
+    int n = SWBWA_MAX_READS_PER_BATCH;
     //assert(n < (4 << 20));
     worker_t w;
     double ctime, rtime;
@@ -1743,196 +1687,101 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
     tt0 = GetTime();
 
-    // copy .text* and data to cross segment
-    static void *new_segments;
-    static long new_slave_fun0;
-    static long new_slave_fun1;
-    static long new_slave_fun2;
-    static int cntt = 0;
-    static unsigned long host_gp;
-    static Para_worker12_s *para;
-    static int pre_nn;
+    static unsigned long batch_number;
+    static swbwa_cpe_task_t *para;
     static char* tmp_block_buffer;
     static char* tmp_block_buffer2;
+    static char* sam_blocks_static[SWBWA_PIPELINE_BUFFER_COUNT];
+#if SWBWA_USE_CROSS_SEGMENT
+    static swbwa_cross_runtime_t cross_runtime;
+    long format_entry;
+    long pre_entry;
+    long write_entry;
+#endif
 
-    static char* sam_blocks_static[5];
-
-    cntt++;
-    if(cntt == 1) {
-        tmp_block_buffer = checked_malloc_array(f_buffer_size, sizeof(*tmp_block_buffer), "temporary FASTQ block");
-        tmp_block_buffer2 = checked_malloc_array(f_buffer_size, sizeof(*tmp_block_buffer2), "temporary paired FASTQ block");
-        for(int i = 0; i < 5; i++) {
-            sam_blocks_static[i] = checked_malloc_array(f_buffer_size, sizeof(*sam_blocks_static[i]), "static SAM block");
-            memset(sam_blocks_static[i], 'A', f_buffer_size);
+    batch_number++;
+    if (para == NULL) {
+        tmp_block_buffer = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*tmp_block_buffer), "temporary FASTQ block");
+        tmp_block_buffer2 = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*tmp_block_buffer2), "temporary paired FASTQ block");
+        for(int i = 0; i < SWBWA_PIPELINE_BUFFER_COUNT; i++) {
+            sam_blocks_static[i] = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*sam_blocks_static[i]), "static SAM block");
+            memset(sam_blocks_static[i], 'A', SWBWA_CPE_FORMAT_BUFFER_BYTES);
         }
         para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
     }
 
-    para->nn = nn;
-    para->data = (void*)&w;
-    para->cpe_sams = checked_malloc_array(n, sizeof(*para->cpe_sams), "CPE SAM pointers");
-    para->sam_lens = checked_malloc_array(n, sizeof(*para->sam_lens), "CPE SAM lengths");
-    para->pes0 = pes0;
-    para->block_buffer = block_buffer;
-    para->block_buffer2 = block_buffer2;
-    para->block_size = block_size;
-    para->block_size2 = block_size2;
-    para->tmp_block_buffer = tmp_block_buffer;
-    para->tmp_block_buffer2 = tmp_block_buffer2;
-    para->tmp_block_size = f_buffer_size;
-    for(int i = 0; i < n; i++) para->sam_lens[i] = 0;
+    para->work_item_count = nn;
+    para->worker_data = (void*)&w;
+    para->sam_records = checked_malloc_array(n, sizeof(*para->sam_records), "CPE SAM pointers");
+    para->sam_lengths = checked_malloc_array(n, sizeof(*para->sam_lengths), "CPE SAM lengths");
+    para->pes = pes0;
+    para->fastq_buffer[0] = block_buffer;
+    para->fastq_buffer[1] = block_buffer2;
+    para->fastq_size[0] = block_size;
+    para->fastq_size[1] = block_size2;
+    para->formatted_buffer[0] = tmp_block_buffer;
+    para->formatted_buffer[1] = tmp_block_buffer2;
+    para->formatted_buffer_size = SWBWA_CPE_FORMAT_BUFFER_BYTES;
+    for(int i = 0; i < n; i++) para->sam_lengths[i] = 0;
 
 
-#ifdef use_cgs_mode
-    if(cntt == 1) {
-//    if(0) {
-        double cross_time_begin = GetTime();
-        add_exec();
-
-        void *priv_addr = malloc_csr();
-        new_segments = malloc_segments();
-        if (bwa_verbose >= 4) fprintf(stderr, "new_text is %p\n", new_segments);
-
-
-        new_slave_fun0 = ((long)slave_cpe_format_pre_cross - (long)segment1) + (long)new_segments;
-        new_slave_fun1 = ((long)slave_worker12_s_pre_fast_cross - (long)segment1) + (long)new_segments;
-        new_slave_fun2 = ((long)slave_worker12_s_fast_cross - (long)segment1) + (long)new_segments;
-
-        //new_slave_fun0 = ((long)slave_cpe_format_pre_cross;
-        //new_slave_fun1 = (long)slave_worker12_s_pre_fast_cross;
-        //new_slave_fun2 = (long)slave_worker12_s_fast_cross;
-
-
-        if (bwa_verbose >= 4) {
-            fprintf(stderr, "offset is %lu\n", (long)new_segments - segment1);
-            fprintf(stderr, "fun0 is %p\n", (void*)new_slave_fun0);
-            fprintf(stderr, "fun1 is %p\n", (void*)new_slave_fun1);
-            fprintf(stderr, "fun2 is %p\n", (void*)new_slave_fun2);
-        }
-
-        asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
-
-        para->tag = cpe_is_over;
-        para->new_gp = (void*)((unsigned long)new_segments + host_gp - segment1);
-        //para->new_gp = (void*)host_gp;
-        para->offset_seg = (unsigned long)new_segments - segment1;
-        para->priv_addr = priv_addr;
-
-
-        if (bwa_verbose >= 4)
-            fprintf(stderr, "gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
-
-        cpe_relocation_t relocation;
-        load_cpe_relocation(&relocation);
-
-        para->tls_content = relocation.tls_content;
-        para->tls_size = relocation.tls_count;
-
-
-        __real_athread_spawn_cgs((void*)slave_pass_para, para, 1);
-        athread_join_cgs();
-        if (bwa_verbose >= 4) fprintf(stderr, "pass para done\n");
-
-        copy_segments((void*)new_segments);
-        change_got(host_gp, segment1, (unsigned long)new_segments, relocation.got_content, relocation.got_count);
-        cpe_relocation_destroy(&relocation);
-
-        athread_spawn_cgs(copy_priv_segment, para);
-        athread_join_cgs();
-        athread_spawn_cgs(change_priv_segment, para);
-        athread_join_cgs();
-        if (bwa_verbose >= 4) fprintf(stderr, "cross time cost %.4f\n", GetTime() - cross_time_begin);
-
-    }
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_cross_runtime_init(&cross_runtime, para);
+    format_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_cpe_format_pre_cross);
+    pre_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_pre_fast_cross);
+    write_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_fast_cross);
 #endif
     t_work1_1 += GetTime() - tt0;
 
 
     tt0 = GetTime();
-#ifdef use_cgs_mode
-    my_spawn_join(new_slave_fun0);
-//    __real_athread_spawn_cgs((void*)slave_cpe_format_pre, para, 1);
-//    athread_join_cgs();
-    para->nn = 0;
-    for(int i = 0; i < cpe_num; i++) {
-        para->nn = para->nn > para->nns[i] ? para->nn : para->nns[i];
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_cross_run(format_entry);
+#else
+    swbwa_cpe_run((void*)slave_cpe_format_pre, para);
+#endif
+
+    if (bwa_verbose >= 4) fprintf(stderr, "[M::%s] CPE FASTQ formatting done\n", __func__);
+    para->work_item_count = 0;
+    for(int i = 0; i < SWBWA_CPE_COUNT; i++) {
+        para->work_item_count = para->work_item_count > para->formatted_read_counts[i] ? para->work_item_count : para->formatted_read_counts[i];
+		// fprintf(stderr, "para->formatted_read_counts[%d] = %d\n", i, para->formatted_read_counts[i]);
     }
     free(block_buffer);
     free(block_buffer2);
     t_work1_2 += GetTime() - tt0;
 
     tt0 = GetTime();
-    my_spawn_join(new_slave_fun1);
-//    __real_athread_spawn_cgs((void*)slave_worker12_s_pre_fast, para, 1);
-//    athread_join_cgs();
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_cross_run(pre_entry);
 #else
-    __real_athread_spawn((void*)slave_worker12_s_pre_fast, para, 1);
-    athread_join();
+    swbwa_cpe_run((void*)slave_worker12_s_pre_fast, para);
 #endif
     if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
     t_work1_3 += GetTime() - tt0;
 
     tt0 = GetTime();
 
-    n = (opt->flag&MEM_F_PE) ? para->nn << 1 : para->nn;
+    n = (opt->flag&MEM_F_PE) ? para->work_item_count << 1 : para->work_item_count;
     if (bwa_verbose >= 4) fprintf(stderr, "now n is %d\n", n);
 
-//#define BLOCK_SIZE (64 * 1024) // 64KB
-//    char *current_block = NULL;
-//    size_t current_offset = BLOCK_SIZE;
-//
-//
-//    long long tot_sam_size = 0;
-//
-//    for (int i = 0; i < n; i++) {
-//        //TODO why + 1 is wrong!
-//        size_t len = para->sam_lens[i] + 10;
-//        tot_sam_size += len;
-//        if (current_offset + len > BLOCK_SIZE) {
-////            current_block = wrap_malloc(BLOCK_SIZE);
-//            current_block = malloc(BLOCK_SIZE);
-//            if(current_block == NULL) fprintf(stderr, "GG malloc %d\n", BLOCK_SIZE);
-//            current_offset = 0;
-//            w.seqs[i].is_new_addr = 1;
-////            memset(current_block, 'A', BLOCK_SIZE);
-//        } else {
-//            w.seqs[i].is_new_addr = 0;
-//        }
-//        w.seqs[i].sam = current_block + current_offset;
-//        current_offset += len;
-//        w.seqs[i].sam[(para->sam_lens[i])] = '\0';
-//    }
-//
-//    printf("tot sam size %lld\n", tot_sam_size);
-
-//    for(int i = 0; i < n; i++) {
-//        w.seqs[i].sam = malloc((para->sam_lens[i]) * sizeof(char) + 1);
-//        memset(w.seqs[i].sam, 'A', (para->sam_lens[i]) * sizeof(char));
-//        w.seqs[i].sam[(para->sam_lens[i])] = '\0';
-//    }
-
-    int now_f_block_pos = 0;
-    char* f_sam_block = sam_blocks_static[(cntt - 1) % 5];
+    size_t now_f_block_pos = 0;
+    char* f_sam_block = sam_blocks_static[(batch_number - 1) % SWBWA_PIPELINE_BUFFER_COUNT];
     for(int i = 0; i < n; i++) {
+        if (now_f_block_pos + para->sam_lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES > SWBWA_CPE_FORMAT_BUFFER_BYTES)
+            err_fatal(__func__, "SAM output exceeds the per-batch buffer");
         w.seqs[i].sam = f_sam_block + now_f_block_pos;
-        w.seqs[i].sam[(para->sam_lens[i])] = '\0';
-        now_f_block_pos += para->sam_lens[i] + 10;
-//        if(now_f_block_pos >= f_buffer_size) {
-//            fprintf(stderr, "sam_blocks_static size is not enough\n");
-//            exit(0);
-//        }
+        w.seqs[i].sam[(para->sam_lengths[i])] = '\0';
+        now_f_block_pos += para->sam_lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES;
     }
     t_work1_4 += GetTime() - tt0;
 
 
     tt0 = GetTime();
-#ifdef use_cgs_mode
-    my_spawn_join(new_slave_fun2);
-//    __real_athread_spawn_cgs((void*)slave_worker12_s_fast, para, 1);
-//    athread_join_cgs();
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_cross_run(write_entry);
 #else
-    __real_athread_spawn((void*)slave_worker12_s_fast, para, 1);
-    athread_join();
+    swbwa_cpe_run((void*)slave_worker12_s_fast, para);
 #endif
     t_work1_5 += GetTime() - tt0;
 
@@ -1942,8 +1791,8 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     *seqs2 = w.seqs;
 
     tt0 = GetTime();
-    checked_free_array(para->sam_lens);
-    checked_free_array(para->cpe_sams);
+    checked_free_array(para->sam_lengths);
+    checked_free_array(para->sam_records);
     worker_destroy(&w);
     t_work1_6 += GetTime() - tt0;
 
@@ -1969,131 +1818,42 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 
     tt0 = GetTime();
 
-    // copy .text* and data to cross segment
-    static void *new_segments;
-    static long new_slave_fun1;
-    static long new_slave_fun2;
-    static long new_slave_fun3;
-    static long new_slave_fun4;
-    static int cntt = 0;
-    static unsigned long host_gp;
-    static Para_worker12_s *para;
+    static swbwa_cpe_task_t *para;
 
-    cntt++;
-    if(cntt == 1) {
+    if (para == NULL) {
         para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
     }
  
-    para->nn = nn;
-    para->data = (void*)&w;
-    para->cpe_regs = checked_malloc_array(n, sizeof(*para->cpe_regs), "CPE alignment region vectors");
+    para->work_item_count = nn;
+    para->worker_data = (void*)&w;
+    para->alignment_regions = checked_malloc_array(n, sizeof(*para->alignment_regions), "CPE alignment region vectors");
 
     for(int i = 0; i < n; i++) {
-        para->cpe_regs[i].n = 0;
-        para->cpe_regs[i].m = 0;
+        para->alignment_regions[i].n = 0;
+        para->alignment_regions[i].m = 0;
     }
     
 
-#ifdef use_cgs_mode
-//    if(cntt == 1) {
-    if(0) {
-        double cross_time_begin = GetTime();
-        add_exec();
-
-        void *priv_addr = malloc_csr();
-        new_segments = malloc_segments();
-        if (bwa_verbose >= 4) fprintf(stderr, "new_text is %p\n", new_segments);
-
-        new_slave_fun1 = ((long)slave_worker1_s_pre_fast_cross - (long)segment1) + (long)new_segments;
-        new_slave_fun2 = ((long)slave_worker1_s_fast_cross - (long)segment1) + (long)new_segments;
-        new_slave_fun3 = ((long)slave_worker2_s_pre_fast_cross - (long)segment1) + (long)new_segments;
-        new_slave_fun4 = ((long)slave_worker2_s_fast_cross - (long)segment1) + (long)new_segments;
-        //new_slave_fun1 = (long)slave_worker1_s_pre_fast_cross;
-        //new_slave_fun2 = (long)slave_worker1_s_fast_cross;
-        //new_slave_fun3 = (long)slave_worker2_s_pre_fast_cross;
-        //new_slave_fun4 = (long)slave_worker2_s_fast_cross;
-
-
-        if (bwa_verbose >= 4) {
-            fprintf(stderr, "offset is %lu\n", (long)new_segments - segment1);
-            fprintf(stderr, "fun1 is %p\n", (void*)new_slave_fun1);
-            fprintf(stderr, "fun2 is %p\n", (void*)new_slave_fun2);
-            fprintf(stderr, "fun3 is %p\n", (void*)new_slave_fun3);
-            fprintf(stderr, "fun4 is %p\n", (void*)new_slave_fun4);
-        }
-
-        asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
-
-        para->tag = cpe_is_over;
-        para->new_gp = (void*)((unsigned long)new_segments + host_gp - segment1);
-        //para->new_gp = (void*)host_gp;
-        para->offset_seg = (unsigned long)new_segments - segment1;
-        para->priv_addr = priv_addr;
-
-
-        if (bwa_verbose >= 4)
-            fprintf(stderr, "gp = old %p, new %p, tag = %p, data %p\n", (void*)host_gp, (void*)para->new_gp, cpe_is_over, para->data);
-
-        cpe_relocation_t relocation;
-        load_cpe_relocation(&relocation);
-
-        para->tls_content = relocation.tls_content;
-        para->tls_size = relocation.tls_count;
-
-
-        __real_athread_spawn_cgs((void*)slave_pass_para, para, 1);
-        athread_join_cgs();
-        if (bwa_verbose >= 4) fprintf(stderr, "pass para done\n");
-
-        copy_segments((void*)new_segments);
-        change_got(host_gp, segment1, (unsigned long)new_segments, relocation.got_content, relocation.got_count);
-        cpe_relocation_destroy(&relocation);
-
-        athread_spawn_cgs(copy_priv_segment, para);
-        athread_join_cgs();
-        athread_spawn_cgs(change_priv_segment, para);
-        athread_join_cgs();
-        if (bwa_verbose >= 4) fprintf(stderr, "cross time cost %.4f\n", GetTime() - cross_time_begin);
-
-    }
-#endif
-
-
-
     tt0 = GetTime();
-#ifdef use_cgs_mode
-//    my_spawn_join(new_slave_fun1);
-    __real_athread_spawn_cgs((void*)slave_worker1_s_pre_fast, para, 1);
-    athread_join_cgs();
-#else
-    __real_athread_spawn((void*)slave_worker1_s_pre_fast, para, 1);
-    athread_join();
-#endif
+    swbwa_cpe_run((void*)slave_worker1_s_pre_fast, para);
     if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
     t_work1_2 += GetTime() - tt0;
       
     tt0 = GetTime();
     for(int i = 0; i < n; i++) {
-        w.regs[i].m = para->cpe_regs[i].n;
+        w.regs[i].m = para->alignment_regions[i].n;
         w.regs[i].a = checked_malloc_array(w.regs[i].m, sizeof(*w.regs[i].a), "alignment regions for read");
         w.regs[i].n = 0;
     }
     t_work1_3 += GetTime() - tt0;
 
     tt0 = GetTime();
-#ifdef use_cgs_mode
-//    my_spawn_join(new_slave_fun2);
-    __real_athread_spawn_cgs((void*)slave_worker1_s_fast, para, 1);
-    athread_join_cgs();
-#else
-    __real_athread_spawn((void*)slave_worker1_s_fast, para, 1);
-    athread_join();
-#endif
+    swbwa_cpe_run((void*)slave_worker1_s_fast, para);
     if (bwa_verbose >= 4) fprintf(stderr, "slave round done\n");
     t_work1_4 += GetTime() - tt0;
 
     tt0 = GetTime();
-    checked_free_array(para->cpe_regs);
+    checked_free_array(para->alignment_regions);
     t_work1_5 += GetTime() - tt0;
 
     tt0 = GetTime();
@@ -2109,49 +1869,35 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 
     t0 = GetTime();
 
-    para->cpe_sams = checked_malloc_array(n, sizeof(*para->cpe_sams), "CPE SAM pointers");
-    para->sam_lens = checked_malloc_array(n, sizeof(*para->sam_lens), "CPE SAM lengths");
-    for(int i = 0; i < n; i++) para->sam_lens[i] = 0;
+    para->sam_records = checked_malloc_array(n, sizeof(*para->sam_records), "CPE SAM pointers");
+    para->sam_lengths = checked_malloc_array(n, sizeof(*para->sam_lengths), "CPE SAM lengths");
+    for(int i = 0; i < n; i++) para->sam_lengths[i] = 0;
 
     double tt1 = GetTime();
-#ifdef use_cgs_mode
-//    my_spawn_join(new_slave_fun3);
-    __real_athread_spawn_cgs((void*)slave_worker2_s_pre_fast, para, 1);
-    athread_join_cgs();
-#else
-    __real_athread_spawn((void*)slave_worker2_s_pre_fast, para, 1);
-    athread_join();
-#endif
+    swbwa_cpe_run((void*)slave_worker2_s_pre_fast, para);
 
 
     t_work2_1 += GetTime() - tt1;
 
     tt1 = GetTime();
     for(int i = 0; i < n; i++) {
-        w.seqs[i].sam = checked_malloc_array(para->sam_lens[i] + 1, sizeof(*w.seqs[i].sam), "SAM record");
+        w.seqs[i].sam = checked_malloc_array(para->sam_lengths[i] + 1, sizeof(*w.seqs[i].sam), "SAM record");
         w.seqs[i].is_new_addr = 1;
-        memset(w.seqs[i].sam, 'A', para->sam_lens[i] * sizeof(*w.seqs[i].sam));
-        w.seqs[i].sam[(para->sam_lens[i])] = '\0';
+        memset(w.seqs[i].sam, 'A', para->sam_lengths[i] * sizeof(*w.seqs[i].sam));
+        w.seqs[i].sam[(para->sam_lengths[i])] = '\0';
     }
     t_work2_2 += GetTime() - tt1;
 
     tt1 = GetTime();
-#ifdef use_cgs_mode
-//    my_spawn_join(new_slave_fun4);
-    __real_athread_spawn_cgs((void*)slave_worker2_s_fast, para, 1);
-    athread_join_cgs();
-#else
-    __real_athread_spawn((void*)slave_worker2_s_fast, para, 1);
-    athread_join();
-#endif
+    swbwa_cpe_run((void*)slave_worker2_s_fast, para);
     t_work2_3 += GetTime() - tt1;
 
     tt1 = GetTime();
     for(int i = 0; i < n; i++) {
         checked_free_array(w.regs[i].a);
     }
-    checked_free_array(para->sam_lens);
-    checked_free_array(para->cpe_sams);
+    checked_free_array(para->sam_lengths);
+    checked_free_array(para->sam_records);
     t_work2_4 += GetTime() - tt1;
 
     tt1 = GetTime();

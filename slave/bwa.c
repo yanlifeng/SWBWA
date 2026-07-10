@@ -35,7 +35,7 @@
 #include "kstring.h"
 #include "kvec.h"
 
-#ifdef SLAVE_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 
@@ -159,18 +159,18 @@ uint32_t *bwa_gen_cigar2(const int8_t mat[25], int o_del, int e_del, int o_ins, 
 	if (NM) *NM = -1;
 	if (l_query <= 0 || rb >= re || (rb < l_pac && re > l_pac)) return 0; // reject if negative length or bridging the forward and reverse strand
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_bwa_gen_cigar2);
 #endif
 	rseq = bns_get_seq(l_pac, pac, rb, re, &rlen);
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_bwa_gen_cigar2);
 #endif
 	
 	if (re - rb != rlen) goto ret_gen_cigar; // possible if out of range
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_bwa_gen_cigar2);
 #endif
 	if (rb >= l_pac) { // then reverse both query and rseq; this is to ensure indels to be placed at the leftmost position
@@ -241,7 +241,7 @@ uint32_t *bwa_gen_cigar2(const int8_t mat[25], int o_del, int e_del, int o_ins, 
 	if (rb >= l_pac) // reverse back query
 		for (i = 0; i < l_query>>1; ++i)
 			tmp = query[i], query[i] = query[l_query - 1 - i], query[l_query - 1 - i] = tmp;
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_bwa_gen_cigar2);
 #endif
 	

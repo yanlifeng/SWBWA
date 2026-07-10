@@ -32,7 +32,7 @@
 #include <string.h>
 #include <stdint.h>
 
-#ifdef SLAVE_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 

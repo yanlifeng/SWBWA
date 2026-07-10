@@ -1,641 +1,446 @@
 #include <slave.h>
 #include <crts.h>
+#include <assert.h>
+#include <math.h>
+#include <string.h>
 
 #include "bwt.h"
 #include "bwamem.h"
 #include "../swbwa_config.h"
+#include "../swbwa_cpe.h"
 
 #include "lwpf3_my_cpe.h"
-
-typedef struct{
-    long nn;
-    void* data;
-    int* real_sizes;
-    mem_alnreg_v* cpe_regs;
-    char** cpe_sams;
-    int *sam_lens;
-    const mem_pestat_t *pes0;
-    int *s_ids;
-
-    // for cross_copy
-    int *tag;
-    void *new_gp;
-    unsigned long offset_seg;
-    void *priv_addr;
-    int tls_size;
-    unsigned long *tls_content;
-    char* big_buffer;
-    long long cpe_buffer_size;
-
-    // for cpe format
-    char* block_buffer;
-    char* block_buffer2;
-    char* tmp_block_buffer;
-    char* tmp_block_buffer2;
-    long long block_size;
-    long long block_size2;
-    long long tmp_block_size;
-    long nns[SWBWA_CPE_NUM];
-} Para_worker12_s;
-
-typedef struct{
-    char* big_buffer;
-    long long cpe_buffer_size;
-} Para_malloc;
+#include "malloc_wrap.h"
 
 
 
 /***********************************************************/
-extern unsigned long segment1;
-extern unsigned long segment1_len;
-extern unsigned long segment2;
-extern unsigned long segment2_len;
+extern unsigned long swbwa_cpe_text_start;
+extern unsigned long swbwa_cpe_text_size;
+extern unsigned long swbwa_cpe_data_start;
+extern unsigned long swbwa_cpe_data_size;
 /***********************************************************/
 
 
-#ifdef use_cgs_mode
-#define global_pen (_CGN * 64 + _PEN)
+#if SWBWA_USE_CGS
+#define SWBWA_GLOBAL_CPE_ID (_CGN * 64 + _PEN)
 #else
-#define global_pen (_PEN)
+#define SWBWA_GLOBAL_CPE_ID (_PEN)
 #endif
 
-#define csr_copy_size (2 << 20)
-#define private_start 0x400000000000
+__thread swbwa_cpe_task_t *swbwa_task;
 
-
-
-__thread Para_worker12_s *pp_slave;
-
-void state_init(Para_malloc *para) {
- 
-    //printf("cpe set buffer %p %lld\n", para->big_buffer, para->cpe_buffer_size);
-    set_big_buffer(para->big_buffer, para->cpe_buffer_size);
-    //htmalloccount_init();
-}
-
-void state_print() {
-    //fprintf(stderr, "%d state print start\n", _MYID);
-    //htmalloccount_print();
-    //fprintf(stderr, "%d state print done\n", _MYID);
-}
-
-void state_print_cross() {
-    fprintf(stderr, "%d state print start\n", _MYID);
-    htmalloccount_print();
-    fprintf(stderr, "%d state print done\n", _MYID);
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
-}
-
-
-void pass_para(Para_worker12_s *ptr)
+static inline void swbwa_enter_cross_runtime(void)
 {
-    pp_slave = ptr;
-    if(global_pen == 0 || global_pen == cpe_num_slave - 1) {
-        printf("%d -- slave ptr1 para: %p, new_gp: %p, tag: %p, w: %p\n", global_pen, pp_slave, pp_slave->new_gp, pp_slave->tag, pp_slave->data);
+    unsigned long csr_value;
+
+    asm volatile("mov %0, $29\n\t"::"r"(swbwa_task->relocated_gp):);
+    asm volatile("rcsr %0, 0xc4" : "=r"(csr_value));
+    if (csr_value < 0x500000000000) {
+        unsigned long relocated_csr =
+            (unsigned long)swbwa_task->private_segment_copies +
+            SWBWA_CPE_CSR_COPY_BYTES * _MYID + csr_value -
+            SWBWA_CPE_PRIVATE_BASE;
+        asm volatile("wcsr %0, 0xc4\n\t"::"r"(relocated_csr):);
     }
 }
 
-void copy_priv_segment(Para_worker12_s *ptr) {
-    void* my_priv_addr = ptr->priv_addr + csr_copy_size * _MYID;
-    if(_MYID == 0) printf("cpe %d, copy to %p start\n", _MYID, my_priv_addr);
-    memcpy(my_priv_addr, (void*)private_start, csr_copy_size);
-    if(_MYID == 0) printf("cpe %d, copy to %p done\n", _MYID, my_priv_addr);
+static inline void swbwa_finish_cross_task(void)
+{
+    swbwa_task->completion_flags[SWBWA_GLOBAL_CPE_ID] = 1;
+    flush_slave_cache();
+    while (1) { }
 }
 
-void change_priv_segment(Para_worker12_s *ptr) {
-    int tls_size = ptr->tls_size;
-    unsigned long *tls_content = ptr->tls_content;
-    void* my_priv_addr = ptr->priv_addr + csr_copy_size * _MYID;
+void state_init(swbwa_cpe_pool_params_t *para) {
+    set_big_buffer(para->buffer, para->bytes_per_cpe);
+}
+
+void pass_para(swbwa_cpe_task_t *ptr)
+{
+    swbwa_task = ptr;
+}
+
+void copy_priv_segment(swbwa_cpe_task_t *ptr) {
+    void* my_priv_addr = ptr->private_segment_copies + SWBWA_CPE_CSR_COPY_BYTES * _MYID;
+    memcpy(my_priv_addr, (void*)SWBWA_CPE_PRIVATE_BASE, SWBWA_CPE_CSR_COPY_BYTES);
+}
+
+void change_priv_segment(swbwa_cpe_task_t *ptr) {
+    int tls_size = ptr->tls_relocation_count;
+    unsigned long *tls_content = ptr->tls_relocations;
+    void* my_priv_addr = ptr->private_segment_copies + SWBWA_CPE_CSR_COPY_BYTES * _MYID;
     int pre_instr_size = 8;
-    if(_MYID == 0) printf("cpe %d, change %p start\n", _MYID, my_priv_addr);
-    for(unsigned long i = 0; i < (csr_copy_size) / pre_instr_size; ++i) {
+    for(unsigned long i = 0; i < (SWBWA_CPE_CSR_COPY_BYTES) / pre_instr_size; ++i) {
         unsigned long disp = i * pre_instr_size;
         unsigned long *addr = (unsigned long*)((unsigned long)my_priv_addr + disp);
         unsigned long content = *addr;
-        if(content >= segment1 + segment1_len) continue;
-        if(content < segment1) continue;
+        if(content >= swbwa_cpe_text_start + swbwa_cpe_text_size) continue;
+        if(content < swbwa_cpe_text_start) continue;
 
-        // check tls
+        /* Relocate CPE TLS references that point into the copied text. */
         for(int j = 0; j < tls_size; j++) {
             unsigned long content2 = *((unsigned long *)tls_content[j]);
-            //TODO
             if(content == content2) {
-                *addr = content + ptr->offset_seg;
-                if(_MYID == 0) printf("cpe change %p (%lu) from %lx to %lx\n", addr, disp, content, content + ptr->offset_seg);
+                *addr = content + ptr->segment_offset;
                 break;
             }
         }
     }
-    if(_MYID == 0) printf("cpe %d, change %p done\n", _MYID, my_priv_addr);
-
 }
 
-
-__uncached long lock_s;
-
-__thread_local_fix long t1 = 0;
-__thread_local_fix long t2 = 0;
-__thread_local_fix long t3 = 0;
-__thread_local_fix long t4 = 0;
-
-
-void init_icache_info() {
-    penv_slave0_cycle_init();
-    penv_slave2_l1ic_access_init();
-    penv_slave3_l1ic_miss_init();
-    penv_slave4_l1ic_misstime_init();
-}
-
-void print_icache_info_cross() {
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
-
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("%lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
-        }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
-    }
-    athread_lock(&lock_s);
-    //fprintf(stderr, "worker12 %d (%d %d) %.3f %lld %lld %lld %lld\n", _MYID, _CGN, _PEN, 1.0 * t4 / t1, t1, t2, t3, t4);
-    printf("worker12 %d (%d %d) %.3f %lld %lld %lld %lld\n", _MYID, _CGN, _PEN, 1.0 * t4 / t1, t1, t2, t3, t4);
-    athread_unlock(&lock_s);
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
-}
-
-
-void print_icache_info() {
-    athread_lock(&lock_s);
-    //fprintf(stderr, "worker12 %d (%d %d) %.3f %lld %lld %lld %lld\n", _MYID, _CGN, _PEN, 1.0 * t4 / t1, t1, t2, t3, t4);
-    printf("worker12 %d (%d %d) %.3f %lld %lld %lld %lld\n", _MYID, _CGN, _PEN, 1.0 * t4 / t1, t1, t2, t3, t4);
-    athread_unlock(&lock_s);
-}
-
-#define read_num_pre_block 1
-
-#define use_dynamic_task
-
-#ifdef use_dynamic_task
-//__uncached __cross long work_counter;
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
 __uncached long work_counter;
-int task_list[384][50 << 10];
-int task_num[384];
-int cur_id[384];
+int task_list[SWBWA_CPE_COUNT][SWBWA_MAX_TASKS_PER_CPE];
+int task_num[SWBWA_CPE_COUNT];
+long cur_id[SWBWA_CPE_COUNT];
 
 int acquire_task(int block_num) {
     asm volatile("faal %0, 0(%1)\n\t"
-                 : "=r"(cur_id[global_pen])
+                 : "=r"(cur_id[SWBWA_GLOBAL_CPE_ID])
                  : "r"(&work_counter)
                  : "memory");
-    if (cur_id[global_pen] < block_num) {
-        //assert(task_num[global_pen] < (50 << 10));
-        //printf("CG %d, size %d\n", _CGN, task_num[global_pen]);
-        task_list[global_pen][task_num[global_pen]++] = cur_id[global_pen];
+    if (cur_id[SWBWA_GLOBAL_CPE_ID] < block_num) {
+        assert(task_num[SWBWA_GLOBAL_CPE_ID] < SWBWA_MAX_TASKS_PER_CPE);
+        task_list[SWBWA_GLOBAL_CPE_ID][task_num[SWBWA_GLOBAL_CPE_ID]++] = cur_id[SWBWA_GLOBAL_CPE_ID];
     }
-    return cur_id[global_pen];
+    return (int)cur_id[SWBWA_GLOBAL_CPE_ID];
 }
 #endif
 
-void worker1_s_pre_fast_cross() {
-
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
-
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value p1 %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("p1 %lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
-        }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
-    }
-
- 
+void worker1_s_pre_fast_cross(void) {
+    swbwa_enter_cross_runtime();
     asm volatile("memb\n\t":::);
-    Para_worker12_s *para = pp_slave;
+    swbwa_cpe_task_t *para = swbwa_task;
 
     lwpf_enter(TEST);
     lwpf_start(l_worker1_1);
 
-#ifdef use_dynamic_task
-    if(global_pen == 0) work_counter = 0;
-# ifdef use_cgs_mode
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+# if SWBWA_USE_CGS
     athread_ssync_node();
 # else
     athread_ssync_array();
 # endif
-    task_num[global_pen] = 0;
-    int block_num = ceil(1.0 * para->nn / read_num_pre_block);
+    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
-        int range_l = i * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+        int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_pre_fast(para->data, j, global_pen, para->cpe_regs);
+            worker1_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker1_pre_fast(para->data, i, global_pen, para->cpe_regs);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
     }
 #endif
 
     lwpf_stop(l_worker1_1);
     lwpf_exit(TEST);
 
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
-
+    swbwa_finish_cross_task();
 }
 
-void worker1_s_fast_cross() {
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
-
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("%lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
-        }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
-    }
-
-    Para_worker12_s *para = pp_slave;
+void worker1_s_fast_cross(void) {
+    swbwa_enter_cross_runtime();
+    swbwa_cpe_task_t *para = swbwa_task;
 
     lwpf_enter(TEST);
     lwpf_start(l_worker1_2);
 
-#ifdef use_dynamic_task
-    for(long i = 0; i < task_num[global_pen]; i++) {
-        int range_l = task_list[global_pen][i] * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
+        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_fast(para->data, j, global_pen, para->cpe_regs);
+            worker1_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker1_fast(para->data, i, global_pen, para->cpe_regs);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
     }
 #endif
     lwpf_stop(l_worker1_2);
     lwpf_exit(TEST);
 
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
-
+    swbwa_finish_cross_task();
 }
 
 
-void worker2_s_pre_fast_cross() {
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
-
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("%lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
-        }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
-    }
-
-    Para_worker12_s *para = pp_slave;
+void worker2_s_pre_fast_cross(void) {
+    swbwa_enter_cross_runtime();
+    swbwa_cpe_task_t *para = swbwa_task;
 
     lwpf_enter(TEST);
     lwpf_start(l_worker2_1);
 
-#ifdef use_dynamic_task
-    if(global_pen == 0) work_counter = 0;
-#ifdef use_cgs_mode
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+#if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[global_pen] = 0;
-    int block_num = ceil(1.0 * para->nn / read_num_pre_block);
+    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
-        int range_l = i * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+        int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_pre_fast(para->data, j, global_pen, para->sam_lens, para->cpe_sams);
+            worker2_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker2_pre_fast(para->data, i, global_pen, para->sam_lens, para->cpe_sams);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_1);
     lwpf_exit(TEST);
 
 
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
-
+    swbwa_finish_cross_task();
 }
 
 
-void worker2_s_fast_cross() {
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
-
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("%lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
-        }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
-    }
-
-    Para_worker12_s *para = pp_slave;
+void worker2_s_fast_cross(void) {
+    swbwa_enter_cross_runtime();
+    swbwa_cpe_task_t *para = swbwa_task;
  
     lwpf_enter(TEST);
     lwpf_start(l_worker2_2);
-#ifdef use_dynamic_task
-    for(long i = 0; i < task_num[global_pen]; i++) {
-        int range_l = task_list[global_pen][i] * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
+        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_fast(para->data, j, global_pen, para->sam_lens, para->cpe_sams);
+            worker2_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker2_fast(para->data, i, global_pen, para->sam_lens, para->cpe_sams);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_2);
     lwpf_exit(TEST);
 
  
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
-
+    swbwa_finish_cross_task();
 }
 
-void SkipToLineEnd(char *data_, long long *pos_, const long long size_) {
+static void skip_to_line_end(char *data_, long long *pos_, const long long size_) {
     while (*pos_ < size_ && data_[*pos_] != '\n') {
         ++(*pos_);
     }
 }
 
 
-int64_t GetNextFastq(char *data_, long long pos_, const long long size_) {
+static int64_t get_next_fastq(char *data_, long long pos_, const long long size_) {
     if(pos_ < 0) pos_ = 0;
-    SkipToLineEnd(data_, &pos_, size_);
+    skip_to_line_end(data_, &pos_, size_);
+    if (pos_ >= size_) return size_;
     ++pos_;
 
-    // find beginning of the next record
-    while (data_[pos_] != '@') {
-        SkipToLineEnd(data_, &pos_, size_);
+    while (pos_ < size_ && data_[pos_] != '@') {
+        skip_to_line_end(data_, &pos_, size_);
+        if (pos_ >= size_) return size_;
         ++pos_;
     }
+    if (pos_ >= size_) return size_;
     int64_t pos0 = pos_;
 
-    SkipToLineEnd(data_, &pos_, size_);
+    skip_to_line_end(data_, &pos_, size_);
+    if (pos_ >= size_) return pos0;
     ++pos_;
 
-    if (data_[pos_] == '@')// previous one was a quality field
+    if (pos_ < size_ && data_[pos_] == '@')
         return pos_;
-    //-----[haoz:] is the following code necessary??-------------//
-    SkipToLineEnd(data_, &pos_, size_);
+    skip_to_line_end(data_, &pos_, size_);
+    if (pos_ >= size_) return pos0;
     ++pos_;
-    if (data_[pos_] != '+') printf("cpe GetNextFastq core dump is pos: %d\n", pos_);
-    assert(data_[pos_] == '+');// pos0 was the start of tag
+    assert(pos_ < size_ && data_[pos_] == '+');
     return pos0;
 }
 
-void cpe_format_pre_cross() {
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
+static int format_fastq_partition(swbwa_cpe_task_t *params)
+{
+    long long input_chunk_size;
+    long long input_begin;
+    long long input_end;
+    long long output_chunk_size;
+    long long output_begin;
+    long long output_end;
+    int is_paired = params->fastq_size[1] > 0;
 
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-        //if(0) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("%lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
+    if (params->fastq_size[0] < SWBWA_CPE_COUNT * (1 << 10)) {
+        if (SWBWA_GLOBAL_CPE_ID == 0) {
+            return format_seqs(params->fastq_buffer[0], params->fastq_size[0],
+                               params->fastq_buffer[1], params->fastq_size[1],
+                               params->formatted_buffer[0], params->formatted_buffer[1],
+                               params->formatted_buffer_size, params->worker_data);
         }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
+        return format_seqs(NULL, 0, NULL, 0, NULL, NULL, 0,
+                           params->worker_data);
     }
 
-    Para_worker12_s *para = pp_slave;
-    int tot_seq_num = 0;
-    if(para->block_size < cpe_num_slave * (1 << 10)) {
-        //if(1) {
-        if(global_pen == 0) {
-            tot_seq_num = format_seqs(para->block_buffer, para->block_size, para->block_buffer2, para->block_size,
-                                      para->tmp_block_buffer, para->tmp_block_buffer2, 512 << 20, para->data);
-        } else {
-            tot_seq_num = format_seqs(NULL, 0, NULL, 0,
-                                      NULL, NULL, 0, para->data);
-        }
-    } else {
-        //printf("block is big enough\n");
-        long long pre_cpe_buffer_size = ceil(1.0 * para->block_size / cpe_num_slave);
-        long long l_pos = global_pen * pre_cpe_buffer_size;
-        long long r_pos = l_pos + pre_cpe_buffer_size;
-        if(r_pos > para->block_size) r_pos = para->block_size;
-        long long real_r_pos;
-        if(global_pen == cpe_num_slave - 1) real_r_pos = r_pos;
-        else real_r_pos = GetNextFastq(para->block_buffer, r_pos - (1 << 10), para->block_size);
-        long long real_l_pos;
-        if(global_pen == 0) real_l_pos = 0;
-        else real_l_pos = GetNextFastq(para->block_buffer, l_pos - (1 << 10), para->block_size);
-        //TODO get pos of buffer2
+    input_chunk_size = (params->fastq_size[0] + SWBWA_CPE_COUNT - 1) /
+                       SWBWA_CPE_COUNT;
+    input_begin = SWBWA_GLOBAL_CPE_ID * input_chunk_size;
+    input_end = input_begin + input_chunk_size;
+    if (input_end > params->fastq_size[0]) input_end = params->fastq_size[0];
 
-        long long pre_cpe_tmp_buffer_size = ceil(1.0 * para->tmp_block_size / cpe_num_slave);
-        long long l_pos2 = global_pen * pre_cpe_tmp_buffer_size;
-        long long r_pos2 = l_pos2 + pre_cpe_tmp_buffer_size;
-        if(r_pos2 > para->tmp_block_size) r_pos2 = para->tmp_block_size;
-        tot_seq_num = format_seqs(para->block_buffer + real_l_pos, real_r_pos - real_l_pos, para->block_buffer2 + real_l_pos, real_r_pos - real_l_pos,
-                                  para->tmp_block_buffer + l_pos2, para->tmp_block_buffer2 + l_pos2, r_pos2 - l_pos2, para->data);
+    if (SWBWA_GLOBAL_CPE_ID > 0)
+        input_begin = get_next_fastq(params->fastq_buffer[0],
+                                     input_begin - (1 << 10),
+                                     params->fastq_size[0]);
+    if (SWBWA_GLOBAL_CPE_ID < SWBWA_CPE_COUNT - 1)
+        input_end = get_next_fastq(params->fastq_buffer[0],
+                                   input_end - (1 << 10),
+                                   params->fastq_size[0]);
 
-    }
-    para->nns[global_pen] = tot_seq_num;
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
+    output_chunk_size = (params->formatted_buffer_size + SWBWA_CPE_COUNT - 1) /
+                        SWBWA_CPE_COUNT;
+    output_begin = SWBWA_GLOBAL_CPE_ID * output_chunk_size;
+    output_end = output_begin + output_chunk_size;
+    if (output_end > params->formatted_buffer_size)
+        output_end = params->formatted_buffer_size;
+
+    return format_seqs(params->fastq_buffer[0] + input_begin,
+                       input_end - input_begin,
+                       is_paired ? params->fastq_buffer[1] + input_begin : NULL,
+                       is_paired ? input_end - input_begin : 0,
+                       params->formatted_buffer[0] + output_begin,
+                       is_paired ? params->formatted_buffer[1] + output_begin : NULL,
+                       output_end - output_begin, params->worker_data);
 }
 
-void worker12_s_pre_fast_cross() {
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
+void cpe_format_pre_cross(void)
+{
+    swbwa_enter_cross_runtime();
+    swbwa_task->formatted_read_counts[SWBWA_GLOBAL_CPE_ID] =
+        format_fastq_partition(swbwa_task);
+    swbwa_finish_cross_task();
+}
 
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-    //if(0) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("%lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
-        }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
-    }
-
-    Para_worker12_s *para = pp_slave;
+void worker12_s_pre_fast_cross(void) {
+    swbwa_enter_cross_runtime();
+    swbwa_cpe_task_t *para = swbwa_task;
     lwpf_enter(TEST);
     lwpf_start(l_worker12_1);
-#ifdef use_dynamic_task
-    if(global_pen == 0) work_counter = 0;
-#ifdef use_cgs_mode
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+#if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[global_pen] = 0;
-    int block_num = ceil(1.0 * para->nn / read_num_pre_block);
+    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
-        int l_pos = i * read_num_pre_block;
-        int r_pos = l_pos + read_num_pre_block;
-        if(r_pos > para->nn) r_pos = para->nn;
+        int l_pos = i * SWBWA_READS_PER_DYNAMIC_TASK;
+        int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(r_pos > para->work_item_count) r_pos = para->work_item_count;
         lwpf_start(l_worker12i_1);
-        worker12_pre_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->pes0, para->s_ids);
+        worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
         lwpf_stop(l_worker12i_1);
     }
 #else
-    int pre_n = ceil(1.0 * para->nn / cpe_num_slave);
-    int l_pos = global_pen * pre_n;
+    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
+    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
     int r_pos = l_pos + pre_n;
-    if(r_pos > para->nn) r_pos = para->nn;
-    worker12_pre_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->pes0, para->s_ids);
+    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
+    worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
 #endif
 
     lwpf_stop(l_worker12_1);
     lwpf_exit(TEST);
 
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
+    swbwa_finish_cross_task();
 }
 
 
-void worker12_s_fast_cross() {
-    asm volatile("mov %0, $29\n\t"::"r"(pp_slave->new_gp):);
-
-    unsigned long init_csr_value = 0;
-    asm volatile("rcsr %0, 0xc4" : "=r"(init_csr_value));
-    if(init_csr_value < 0x500000000000) {
-    //if(0) {
-        unsigned long new_csr_value = pp_slave->priv_addr + csr_copy_size * _MYID + init_csr_value - private_start;
-        if(_MYID == 0) {
-            printf("init_csr_value %p\n", (void*)init_csr_value);
-            //for(int i = 0; i < 16; i++) {
-            //    printf("%lx %lx\n", *(unsigned long*)(init_csr_value + i * 8), *(unsigned long*)(new_csr_value + i * 8));
-            //}
-        }
-        asm volatile("wcsr %0, 0xc4\n\t"::"r"(new_csr_value):);
-    }
-
-    Para_worker12_s *para = pp_slave;
+void worker12_s_fast_cross(void) {
+    swbwa_enter_cross_runtime();
+    swbwa_cpe_task_t *para = swbwa_task;
     lwpf_enter(TEST);
     lwpf_start(l_worker12_2);
-#ifdef use_dynamic_task
-    for(long i = 0; i < task_num[global_pen]; i++) {
-        int l_pos = task_list[global_pen][i] * read_num_pre_block;
-        int r_pos = l_pos + read_num_pre_block;
-        if(r_pos > para->nn) r_pos = para->nn;
-        worker12_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->s_ids);
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
+        int l_pos = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+        int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(r_pos > para->work_item_count) r_pos = para->work_item_count;
+        worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
     }
 #else
-    int pre_n = ceil(1.0 * para->nn / cpe_num_slave);
-    int l_pos = global_pen * pre_n;
+    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
+    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
     int r_pos = l_pos + pre_n;
-    if(r_pos > para->nn) r_pos = para->nn;
-    worker12_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->s_ids);
+    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
+    worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
 #endif
 
     lwpf_stop(l_worker12_2);
     lwpf_exit(TEST);
 
-    pp_slave->tag[global_pen] = 1;
-    flush_slave_cache();
-    while(1);
+    swbwa_finish_cross_task();
 }
 
 
-void worker1_s_pre_fast(Para_worker12_s *para) {
+void worker1_s_pre_fast(swbwa_cpe_task_t *para) {
  
     lwpf_enter(TEST);
     lwpf_start(l_worker1_1);
-#ifdef use_dynamic_task
-# ifdef use_cgs_mode
-    if(global_pen == 0) work_counter = 0;
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+# if SWBWA_USE_CGS
+    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
     athread_ssync_node();
 # else
     if(_PEN == 0) work_counter = 0;
     athread_ssync_array();
 # endif
-    task_num[global_pen] = 0;
-    int block_num = ceil(1.0 * para->nn / read_num_pre_block);
+    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
-        int range_l = i * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+        int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_pre_fast(para->data, j, global_pen, para->cpe_regs);
+            worker1_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker1_pre_fast(para->data, i, global_pen, para->cpe_regs);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
     }
 #endif
     lwpf_stop(l_worker1_1);
     lwpf_exit(TEST);
 }
 
-void worker1_s_fast(Para_worker12_s *para) {
+void worker1_s_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker1_2);
-#ifdef use_dynamic_task
-    for(long i = 0; i < task_num[global_pen]; i++) {
-        int range_l = task_list[global_pen][i] * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
+        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_fast(para->data, j, global_pen, para->cpe_regs);
+            worker1_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker1_fast(para->data, i, global_pen, para->cpe_regs);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
     }
 #endif
     lwpf_stop(l_worker1_2);
@@ -645,29 +450,29 @@ void worker1_s_fast(Para_worker12_s *para) {
 
 
 
-void worker2_s_pre_fast(Para_worker12_s *para) {
+void worker2_s_pre_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker2_1);
-#ifdef use_dynamic_task
-    if(global_pen == 0) work_counter = 0;
-#ifdef use_cgs_mode
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+#if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[global_pen] = 0;
-    int block_num = ceil(1.0 * para->nn / read_num_pre_block);
+    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
-        int range_l = i * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+        int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_pre_fast(para->data, j, global_pen, para->sam_lens, para->cpe_sams);
+            worker2_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker2_pre_fast(para->data, i, global_pen, para->sam_lens, para->cpe_sams);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_1);
@@ -676,21 +481,21 @@ void worker2_s_pre_fast(Para_worker12_s *para) {
 }
 
 
-void worker2_s_fast(Para_worker12_s *para) {
+void worker2_s_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker2_2);
-#ifdef use_dynamic_task
-    for(long i = 0; i < task_num[global_pen]; i++) {
-        int range_l = task_list[global_pen][i] * read_num_pre_block;
-        int range_r = range_l + read_num_pre_block;
-        if(range_r > para->nn) range_r = para->nn;
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
+        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+        int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_fast(para->data, j, global_pen, para->sam_lens, para->cpe_sams);
+            worker2_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = global_pen; i < para->nn; i += cpe_num_slave) {
-        worker2_fast(para->data, i, global_pen, para->sam_lens, para->cpe_sams);
+    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_2);
@@ -698,103 +503,61 @@ void worker2_s_fast(Para_worker12_s *para) {
 
 }
 
-void cpe_format_pre(Para_worker12_s *para) {
-    int tot_seq_num = 0;
-    if(para->block_size < cpe_num_slave * (1 << 10)) {
-    //if(1) {
-        if(global_pen == 0) {
-            tot_seq_num = format_seqs(para->block_buffer, para->block_size, para->block_buffer2, para->block_size,
-                                      para->tmp_block_buffer, para->tmp_block_buffer2, 512 << 20, para->data);
-        } else {
-            tot_seq_num = format_seqs(NULL, 0, NULL, 0,
-                                      NULL, NULL, 0, para->data);
-        }
-    } else {
-        //printf("block is big enough\n");
-        long long pre_cpe_buffer_size = ceil(1.0 * para->block_size / cpe_num_slave);
-        long long l_pos = global_pen * pre_cpe_buffer_size;
-        long long r_pos = l_pos + pre_cpe_buffer_size;
-        if(r_pos > para->block_size) r_pos = para->block_size;
-        long long real_r_pos;
-        if(global_pen == cpe_num_slave - 1) real_r_pos = r_pos;
-        else real_r_pos = GetNextFastq(para->block_buffer, r_pos - (1 << 10), para->block_size);
-        long long real_l_pos;
-        if(global_pen == 0) real_l_pos = 0;
-        else real_l_pos = GetNextFastq(para->block_buffer, l_pos - (1 << 10), para->block_size);
-        //TODO get pos of buffer2
-
-        long long pre_cpe_tmp_buffer_size = ceil(1.0 * para->tmp_block_size / cpe_num_slave);
-        long long l_pos2 = global_pen * pre_cpe_tmp_buffer_size;
-        long long r_pos2 = l_pos2 + pre_cpe_tmp_buffer_size;
-        if(r_pos2 > para->tmp_block_size) r_pos2 = para->tmp_block_size;
-        tot_seq_num = format_seqs(para->block_buffer + real_l_pos, real_r_pos - real_l_pos, para->block_buffer2 + real_l_pos, real_r_pos - real_l_pos,
-                                  para->tmp_block_buffer + l_pos2, para->tmp_block_buffer2 + l_pos2, r_pos2 - l_pos2, para->data);
-
-    }
-
-    //if(global_pen == 0) {
-    //    para->nn = tot_seq_num;
-    //}
-    para->nns[global_pen] = tot_seq_num;
-    //athread_lock(&lock_s);
-    //printf("cpe %d, seq num %d\n", global_pen, tot_seq_num);
-    //athread_unlock(&lock_s);
-//    exit(0);
+void cpe_format_pre(swbwa_cpe_task_t *para)
+{
+    para->formatted_read_counts[SWBWA_GLOBAL_CPE_ID] =
+        format_fastq_partition(para);
 }
 
 
-void worker12_s_pre_fast(Para_worker12_s *para) {
-
-    //printf("cpe set buffer %p %lld\n", para->big_buffer, para->cpe_buffer_size);
-    //set_big_buffer(para->big_buffer, para->cpe_buffer_size);
-
+void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker12_1);
-#ifdef use_dynamic_task
-    if(global_pen == 0) work_counter = 0;
-#ifdef use_cgs_mode
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+#if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[global_pen] = 0;
-    int block_num = ceil(1.0 * para->nn / read_num_pre_block);
+    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
-        int l_pos = i * read_num_pre_block;
-        int r_pos = l_pos + read_num_pre_block;
-        if(r_pos > para->nn) r_pos = para->nn;
+        int l_pos = i * SWBWA_READS_PER_DYNAMIC_TASK;
+        int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(r_pos > para->work_item_count) r_pos = para->work_item_count;
         lwpf_start(l_worker12i_1);
-        worker12_pre_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->pes0, para->s_ids);
+        worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
         lwpf_stop(l_worker12i_1);
     }
 #else
-    int pre_n = ceil(1.0 * para->nn / cpe_num_slave);
-    int l_pos = global_pen * pre_n;
+    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
+    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
     int r_pos = l_pos + pre_n;
-    if(r_pos > para->nn) r_pos = para->nn;
-    worker12_pre_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->pes0, para->s_ids);
+    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
+    worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
 #endif
     lwpf_stop(l_worker12_1);
     lwpf_exit(TEST);
 }
 
 
-void worker12_s_fast(Para_worker12_s *para) {
+void worker12_s_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker12_2);
-#ifdef use_dynamic_task
-    for(long i = 0; i < task_num[global_pen]; i++) {
-        int l_pos = task_list[global_pen][i] * read_num_pre_block;
-        int r_pos = l_pos + read_num_pre_block;
-        if(r_pos > para->nn) r_pos = para->nn;
-        worker12_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->s_ids);
+#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
+    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
+        int l_pos = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+        int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
+        if(r_pos > para->work_item_count) r_pos = para->work_item_count;
+        worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
     }
 #else
-    int pre_n = ceil(1.0 * para->nn / cpe_num_slave);
-    int l_pos = global_pen * pre_n;
+    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
+    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
     int r_pos = l_pos + pre_n;
-    if(r_pos > para->nn) r_pos = para->nn;
-    worker12_fast(para->data, l_pos, r_pos, global_pen, para->sam_lens, para->cpe_sams, para->s_ids);
+    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
+    worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
 #endif
     lwpf_stop(l_worker12_2);
     lwpf_exit(TEST);

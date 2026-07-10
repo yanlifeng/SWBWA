@@ -41,9 +41,10 @@
 #include "utils.h"
 #include "bntseq.h"
 #include "kseq.h"
+#include "swbwa_cpe.h"
+#include "swbwa_runtime.h"
 
 #include <athread.h>
-#include <mpi.h>
 //KSEQ_DECLARE(gzFile)
 KSEQ_DECLARE(int)
 
@@ -53,13 +54,12 @@ extern unsigned char nst_nt4_table[256];
 #define O_DIRECT 0
 #endif
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
 #define LWPF_UNITS U(TEST)
 #include "lwpf.h"
 #endif
 
 extern void SLAVE_FUN(state_init());
-extern void SLAVE_FUN(state_print());
 
 double t_malloc = 0;
 double t_free = 0;
@@ -97,6 +97,74 @@ long long s_reg_sum = 0;
 long long c_px2 = 0;
 long long s_px2 = 0;
 
+static void print_timing_line(const char *label, double seconds, int indent)
+{
+    fprintf(stderr, "%*s%-52s %10.3f s\n", indent, "", label, seconds);
+}
+
+static void print_timing_report(void)
+{
+    double stage3_cleanup = t_step3 - t_step3_1;
+
+    if (stage3_cleanup < 0.0) stage3_cleanup = 0.0;
+
+    fprintf(stderr,
+            "\n"
+            "======================= SWBWA Timing Report =======================\n"
+            "  Accumulated wall-clock time; indented rows are included in\n"
+            "  their parent row and must not be added to it.\n"
+            "\n"
+            "  Pipeline\n");
+    print_timing_line("total - complete three-stage pipeline", t_tot, 4);
+#if SWBWA_ENABLE_CPE_FORMAT
+    print_timing_line("stage 1 - allocate and read raw FASTQ blocks", t_step1, 4);
+#else
+    print_timing_line("stage 1 - read and format FASTQ records", t_step1, 4);
+    print_timing_line("bseq_read - parse and materialize records", t_step1_1, 6);
+    print_timing_line("file read system calls", t_step1_read, 8);
+    print_timing_line("allocate/copy bseq record fields", t_step1_1_1, 8);
+#endif
+    print_timing_line("stage 2 - align reads and generate SAM records", t_step2, 4);
+    print_timing_line("stage 3 - write SAM and release batch data", t_step3, 4);
+    print_timing_line("SAM output writes", t_step3_1, 6);
+    print_timing_line("batch cleanup and loop overhead (derived)", stage3_cleanup, 6);
+
+    fprintf(stderr, "\n  Stage 2 worker details\n");
+    print_timing_line("total - active merge worker", t_work1, 4);
+#if SWBWA_ENABLE_CPE_FORMAT
+    print_timing_line("part 1 - prepare CPE task and reusable buffers", t_work1_1, 6);
+    print_timing_line("part 2 - CPE FASTQ formatting and input release", t_work1_2, 6);
+    print_timing_line("part 3 - CPE alignment and SAM length pass", t_work1_3, 6);
+    print_timing_line("part 4 - assign slices in the shared SAM buffer", t_work1_4, 6);
+    print_timing_line("part 5 - CPE SAM record generation", t_work1_5, 6);
+    print_timing_line("part 6 - release temporary worker data", t_work1_6, 6);
+#else
+    print_timing_line("part 1 - prepare CPE task and runtime", t_work1_1, 6);
+    print_timing_line("part 2 - CPE alignment and SAM length pass", t_work1_2, 6);
+    print_timing_line("part 3 - allocate and assign packed SAM blocks", t_work1_3, 6);
+    print_timing_line("part 4 - CPE SAM record generation", t_work1_4, 6);
+    print_timing_line("part 5 - release temporary worker data", t_work1_5, 6);
+#endif
+
+    if (t_work2 != 0.0 || t_work2_1 != 0.0 || t_work2_2 != 0.0 ||
+        t_work2_3 != 0.0 || t_work2_4 != 0.0 || t_work2_5 != 0.0) {
+        fprintf(stderr, "\n  Legacy split-SAM worker details\n");
+        print_timing_line("total - legacy SAM worker", t_work2, 4);
+        print_timing_line("part 1 - CPE SAM length pass", t_work2_1, 6);
+        print_timing_line("part 2 - allocate per-read SAM buffers", t_work2_2, 6);
+        print_timing_line("part 3 - CPE SAM record generation", t_work2_3, 6);
+        print_timing_line("part 4 - release alignment and SAM metadata", t_work2_4, 6);
+        print_timing_line("part 5 - release remaining worker data", t_work2_5, 6);
+    }
+
+    fprintf(stderr, "\n  Reserved allocator timers (no active timing sites)\n");
+    print_timing_line("malloc timer", t_malloc, 4);
+    print_timing_line("free timer", t_free, 4);
+    fprintf(stderr,
+            "===================================================================\n"
+            "\n");
+}
+
 void *kopen(const char *fn, int *_fd);
 int kclose(void *a);
 void kt_pipeline(int n_threads, void *(*func)(void*, int, void*), void *shared_data, int n_steps);
@@ -111,7 +179,7 @@ static char sam_out_file_name[256];
 typedef struct {
 	kseq_t *ks, *ks2;
 	mem_opt_t *opt;
-	mem_pestat_t *pes0;
+	mem_pestat_t *pes;
 	int64_t n_processed;
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
@@ -121,10 +189,8 @@ typedef struct {
 	ktp_aux_t *aux;
 	int n_seqs;
 	bseq1_t *seqs;
-    char* block_buffer;
-    char* block_buffer2;
-    long long block_size;
-    long long block_size2;
+    char *fastq_buffer[2];
+    long long fastq_size[2];
 } ktp_data_t;
 
 static void skip_to_line_end(char *data_, long long *pos_, const long long size_) {
@@ -136,31 +202,54 @@ static void skip_to_line_end(char *data_, long long *pos_, const long long size_
 static int64_t get_next_fastq(char *data_, long long pos_, const long long size_) {
     if(pos_ < 0) pos_ = 0;
     skip_to_line_end(data_, &pos_, size_);
+    if (pos_ >= size_) return size_;
     ++pos_;
 
-    // find beginning of the next record
-    while (data_[pos_] != '@') {
+    while (pos_ < size_ && data_[pos_] != '@') {
         skip_to_line_end(data_, &pos_, size_);
+        if (pos_ >= size_) return size_;
         ++pos_;
     }
+    if (pos_ >= size_) return size_;
     int64_t pos0 = pos_;
 
     skip_to_line_end(data_, &pos_, size_);
+    if (pos_ >= size_) return pos0;
     ++pos_;
 
-    if (data_[pos_] == '@')// previous one was a quality field
+    if (pos_ < size_ && data_[pos_] == '@')
         return pos_;
-    //-----[haoz:] is the following code necessary??-------------//
     skip_to_line_end(data_, &pos_, size_);
+    if (pos_ >= size_) return pos0;
     ++pos_;
-    if (data_[pos_] != '+') fprintf(stderr, "GetNextFastq core dump is pos: %lld\n", pos_);
-    assert(data_[pos_] == '+');// pos0 was the start of tag
+    if (pos_ >= size_ || data_[pos_] != '+')
+        err_fatal(__func__, "invalid FASTQ record near byte %lld", pos0);
     return pos0;
 }
 
 
 static FILE *file1_ptr;
 static FILE *file2_ptr;
+
+static long long read_fastq_block(FILE *file, long long *file_offset,
+                                  char *buffer, long long capacity)
+{
+    long long bytes_read;
+    long long record_bytes;
+
+    if (fseek(file, *file_offset, SEEK_SET) != 0)
+        err_fatal(__func__, "failed to seek FASTQ input: %s", strerror(errno));
+
+    bytes_read = fread(buffer, 1, capacity, file);
+    if (ferror(file))
+        err_fatal(__func__, "failed to read FASTQ input: %s", strerror(errno));
+
+    record_bytes = bytes_read;
+    if (bytes_read == capacity)
+        record_bytes = get_next_fastq(buffer, bytes_read - (1 << 10), bytes_read);
+    *file_offset += record_bytes;
+    return record_bytes;
+}
 
 
 static void *process(void *shared, int step, void *_data)
@@ -170,67 +259,43 @@ static void *process(void *shared, int step, void *_data)
 	int i;
 	if (step == 0) {
         double t0 = GetTime();
-#ifdef use_cpe_step0
+#if SWBWA_ENABLE_CPE_FORMAT
         static long long now_file1_pos = 0;
         static long long now_file2_pos = 0;
-        static long long tot_block_size = SWBWA_CPE_NUM * SWBWA_PRE_CPE_READ_NUM * SWBWA_EVAL_READ_SIZE;
-        static long long block_size = SWBWA_PRE_CPE_READ_NUM * SWBWA_EVAL_READ_SIZE;
-        char* block_buffer = (char*)malloc(tot_block_size + 1024);
-        char* block_buffer2 = (char*)malloc(tot_block_size + 1024);
-        ktp_data_t *ret;
-        ret = calloc(1, sizeof(ktp_data_t));
-        if (bwa_verbose >= 3)
-            fprintf(stderr, "[M::%s] read block (%lld)...\n", __func__, tot_block_size);
-
-//        printf("file ptr %p %p\n", file1_ptr, file2_ptr);
-//        printf("seek pos %lld %lld\n", now_file1_pos, now_file2_pos);
-        fseek(file1_ptr, now_file1_pos, SEEK_SET);
-        long long read_size = fread(block_buffer, 1, tot_block_size, file1_ptr);
-//        printf("read size1 : %lld\n", read_size);
+        const long long total_block_size =
+            SWBWA_CPE_COUNT * SWBWA_READS_PER_CPE_BLOCK *
+            SWBWA_ESTIMATED_FASTQ_RECORD_BYTES;
+        const int is_paired = aux->ks2 != NULL;
+        char *block_buffer = malloc(total_block_size + 1024);
+        char *block_buffer2 = is_paired ? malloc(total_block_size + 1024) : NULL;
         long long real_size;
-        if(read_size != tot_block_size) {
-            real_size = read_size;
-        } else {
-            real_size = get_next_fastq(block_buffer, read_size - (1 << 10), read_size);
-        }
-        now_file1_pos += real_size;
-//        printf("file1 read size %lld, real size %lld\n", read_size, real_size);
+        long long real_size2 = 0;
+        ktp_data_t *ret = calloc(1, sizeof(*ret));
 
-        fseek(file2_ptr, now_file2_pos, SEEK_SET);
-        long long read_size2 = fread(block_buffer2, 1, tot_block_size, file2_ptr);
-//        printf("read size2 : %lld\n", read_size2);
-        long long real_size2;
-        if(read_size2 != tot_block_size) {
-            real_size2 = read_size2;
-        } else {
-            real_size2 = get_next_fastq(block_buffer2, read_size2 - (1 << 10), read_size2);
-        }
-        now_file2_pos += real_size2;
-//        printf("file2 read size %lld, real size %lld\n", read_size2, real_size2);
+        if (ret == NULL || block_buffer == NULL || (is_paired && block_buffer2 == NULL))
+            err_fatal(__func__, "failed to allocate FASTQ input buffers");
+        if (bwa_verbose >= 3)
+            fprintf(stderr, "[M::%s] read block (%lld)...\n", __func__, total_block_size);
 
-        assert(real_size == real_size2);
-        if(real_size == 0) {
+        real_size = read_fastq_block(file1_ptr, &now_file1_pos,
+                                     block_buffer, total_block_size);
+        if (is_paired) {
+            real_size2 = read_fastq_block(file2_ptr, &now_file2_pos,
+                                          block_buffer2, total_block_size);
+            if (real_size != real_size2)
+                err_fatal(__func__, "paired FASTQ blocks have different sizes: %lld != %lld",
+                          real_size, real_size2);
+        }
+        if (real_size == 0) {
             free(block_buffer);
             free(block_buffer2);
             free(ret);
             return 0;
         }
-        ret->block_buffer = block_buffer;
-        ret->block_buffer2 = block_buffer2;
-        ret->block_size = real_size;
-        ret->block_size2 = real_size2;
-        // print the first 10 char in buffer
-//        printf("buffer1 : ");
-//        for(int i = 0; i < 10; i++) {
-//            printf("%c", block_buffer[i]);
-//        }
-//        printf("\n");
-//        printf("buffer2 : ");
-//        for(int i = 0; i < 10; i++) {
-//            printf("%c", block_buffer2[i]);
-//        }
-//        printf("\n");
-
+        ret->fastq_buffer[0] = block_buffer;
+        ret->fastq_buffer[1] = block_buffer2;
+        ret->fastq_size[0] = real_size;
+        ret->fastq_size[1] = real_size2;
 #else
 		ktp_data_t *ret;
 		int64_t size = 0;
@@ -259,17 +324,14 @@ static void *process(void *shared, int step, void *_data)
 		const mem_opt_t *opt = aux->opt;
 		const bwaidx_t *idx = aux->idx;
 		if (opt->flag & MEM_F_SMARTPE) {
-			//TODO
-            assert(0);
+			err_fatal(__func__, "smart pairing is not supported by SWBWA");
 		} else {
 
-#ifdef use_cpe_step0
-            mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, &(data->n_seqs), &(data->seqs), data->block_buffer, data->block_buffer2, data->block_size, data->block_size2, aux->pes0);
+#if SWBWA_ENABLE_CPE_FORMAT
+            mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, &(data->n_seqs), &(data->seqs), data->fastq_buffer[0], data->fastq_buffer[1], data->fastq_size[0], data->fastq_size[1], aux->pes);
 #else
-            mem_process_seqs_merge(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes0);
-//            mem_process_seqs(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes0);
+            mem_process_seqs_merge(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes);
 #endif
-//            printf("now data->n_seqs %d\n", data->n_seqs);
         }
 		aux->n_processed += data->n_seqs;
         t_step2 += GetTime() - t0;
@@ -277,30 +339,20 @@ static void *process(void *shared, int step, void *_data)
 	} else if (step == 2) {
         double t0 = GetTime();
 		for (i = 0; i < data->n_seqs; ++i) {
-            //if(file_out_sam != NULL) {
-            //if(file_out_fd != 0) {
             double t1 = GetTime();
-            //if (data->seqs[i].sam) err_fputs(data->seqs[i].sam, file_out_sam);
-//            printf("sam %p\n", data->seqs[i].sam);
             if (data->seqs[i].sam) {
                 if (file_out_fd >= 0) my_align_write(data->seqs[i].sam, file_out_fd, 0, NULL);
                 else err_fputs(data->seqs[i].sam, stdout);
             }
             t_step3_1 += GetTime() - t1;
-            //}
-			//if (data->seqs[i].sam) err_fputs(data->seqs[i].sam, stdout);
-#ifdef use_cpe_step0
-#else
+#if !SWBWA_ENABLE_CPE_FORMAT
 			free(data->seqs[i].name); free(data->seqs[i].comment);
 			free(data->seqs[i].seq); free(data->seqs[i].qual);
             if (data->seqs[i].is_new_addr == 1) {
-//				wrap_free(data->seqs[i].sam);
 				free(data->seqs[i].sam);
 			}
 #endif
-//            free(data->seqs[i].sam);
 		}
-//        printf("free seqs %p\n", data->seqs);
 		free(data->seqs); free(data);
         t_step3 += GetTime() - t0;
 		return 0;
@@ -327,19 +379,9 @@ static void update_a(mem_opt_t *opt, const mem_opt_t *opt0)
 }
 
 
-typedef struct{
-    char* big_buffer;
-    long long cpe_buffer_size;
-} Para_malloc;
-
-static void open_sam_output(const char *path, int rank)
+static void open_sam_output(const char *path)
 {
-    int n;
-#ifdef use_my_mpi
-    n = snprintf(sam_out_file_name, sizeof(sam_out_file_name), "%s_%d", path, rank);
-#else
-    n = snprintf(sam_out_file_name, sizeof(sam_out_file_name), "%s", path);
-#endif
+    int n = snprintf(sam_out_file_name, sizeof(sam_out_file_name), "%s", path);
     if (n < 0 || (size_t)n >= sizeof(sam_out_file_name))
         err_fatal(__func__, "output path is too long: '%s'", path);
     file_out_fd = open(sam_out_file_name, O_CREAT | O_RDWR | O_DIRECT, 0666);
@@ -348,15 +390,10 @@ static void open_sam_output(const char *path, int rank)
     fprintf(stderr, "the output file is %s\n", sam_out_file_name);
 }
 
-static void open_fastq_input(const char *path, int rank, FILE **file_ptr, void **ko, int *fd)
+static void open_fastq_input(const char *path, FILE **file_ptr, void **ko, int *fd)
 {
     char resolved_path[PATH_MAX];
-    int n;
-#ifdef use_my_mpi
-    n = snprintf(resolved_path, sizeof(resolved_path), "%s_%d", path, rank);
-#else
-    n = snprintf(resolved_path, sizeof(resolved_path), "%s", path);
-#endif
+    int n = snprintf(resolved_path, sizeof(resolved_path), "%s", path);
     if (n < 0 || (size_t)n >= sizeof(resolved_path))
         err_fatal(__func__, "input path is too long: '%s'", path);
     fprintf(stderr, "the input file is %s\n", resolved_path);
@@ -370,37 +407,24 @@ static void open_fastq_input(const char *path, int rank, FILE **file_ptr, void *
         err_fatal(__func__, "failed to open input stream '%s'", resolved_path);
 }
 
-static void init_athread_runtime(void)
+static void init_cpe_allocator(void)
 {
-#ifdef use_cgs_mode
-    athread_init_cgs();
-#else
-    athread_init();
-#endif
-}
+#if SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+    static char *pool_buffer;
+    swbwa_cpe_pool_params_t params;
 
-static void init_cpe_malloc_pool(void)
-{
-#ifdef use_cgs_mode
-    char *big_buffer = (char*)malloc(SWBWA_CPE_MALLOC_TOTAL_SIZE);
-    Para_malloc p_malloc;
-    if (big_buffer == NULL)
-        err_fatal(__func__, "failed to allocate CPE malloc buffer: bytes=%lld", (long long)SWBWA_CPE_MALLOC_TOTAL_SIZE);
-    memset(big_buffer, 0, SWBWA_CPE_MALLOC_TOTAL_SIZE);
-    p_malloc.big_buffer = big_buffer;
-    p_malloc.cpe_buffer_size = SWBWA_CPE_MALLOC_TOTAL_SIZE / SWBWA_CPE_NUM;
-    __real_athread_spawn_cgs((void*)slave_state_init, &p_malloc, 1);
-    athread_join_cgs();
+    pool_buffer = (char*)malloc(SWBWA_CPE_POOL_TOTAL_BYTES);
+    if (pool_buffer == NULL)
+        err_fatal(__func__, "failed to allocate CPE malloc buffer: bytes=%lld", (long long)SWBWA_CPE_POOL_TOTAL_BYTES);
+    memset(pool_buffer, 0, SWBWA_CPE_POOL_TOTAL_BYTES);
+    params.buffer = pool_buffer;
+    params.bytes_per_cpe = SWBWA_CPE_POOL_BYTES_PER_CPE;
+    swbwa_cpe_run((void*)slave_state_init, &params);
 #endif
 }
 
 int main_mem(int argc, char *argv[])
 {
-
-    int local_my_rank = 0;
-#ifdef use_my_mpi
-    MPI_Comm_rank(MPI_COMM_WORLD, &local_my_rank);
-#endif
 	mem_opt_t *opt, opt0;
 	int fd, fd2;
     int i, c, ignore_alt = 0, no_mt_io = 0;
@@ -448,8 +472,8 @@ int main_mem(int argc, char *argv[])
 		else if (c == 's') opt->split_width = atoi(optarg), opt0.split_width = 1;
 		else if (c == 'G') opt->max_chain_gap = atoi(optarg), opt0.max_chain_gap = 1;
 		else if (c == 'N') opt->max_chain_extend = atoi(optarg), opt0.max_chain_extend = 1;
-        else if (c == 'o' || c == 'f') {
-            open_sam_output(optarg, local_my_rank);
+		else if (c == 'o' || c == 'f') {
+			open_sam_output(optarg);
         }
         //xreopen(optarg, "wb", stdout);
         else if (c == 'W') opt->min_chain_weight = atoi(optarg), opt0.min_chain_weight = 1;
@@ -503,7 +527,7 @@ int main_mem(int argc, char *argv[])
 				}
 			} else hdr_line = bwa_insert_header(optarg, hdr_line);
 		} else if (c == 'I') { // specify the insert size distribution
-			aux.pes0 = pes;
+			aux.pes = pes;
 			pes[1].failed = 0;
 			pes[1].avg = strtod(optarg, &p);
 			pes[1].std = pes[1].avg * .1;
@@ -624,7 +648,7 @@ int main_mem(int argc, char *argv[])
 	} else update_a(opt, &opt0);
 	bwa_fill_scmat(opt->a, opt->b, opt->mat);
 
-    init_athread_runtime();
+	swbwa_runtime_init();
 
 	aux.idx = bwa_idx_load_from_shm(argv[optind]);
 	if (aux.idx == 0) {
@@ -635,10 +659,7 @@ int main_mem(int argc, char *argv[])
 		for (i = 0; i < aux.idx->bns->n_seqs; ++i)
 			aux.idx->bns->anns[i].is_alt = 0;
 
-    int in_rank = local_my_rank + 1;
-    //int in_rank = (local_my_rank + 1 + 1) % 6 + 1;
-    //int in_rank = 2;
-    open_fastq_input(argv[optind + 1], in_rank, &file1_ptr, &ko, &fd);
+	open_fastq_input(argv[optind + 1], &file1_ptr, &ko, &fd);
 	//fp = gzdopen(fd, "r");
 	//aux.ks = kseq_init(fp);
 	aux.ks = kseq_init(fd);
@@ -647,7 +668,7 @@ int main_mem(int argc, char *argv[])
 			if (bwa_verbose >= 2)
 				fprintf(stderr, "[W::%s] when '-p' is in use, the second query file is ignored.\n", __func__);
 		} else {
-            open_fastq_input(argv[optind + 2], in_rank, &file2_ptr, &ko2, &fd2);
+			open_fastq_input(argv[optind + 2], &file2_ptr, &ko2, &fd2);
 			//fp2 = gzdopen(fd2, "r");
 			//aux.ks2 = kseq_init(fp2);
 			aux.ks2 = kseq_init(fd2);
@@ -657,27 +678,19 @@ int main_mem(int argc, char *argv[])
 	//bwa_print_sam_hdr(aux.idx->bns, hdr_line);
 	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
 
-    init_cpe_malloc_pool();
+	init_cpe_allocator();
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_init(NULL);
 #endif
-
-//    htmalloccount_init();
 
     double t0 = GetTime();
     if(no_mt_io) kt_pipeline_single(1, process, &aux, 3);
     else kt_pipeline_queue(3, process, &aux, 3);
 
-//    htmalloccount_print();
-
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     char filename[50];
-#ifdef use_cgs_mode
-    sprintf(filename, "lwpf_%d_6CG.log", local_my_rank);
-#else
-    sprintf(filename, "lwpf_%d_1CG.log", local_my_rank);
-#endif
+    snprintf(filename, sizeof(filename), "lwpf_%dCG.log", SWBWA_CG_COUNT);
     FILE *file = fopen(filename, "w");
     if (file == NULL) {
         perror("Failed to open lwpf.log");
@@ -688,50 +701,10 @@ int main_mem(int argc, char *argv[])
     fclose(file);
 #endif
 
-    //__real_athread_spawn_cgs((void*)slave_state_print, 0, 1);
-    //athread_join_cgs();
-
-
-
-	//printf("print spwan\n");
-    //for(int i = 0; i < cpe_num; i++) cpe_is_over[i] = 0;
-
-    //for(long cg_id = 0; cg_id < 6; cg_id++) {
-    //    for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
-    //        *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 3;
-    //    }
-    //}
-    //for(long cg_id = 0; cg_id < 6; cg_id++) {
-    //    for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
-    //        *((long*)(0x800000008000 + (cg_id << 40ll) + (cpe_id << 24ll))) = slave_state_print;
-    //    }
-    //}
-    //for(long cg_id = 0; cg_id < 6; cg_id++) {
-    //    for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
-    //        *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 0;
-    //    }
-    //}
-    //asm volatile("memb\n\t":::);
-
-    //while(1) {
-    //    int sum = 0;
-    //    for(int i = 0; i < cpe_num; i++)
-    //        sum += cpe_is_over[i];
-    //    //printf("mpe sum %d\n", sum);
-    //    if(sum == cpe_num) break;
-    //    sleep(1);
-    //}
-
-    
-
-    //athread_halt();
-
     t_tot += GetTime() - t0;
 
 
-    fprintf(stderr, "rank %d [timer] tot : %.2f, step1 : %.2f (%.2f [%.2f]), step2 : %.2f, step3 : %.2f (%.2f), malloc : %.2f, free : %.2f\n", local_my_rank, t_tot, t_step1, t_step1_1, t_step1_read, t_step2, t_step3, t_step3_1, t_malloc, t_free);
-    fprintf(stderr, "rank %d [timer] step2 --- work1 : %.2f (1 : %.2f, 2 : %.2f, 3 : %.2f, 4 : %.2f, 5 : %.2f, 6 : %.2f), work2 : %.2f (1 : %.2f, 2 : %.2f, 3 : %.2f, 4 : %.2f, 5 : %.2f)\n", 
-            local_my_rank, t_work1, t_work1_1, t_work1_2, t_work1_3, t_work1_4, t_work1_5, t_work1_6, t_work2, t_work2_1, t_work2_2, t_work2_3, t_work2_4, t_work2_5);
+    print_timing_report();
 
 
 	free(hdr_line);

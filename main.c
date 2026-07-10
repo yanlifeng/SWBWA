@@ -28,8 +28,7 @@
 #include <string.h>
 #include "kstring.h"
 #include "utils.h"
-#include <mpi.h>
-#include<athread.h>
+#include "malloc_wrap.h"
 
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "0.0.1"
@@ -69,26 +68,14 @@ static int usage()
 
 int main(int argc, char *argv[])
 {
-
-    MPI_Init(&argc, &argv);
-    int size, rank;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    //volatile int aa = 0;
-    //fprintf(stderr, "aa %d\n", aa);
-    //while(aa == 0) {
-    //    
-    //}
-    //fprintf(stderr, "aa %d\n", aa);
-
-    //athread_init();
-
-    //htmalloccount_init();
 	extern char *bwa_pg;
 	int i, ret;
 	double t_real;
 	kstring_t pg = {0,0,0};
+
+#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
+	swbwa_host_malloc_stats_init();
+#endif
 	t_real = realtime();
 	ksprintf(&pg, "@PG\tID:SWBWA\tPN:SWBWA\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
 	for (i = 1; i < argc; ++i) ksprintf(&pg, " %s", argv[i]);
@@ -126,10 +113,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "\n");
 	}
 	free(bwa_pg);
-
-    //htmalloccount_print();
-    //athread_halt();
-
-    MPI_Finalize();
+#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
+	swbwa_host_malloc_stats_print();
+#endif
 	return ret;
 }

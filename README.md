@@ -25,6 +25,42 @@ cd SWBWA
 make -j4
 ```
 
+### Build configuration
+
+The default build uses cross-segment CGS execution, host-side FASTQ
+formatting, the system CPE allocator, and the host malloc wrapper:
+
+```bash
+make print-config
+```
+
+The supported build variables are:
+
+| Variable | Values | Default |
+| --- | --- | --- |
+| `EXEC_MODE` | `single`, `cgs`, `cgs_cross` | `cgs_cross` |
+| `FORMAT_MODE` | `host`, `cpe` | `host` |
+| `CPE_ALLOCATOR` | `system`, `pool` | `system` |
+| `HOST_MALLOC_WRAPPER` | `0`, `1` | `1` |
+| `LWPF` | `0`, `1` | `0` |
+
+For example:
+
+```bash
+make clean
+make -j4 EXEC_MODE=cgs FORMAT_MODE=host CPE_ALLOCATOR=system
+```
+
+Run `make clean` before changing build modes because Make does not track
+compiler flag changes in existing object files.
+
+After source changes, regenerate the linked CPE layout and relocation data for
+cross-segment execution:
+
+```bash
+./build_cross.sh EXEC_MODE=cgs_cross FORMAT_MODE=host CPE_ALLOCATOR=system
+```
+
 ## Simple usage
 
 ### Index the reference
@@ -56,4 +92,3 @@ For more help information, please refer to:
 ```bash
 ./SWBWA mem
 ```
-

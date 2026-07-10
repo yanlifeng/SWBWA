@@ -7,7 +7,7 @@
 #include "kseq.h"
 KSEQ_DECLARE(gzFile)
 
-#ifdef HOST_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 

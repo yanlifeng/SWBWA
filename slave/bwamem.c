@@ -51,7 +51,7 @@
 
 #include "lwpf3_my_cpe.h"
 
-#ifdef SLAVE_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 
@@ -155,13 +155,13 @@ typedef struct {
 } smem_aux_t;
 
 // TODO at least seq len
-#define ldm_malloc_tmp_size1 128
-#define ldm_malloc_tmp_size2 512
+#define SWBWA_LDM_TMP_BUFFER_1_BYTES 128
+#define SWBWA_LDM_TMP_BUFFER_2_BYTES 512
 
-//__thread_local_fix bwtintv_t tmpv0_fixed[ldm_malloc_tmp_size1];
-//__thread_local_fix bwtintv_t tmpv1_fixed[ldm_malloc_tmp_size1];
-//__thread_local_fix bwtintv_t mema_fixed[ldm_malloc_tmp_size2];
-//__thread_local_fix bwtintv_t mem1a_fixed[ldm_malloc_tmp_size2];
+//__thread_local_fix bwtintv_t tmpv0_fixed[SWBWA_LDM_TMP_BUFFER_1_BYTES];
+//__thread_local_fix bwtintv_t tmpv1_fixed[SWBWA_LDM_TMP_BUFFER_1_BYTES];
+//__thread_local_fix bwtintv_t mema_fixed[SWBWA_LDM_TMP_BUFFER_2_BYTES];
+//__thread_local_fix bwtintv_t mem1a_fixed[SWBWA_LDM_TMP_BUFFER_2_BYTES];
 
 
 static smem_aux_t *smem_aux_init()
@@ -178,17 +178,17 @@ static smem_aux_t *smem_aux_init()
 //	a->tmpv[0] = ldm_malloc(sizeof(bwtintv_v));
 //	a->tmpv[1] = ldm_malloc(sizeof(bwtintv_v));
 //    a->tmpv[0]->n = 0;
-//    a->tmpv[0]->m = ldm_malloc_tmp_size1;
-//    a->tmpv[0]->a = ldm_malloc(ldm_malloc_tmp_size1 * sizeof(bwtintv_t));
+//    a->tmpv[0]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
+//    a->tmpv[0]->a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
 //    a->tmpv[1]->n = 0;
-//    a->tmpv[1]->m = ldm_malloc_tmp_size1;
-//    a->tmpv[1]->a = ldm_malloc(ldm_malloc_tmp_size1 * sizeof(bwtintv_t));
+//    a->tmpv[1]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
+//    a->tmpv[1]->a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
 //    a->mem.n = 0;
-//    a->mem.m = ldm_malloc_tmp_size2;
-//    a->mem.a = ldm_malloc(ldm_malloc_tmp_size2 * sizeof(bwtintv_t));
+//    a->mem.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
+//    a->mem.a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
 //    a->mem1.n = 0;
-//    a->mem1.m = ldm_malloc_tmp_size2;
-//    a->mem1.a = ldm_malloc(ldm_malloc_tmp_size2 * sizeof(bwtintv_t));
+//    a->mem1.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
+//    a->mem1.a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
 
 
     //global fix version
@@ -196,16 +196,16 @@ static smem_aux_t *smem_aux_init()
 	//a->tmpv[0] = ldm_malloc(sizeof(bwtintv_v));
 	//a->tmpv[1] = ldm_malloc(sizeof(bwtintv_v));
     //a->tmpv[0]->n = 0;
-    //a->tmpv[0]->m = ldm_malloc_tmp_size1;
+    //a->tmpv[0]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
     //a->tmpv[0]->a = tmpv0_fixed;
     //a->tmpv[1]->n = 0;
-    //a->tmpv[1]->m = ldm_malloc_tmp_size1;
+    //a->tmpv[1]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
     //a->tmpv[1]->a = tmpv1_fixed;
     //a->mem.n = 0;
-    //a->mem.m = ldm_malloc_tmp_size2;
+    //a->mem.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
     //a->mem.a = mema_fixed;
     //a->mem1.n = 0;
-    //a->mem1.m = ldm_malloc_tmp_size2;
+    //a->mem1.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
     //a->mem1.a = mem1a_fixed;
 
 	return a;
@@ -222,12 +222,12 @@ static void smem_aux_destroy(smem_aux_t *a)
 	free(a);
 
     //ldm free version
-//    ldm_free(a->tmpv[0]->a, ldm_malloc_tmp_size1 * sizeof(bwtintv_t));
+//    ldm_free(a->tmpv[0]->a, SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
 //    ldm_free(a->tmpv[0], sizeof(bwtintv_v));
-//	ldm_free(a->tmpv[1]->a, ldm_malloc_tmp_size1 * sizeof(bwtintv_t));
+//	ldm_free(a->tmpv[1]->a, SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
 //    ldm_free(a->tmpv[1], sizeof(bwtintv_v));
-//	ldm_free(a->mem.a, ldm_malloc_tmp_size2 * sizeof(bwtintv_t));
-//    ldm_free(a->mem1.a, ldm_malloc_tmp_size2 * sizeof(bwtintv_t));
+//	ldm_free(a->mem.a, SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
+//    ldm_free(a->mem1.a, SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
 //	ldm_free(a, sizeof(smem_aux_t));
 
     //global fix version
@@ -263,10 +263,7 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
     lwpf_start(l_collect_2);
 	// second pass: find MEMs inside a long SMEM
 	old_n = a->mem.n;
-//#define use_2_pass_batch
-#define bs_2_pass 8
-
-#ifdef use_2_pass_batch
+#if SWBWA_ENABLE_TWO_PASS_BATCH
     int b_x[old_n];
     int b_min_intv[old_n];
     int cnt_2_pass = 0;
@@ -278,8 +275,8 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
         b_x[cnt_2_pass] = (start + end)>>1;
         b_min_intv[cnt_2_pass++] = p->x[2]+1;
     }
-    for (k = 0; k < cnt_2_pass; k += bs_2_pass) {
-        int cnt_now = cnt_2_pass - k >= bs_2_pass ? bs_2_pass: cnt_2_pass - k;
+    for (k = 0; k < cnt_2_pass; k += SWBWA_TWO_PASS_BATCH_SIZE) {
+        int cnt_now = cnt_2_pass - k >= SWBWA_TWO_PASS_BATCH_SIZE ? SWBWA_TWO_PASS_BATCH_SIZE: cnt_2_pass - k;
         lwpf_start(l_my_smem2);
         bwt_smem1_batch(cnt_now, bwt, len, seq, b_x + k, b_min_intv + k, &a->mem1);
         for (i = 0; i < a->mem1.n; ++i)
@@ -672,11 +669,11 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 	int m, i, j;
 	if (n <= 1) return n;
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_sort_1);
 #endif
 	ks_introsort(mem_ars2, n, a); // sort by the END position, not START!
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_sort_1);
 #endif
 	for (i = 0; i < n; ++i) a[i].n_comp = 1;
@@ -716,11 +713,11 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 		}
 	n = m;
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_start(l_sort_2);
 #endif
 	ks_introsort(mem_ars, n, a);
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_sort_2);
 #endif
 	for (i = 1; i < n; ++i) { // mark identical hits
@@ -1503,7 +1500,7 @@ void worker1_fast(void *data, int i, int tid, mem_alnreg_v* cpe_regs)
 }
 
 
-#define bench_addr_mod 2147483648ll
+#define SWBWA_BENCH_ADDRESS_MODULUS 2147483648ll
 
 int get_value_from_file(const char *filename) {
     FILE *file = fopen(filename, "r");
@@ -1557,8 +1554,8 @@ void occ_bench(void *data) {
     uint64_t cntt[4];
 	uint64_t pre_k = 0;
     for(uint64_t i = 0; i < N; i++) {
-		//uint64_t k = (pre_cnt + pre_cnt / 991) % bench_addr_mod;
-		uint64_t k = (pre_cnt + rng_rand(&rng)) % bench_addr_mod;
+		//uint64_t k = (pre_cnt + pre_cnt / 991) % SWBWA_BENCH_ADDRESS_MODULUS;
+		uint64_t k = (pre_cnt + rng_rand(&rng)) % SWBWA_BENCH_ADDRESS_MODULUS;
 		//if(fabs(pre_k - k) < 1024 * 1024) {
 		//    ggnum++;
 		//    fprintf(stderr, "GG pos %d %llu %llu %llu\n", i, pre_k, k, fabs(pre_k - k));
@@ -1576,32 +1573,25 @@ void occ_bench(void *data) {
 
 }
 
-//#define use_ldm_for_worker2
-
 void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams)
 {
     extern int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2]);
     extern void mem_reg2ovlp(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a);
     worker_t *w = (worker_t*)data;
     if (!(w->opt->flag&MEM_F_PE)) {
-        fprintf("stderr", "TODO and test\n");
-        exit(0);
-        if (bwa_verbose >= 4) printf("=====> Finalizing read '%s' <=====\n", w->seqs[i].name);
-        mem_mark_primary_se(w->opt, w->regs[i].n, w->regs[i].a, w->n_processed + i);
-        if (w->opt->flag & MEM_F_PRIMARY5) mem_reorder_primary5(w->opt->T, &w->regs[i]);
-        mem_reg2sam(w->opt, w->bns, w->pac, &w->seqs[i], &w->regs[i], 0, 0);
-        free(w->regs[i].a);
+        fprintf(stderr, "single-end reads are unsupported in the legacy split CPE pipeline\n");
+        exit(EXIT_FAILURE);
     } else {
         if (bwa_verbose >= 4) printf("=====> Finalizing read pair '%s' <=====\n", w->seqs[i<<1|0].name);
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
         lwpf_start(l_2_pre);
 #endif
         mem_alnreg_v tmp_reg[2];
         for(int id = 0; id < 2; id++) {
             tmp_reg[id].n = w->regs[i<<1|id].n;
             tmp_reg[id].m = w->regs[i<<1|id].m;
-#ifdef use_ldm_for_worker2
+#if SWBWA_ENABLE_WORKER2_LDM
             //tmp_reg[id].a = ldm_malloc(tmp_reg[id].m * sizeof(mem_alnreg_t));
             tmp_reg[id].a = malloc(tmp_reg[id].m * sizeof(mem_alnreg_t));
 #else
@@ -1622,7 +1612,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             int qual_len = w->seqs[i<<1|id].qual ? strlen(w->seqs[i<<1|id].qual) : 0;
 
             if (name_len > 0) {
-#ifdef use_ldm_for_worker2
+#if SWBWA_ENABLE_WORKER2_LDM
                 tmp_seq[id].name = ldm_malloc((name_len + 1) * sizeof(char));
 #else
                 tmp_seq[id].name = malloc((name_len + 1) * sizeof(char));
@@ -1634,7 +1624,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
 
             if (comment_len > 0) {
-#ifdef use_ldm_for_worker2
+#if SWBWA_ENABLE_WORKER2_LDM
                 tmp_seq[id].comment = ldm_malloc((comment_len + 1) * sizeof(char));
 #else
                 tmp_seq[id].comment = malloc((comment_len + 1) * sizeof(char));
@@ -1646,7 +1636,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
 
             if (seq_len > 0) {
-#ifdef use_ldm_for_worker2
+#if SWBWA_ENABLE_WORKER2_LDM
                 tmp_seq[id].seq = ldm_malloc((seq_len + 1) * sizeof(char));
 #else
                 tmp_seq[id].seq = malloc((seq_len + 1) * sizeof(char));
@@ -1658,7 +1648,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
 
             if (qual_len > 0) {
-#ifdef use_ldm_for_worker2
+#if SWBWA_ENABLE_WORKER2_LDM
                 tmp_seq[id].qual = ldm_malloc((qual_len + 1) * sizeof(char));
 #else
                 tmp_seq[id].qual = malloc((qual_len + 1) * sizeof(char));
@@ -1670,80 +1660,58 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
         }
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
         lwpf_stop(l_2_pre);
 #endif
 
 	
 
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
         lwpf_start(l_2_mem);
 #endif
      
 //        mem_sam_pe(w->opt, w->bns, w->pac, w->pes, (w->n_processed>>1) + i, &w->seqs[i<<1], &w->regs[i<<1]);
         mem_sam_pe(w->opt, w->bns, w->pac, w->pes, (w->n_processed>>1) + i, tmp_seq, tmp_reg);
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
         lwpf_stop(l_2_mem);
 #endif
      
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
         lwpf_start(l_2_after);
 #endif
      
         for(int id = 0; id < 2; id++) {
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
             lwpf_start(l_2_after_1);
 #endif
             //int mpe_sam_len = strlen(w->seqs[i<<1|id].sam);
             //assert(mpe_sam_len == (w->seqs[i<<1|id].l_seq << 6));
 //            int mpe_sam_len = w->seqs[i<<1|id].l_seq << 6;
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
             lwpf_stop(l_2_after_1);
 #endif
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
             lwpf_start(l_2_after_2);
 #endif
             int cpe_sam_len = strlen(tmp_seq[id].sam);
-//            if(cpe_sam_len + 1 > mpe_sam_len) {
-//                fprintf(stderr, "%d cpe_sam_len > mpe_sam_len, %d %d\n", i<<1|id, cpe_sam_len, mpe_sam_len);
-//                exit(0);
-//            }
             cpe_sams[i<<1|id] = tmp_seq[id].sam;
             sam_lens[i<<1|id] = cpe_sam_len;
 
-//            memcpy(w->seqs[i<<1|id].sam, tmp_seq[id].sam, cpe_sam_len * sizeof(char));
-//            w->seqs[i<<1|id].sam[cpe_sam_len] = '\0';
-            //if(strlen(w->seqs[i<<1|id].name) != strlen(tmp_seq[id].name)) {
-            //    fprintf(stderr, "name len GG, %lu %lu\n", strlen(w->seqs[i<<1|id].name), strlen(tmp_seq[id].name));
-            //    exit(0);
-            //}
-            //if(strlen(w->seqs[i<<1|id].comment) != strlen(tmp_seq[id].comment)) {
-            //    fprintf(stderr, "comment len GG, %lu %lu\n", strlen(w->seqs[i<<1|id].comment), strlen(tmp_seq[id].comment));
-            //    exit(0);
-            //}
-            //if(w->seqs[i<<1|id].l_seq != strlen(tmp_seq[id].seq)) {
-            //    fprintf(stderr, "seq len GG, %lu %lu\n", w->seqs[i<<1|id].l_seq, strlen(tmp_seq[id].seq));
-            //    exit(0);
-            //}
             memcpy(w->seqs[i<<1|id].seq, tmp_seq[id].seq, w->seqs[i<<1|id].l_seq * sizeof(char));
-            //if(strlen(w->seqs[i<<1|id].qual) != strlen(tmp_seq[id].qual)) {
-            //    fprintf(stderr, "qual len GG, %lu %lu\n", strlen(w->seqs[i<<1|id].qual), strlen(tmp_seq[id].qual));
-            //    exit(0);
-            //}
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
             lwpf_stop(l_2_after_2);
 #endif
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
             lwpf_start(l_2_after_3);
 #endif
 
-#ifdef use_ldm_for_worker2
+#if SWBWA_ENABLE_WORKER2_LDM
             int name_len = w->seqs[i<<1|id].name ? strlen(w->seqs[i<<1|id].name) : 0;
             int comment_len = w->seqs[i<<1|id].comment ? strlen(w->seqs[i<<1|id].comment) : 0;
             int seq_len = w->seqs[i<<1|id].l_seq;
@@ -1763,13 +1731,13 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             if(tmp_seq[id].qual) free(tmp_seq[id].qual);
 #endif
 //            if(tmp_seq[id].sam) free(tmp_seq[id].sam);
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
             lwpf_stop(l_2_after_3);
 #endif
         }
     }
 
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
     lwpf_stop(l_2_after);
 #endif
      
@@ -1782,8 +1750,8 @@ void worker2_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams)
     extern void mem_reg2ovlp(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a);
     worker_t *w = (worker_t*)data;
     if (!(w->opt->flag&MEM_F_PE)) {
-        fprintf("stderr", "TODO and test\n");
-        exit(0);
+        fprintf(stderr, "single-end reads are unsupported in the legacy split CPE pipeline\n");
+        exit(EXIT_FAILURE);
     } else {
         if (bwa_verbose >= 4) printf("=====> Finalizing read pair '%s' <=====\n", w->seqs[i<<1|0].name);
 
@@ -1798,30 +1766,102 @@ void worker2_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams)
 }
 
 
-int neoGetLine(char* buffer, long long *pos, long long tot_len) {
-    long long start_pos = *pos;
-    while (*pos < tot_len) {
-        if (buffer[*pos] == '\n') {
-            (*pos)++;
-            return *pos - start_pos - 1;
-        }
-        (*pos)++;
-    }
-    return (*pos > start_pos) ? (*pos - start_pos) : 0;
+static int next_fastq_line(char *buffer, long long size, long long *position,
+                           char **line)
+{
+    long long start;
+
+    if (*position >= size) return -1;
+    start = *position;
+    while (*position < size && buffer[*position] != '\n') ++(*position);
+    *line = buffer + start;
+    if (*position < size) ++(*position);
+    return (int)(*position - start - (*position <= size && buffer[*position - 1] == '\n'));
 }
 
-__uncached long format_seq_count = 0;
+static void copy_fastq_field(char **destination, char *output,
+                             long long *output_position, long long output_size,
+                             const char *source, int length)
+{
+    if (length < 0 || *output_position > output_size - (long long)length - 1) {
+        fprintf(stderr, "CPE FASTQ formatting buffer exhausted\n");
+        exit(EXIT_FAILURE);
+    }
+    *destination = output + *output_position;
+    memcpy(*destination, source, length);
+    (*destination)[length] = '\0';
+    *output_position += length + 1;
+}
 
-int format_seqs(char* buffer, long long buffer_size, char* buffer2, long long buffer_size2, char* tmp_buffer, char* tmp_buffer2, long long tmp_buffer_size, void* data) {
-    if(_MYID == 0) format_seq_count = 0;
-#ifdef use_cgs_mode
+static int parse_fastq_record(char *input, long long input_size,
+                              long long *input_position, char *output,
+                              long long output_size, long long *output_position,
+                              bseq1_t *record)
+{
+    char *line;
+    int line_length;
+    int name_offset;
+    int name_length;
+
+    line_length = next_fastq_line(input, input_size, input_position, &line);
+    if (line_length < 0) return 0;
+    if (line_length == 0) {
+        fprintf(stderr, "invalid empty FASTQ name line\n");
+        exit(EXIT_FAILURE);
+    }
+
+    memset(record, 0, sizeof(*record));
+    name_offset = line[0] == '@';
+    name_length = line_length - name_offset;
+    for (int i = 0; i < name_length; ++i) {
+        if (line[name_offset + i] == ' ' || line[name_offset + i] == '\t') {
+            name_length = i;
+            break;
+        }
+    }
+    copy_fastq_field(&record->name, output, output_position, output_size,
+                     line + name_offset, name_length);
+
+    line_length = next_fastq_line(input, input_size, input_position, &line);
+    if (line_length < 0) goto truncated_record;
+    record->l_seq = line_length;
+    copy_fastq_field(&record->seq, output, output_position, output_size,
+                     line, line_length);
+
+    line_length = next_fastq_line(input, input_size, input_position, &line);
+    if (line_length <= 0 || line[0] != '+') goto truncated_record;
+
+    line_length = next_fastq_line(input, input_size, input_position, &line);
+    if (line_length < 0 || line_length != record->l_seq) goto truncated_record;
+    copy_fastq_field(&record->qual, output, output_position, output_size,
+                     line, line_length);
+    return 1;
+
+truncated_record:
+    fprintf(stderr, "invalid or truncated FASTQ record\n");
+    exit(EXIT_FAILURE);
+}
+
+static void sync_format_workers(void)
+{
+#if SWBWA_USE_CGS
     athread_ssync_array();
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
+}
+
+__uncached long format_seq_count = 0;
+
+int format_seqs(char *buffer, long long buffer_size, char *buffer2,
+                long long buffer_size2, char *tmp_buffer, char *tmp_buffer2,
+                long long tmp_buffer_size, void *data)
+{
     worker_t *w = (worker_t*)data;
-    int seq_count = 0;
+    const int is_paired = buffer_size2 > 0;
+    const int max_work_items = is_paired ?
+        SWBWA_MAX_READS_PER_BATCH / 2 : SWBWA_MAX_READS_PER_BATCH;
     long long buffer_pos = 0;
     long long buffer_pos2 = 0;
     long long tmp_buffer_pos = 0;
@@ -1829,168 +1869,43 @@ int format_seqs(char* buffer, long long buffer_size, char* buffer2, long long bu
     bseq1_t seq;
     bseq1_t seq2;
 
-    //athread_lock(&lock_s);
-    //printf("%d cpe buffer : ", _MYID);
-    //// print the first 10 char of buffer
-    //for(int i = 0; i < (buffer_size < 20 ? buffer_size : 20); i++) {
-    //    printf("%c", buffer[i]);
-    //}
-    //printf("\n");
-    //printf("%d cpe buffer2 : ", _MYID);
-    //// print the first 10 char of buffer2
-    //for(int i = 0; i < (buffer_size2 < 20 ? buffer_size : 20); i++) {
-    //    printf("%c", buffer2[i]);
-    //}
-    //printf("\n");
-    //athread_unlock(&lock_s);
+    if (_MYID == 0) format_seq_count = 0;
+    sync_format_workers();
 
-#ifdef use_cgs_mode
-    athread_ssync_array();
-    athread_ssync_node();
-#else
-    athread_ssync_array();
-#endif
-    while (1) {
-        // read1
-        long long pre_pos = buffer_pos;
-        int l_name = neoGetLine(buffer, &buffer_pos, buffer_size);
-        if (l_name == 0) break;
-        char *start = buffer + pre_pos;
-        if (*start == '@') {
-            start++;
-            l_name--;
+    while (parse_fastq_record(buffer, buffer_size, &buffer_pos,
+                              tmp_buffer, tmp_buffer_size, &tmp_buffer_pos,
+                              &seq)) {
+        long allocated_index;
+        int seq_count;
+
+        if (is_paired &&
+            !parse_fastq_record(buffer2, buffer_size2, &buffer_pos2,
+                                tmp_buffer2, tmp_buffer_size, &tmp_buffer_pos2,
+                                &seq2)) {
+            fprintf(stderr, "paired FASTQ input ended before read 1\n");
+            exit(EXIT_FAILURE);
         }
-        char *space_pos = strpbrk(start, " \t");
-        if (space_pos) {
-            l_name = space_pos - start;
-        }
-        seq.name = tmp_buffer + tmp_buffer_pos;
-        memcpy(seq.name, start, l_name);
-        seq.name[l_name] = '\0';
-        tmp_buffer_pos += l_name + 1;
-//		long long pre_pos = buffer_pos;
-//        int l_name = neoGetLine(buffer, &buffer_pos, buffer_size);
-//        if (l_name == 0) break;
-//        seq.name = tmp_buffer + tmp_buffer_pos;
-//        memcpy(seq.name, buffer + pre_pos, l_name);
-//        seq.name[l_name] = '\0';
-//        tmp_buffer_pos += l_name + 1;
-
-        pre_pos = buffer_pos;
-        int l_seq = neoGetLine(buffer, &buffer_pos, buffer_size);
-        seq.seq = tmp_buffer + tmp_buffer_pos;
-        seq.l_seq = l_seq;
-        memcpy(seq.seq, buffer + pre_pos, l_seq);
-        seq.seq[l_seq] = '\0';
-        tmp_buffer_pos += l_seq + 1;
-        //athread_lock(&lock_s);
-        //printf("seq.seq: %d %s -- %s\n", l_seq, seq.seq, seq.name);
-        //athread_unlock(&lock_s);
-
-        pre_pos = buffer_pos;
-        int l_comment = neoGetLine(buffer, &buffer_pos, buffer_size);
-        seq.comment = NULL;
-//        seq.comment = tmp_buffer + tmp_buffer_pos;
-//        memcpy(seq.comment, buffer + pre_pos, l_comment);
-//        seq.comment[l_comment] = '\0';
-        tmp_buffer_pos += l_comment + 1;
-
-        pre_pos = buffer_pos;
-        int l_qual = neoGetLine(buffer, &buffer_pos, buffer_size);
-        seq.qual = tmp_buffer + tmp_buffer_pos;
-        memcpy(seq.qual, buffer + pre_pos, l_qual);
-        seq.qual[l_qual] = '\0';
-        tmp_buffer_pos += l_qual + 1;
-
-        seq.sam = NULL;
-
-        //read2
-        pre_pos = buffer_pos2;
-        l_name = neoGetLine(buffer2, &buffer_pos2, buffer_size2);
-        if (l_name == 0) break;
-        char *start2 = buffer2 + pre_pos;
-        if (*start2 == '@') {
-            start2++;
-            l_name--;
-        }
-        char *space_pos2 = strpbrk(start2, " \t");
-        if (space_pos2) {
-            l_name = space_pos2 - start2;
-        }
-        seq2.name = tmp_buffer2 + tmp_buffer_pos2;
-        memcpy(seq2.name, start2, l_name);
-        seq2.name[l_name] = '\0';
-        tmp_buffer_pos2 += l_name + 1;
-//		pre_pos = buffer_pos2;
-//        l_name = neoGetLine(buffer2, &buffer_pos2, buffer_size2);
-//        if (l_name == 0) break;
-//        seq2.name = tmp_buffer2 + tmp_buffer_pos2;
-//        memcpy(seq2.name, buffer2 + pre_pos, l_name);
-//        seq2.name[l_name] = '\0';
-//        tmp_buffer_pos2 += l_name + 1;
-
-
-
-        pre_pos = buffer_pos2;
-        l_seq = neoGetLine(buffer2, &buffer_pos2, buffer_size2);
-        seq2.seq = tmp_buffer2 + tmp_buffer_pos2;
-        seq2.l_seq = l_seq;
-        memcpy(seq2.seq, buffer2 + pre_pos, l_seq);
-        seq2.seq[l_seq] = '\0';
-        tmp_buffer_pos2 += l_seq + 1;
-        //athread_lock(&lock_s);
-        //printf("seq2.seq: %d %s -- %s\n", l_seq, seq2.seq, seq2.name);
-        //athread_unlock(&lock_s);
-
-        pre_pos = buffer_pos2;
-        l_comment = neoGetLine(buffer2, &buffer_pos2, buffer_size2);
-        seq2.comment = NULL;
-//        seq2.comment = tmp_buffer2 + tmp_buffer_pos2;
-//        memcpy(seq2.comment, buffer2 + pre_pos, l_comment);
-//        seq2.comment[l_comment] = '\0';
-        tmp_buffer_pos2 += l_comment + 1;
-
-        pre_pos = buffer_pos2;
-        l_qual = neoGetLine(buffer2, &buffer_pos2, buffer_size2);
-        seq2.qual = tmp_buffer2 + tmp_buffer_pos2;
-        memcpy(seq2.qual, buffer2 + pre_pos, l_qual);
-        seq2.qual[l_qual] = '\0';
-        tmp_buffer_pos2 += l_qual + 1;
-
-        seq2.sam = NULL;
-
-
-        //TODO resize
-        if(tmp_buffer_pos > tmp_buffer_size) printf("GG formart2, over size: %d %d\n", tmp_buffer_pos, tmp_buffer_size);
-        if(tmp_buffer_pos2 > tmp_buffer_size) printf("GG formart3, over size: %d %d\n", tmp_buffer_pos2, tmp_buffer_size);
-        if(buffer_pos > buffer_size) printf("GG formart4, over size: %d %d\n", pre_pos, buffer_size);
-        if(buffer_pos2 > buffer_size2) printf("GG formart5, over size: %d %d\n", pre_pos, buffer_size2);
 
         asm volatile("faal %0, 0(%1)\n\t"
-                : "=r"(seq_count)
+                : "=r"(allocated_index)
                 : "r"(&format_seq_count)
                 : "memory");
-        if(seq_count >= 1000000) printf("GG formart1, over size: %d %d\n", seq_count, 1000000);
+        seq_count = (int)allocated_index;
+        if (seq_count >= max_work_items) {
+            fprintf(stderr, "too many reads in one CPE formatting batch\n");
+            exit(EXIT_FAILURE);
+        }
 
-        w->seqs[seq_count<<1] = seq;
-        w->seqs[seq_count<<1|1] = seq2;
+        if (is_paired) {
+            w->seqs[seq_count << 1] = seq;
+            w->seqs[seq_count << 1 | 1] = seq2;
+        } else {
+            w->seqs[seq_count] = seq;
+        }
     }
-#ifdef use_cgs_mode
-    athread_ssync_array();
-    athread_ssync_node();
-#else
-    athread_ssync_array();
-#endif
 
-    //printf("cpe %d done\n", _MYID);
-    //if(_MYID == 0) {
-    //    for(int i = 0; i < (format_seq_count << 1); i++) {
-    //        printf("seq: %d %s -- %s\n", w->seqs[i].l_seq, w->seqs[i].seq, w->seqs[i].name);
-    //        printf("i:%d %s\n%s\n%s\n%s\n", i, w->seqs[i].name, w->seqs[i].seq, w->seqs[i].comment, w->seqs[i].qual);
-    //        printf("\n");
-    //    }
-    //}
-    return format_seq_count;
+    sync_format_workers();
+    return (int)format_seq_count;
 }
 
 void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, char **cpe_sams, const mem_pestat_t *pes0, int* s_ids)

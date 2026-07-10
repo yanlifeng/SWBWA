@@ -1,6 +1,4 @@
-//#define use_lwpf3
-
-#ifdef use_lwpf3
+#if SWBWA_ENABLE_LWPF
 
 #define EVT_PC0 PC0_CYCLE
 #define EVT_PC1 PC1_INST
@@ -24,5 +22,4 @@
 #define lwpf_enter(x) ((void)0)
 #define lwpf_exit(x) ((void)0)
 #endif
-
 

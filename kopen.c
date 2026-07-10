@@ -14,7 +14,7 @@
 #include <sys/socket.h>
 #endif
 
-#ifdef HOST_USE_MALLOC_WRAPPERS
+#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
 

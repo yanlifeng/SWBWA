@@ -100,7 +100,7 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int l_pos, int r_pos, const
 	for (d = 0; d < 4; ++d) { // TODO: this block is nearly identical to the one in bwtsw2_pair.c. It would be better to merge these two.
 		mem_pestat_t *r = &pes[d];
 		uint64_v *q = &isize[d];
-		int p25, p50, p75, x, i;
+		int p25, p75, x, i;
 		if (q->n < MIN_DIR_CNT) {
             //athread_lock(&lock_f);
 			//printf("[M::%s] skip orientation %c%c as there are not enough pairs\n", __func__, "FR"[d>>1&1], "FR"[d&1]);
@@ -115,13 +115,12 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int l_pos, int r_pos, const
         }
 		ks_introsort_64(q->n, q->a);
 		p25 = q->a[(int)(.25 * q->n + .499)];
-		p50 = q->a[(int)(.50 * q->n + .499)];
 		p75 = q->a[(int)(.75 * q->n + .499)];
 		r->low  = (int)(p25 - OUTLIER_BOUND * (p75 - p25) + .499);
 		if (r->low < 1) r->low = 1;
 		r->high = (int)(p75 + OUTLIER_BOUND * (p75 - p25) + .499);
         //athread_lock(&lock_f);
-		//printf("[M::%s] (25, 50, 75) percentile: (%d, %d, %d)\n", __func__, p25, p50, p75);
+		//printf("[M::%s] (25, 75) percentile: (%d, %d)\n", __func__, p25, p75);
 		//printf("[M::%s] low and high boundaries for computing mean and std.dev: (%d, %d)\n", __func__, r->low, r->high);
         //athread_unlock(&lock_f);
 		for (i = x = 0, r->avg = 0; i < q->n; ++i)

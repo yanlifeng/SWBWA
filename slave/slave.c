@@ -22,12 +22,6 @@ extern unsigned long swbwa_cpe_data_size;
 /***********************************************************/
 
 
-#if SWBWA_USE_CGS
-#define SWBWA_GLOBAL_CPE_ID (_CGN * 64 + _PEN)
-#else
-#define SWBWA_GLOBAL_CPE_ID (_PEN)
-#endif
-
 __thread swbwa_cpe_task_t *swbwa_task;
 
 static inline void swbwa_enter_cross_runtime(void)
@@ -47,7 +41,7 @@ static inline void swbwa_enter_cross_runtime(void)
 
 static inline void swbwa_finish_cross_task(void)
 {
-    swbwa_task->completion_flags[SWBWA_GLOBAL_CPE_ID] = 1;
+    swbwa_task->completion_flags[_MYID] = 1;
     flush_slave_cache();
     while (1) { }
 }
@@ -97,14 +91,14 @@ long cur_id[SWBWA_CPE_COUNT];
 
 int acquire_task(int block_num) {
     asm volatile("faal %0, 0(%1)\n\t"
-                 : "=r"(cur_id[SWBWA_GLOBAL_CPE_ID])
+                 : "=r"(cur_id[_MYID])
                  : "r"(&work_counter)
                  : "memory");
-    if (cur_id[SWBWA_GLOBAL_CPE_ID] < block_num) {
-        assert(task_num[SWBWA_GLOBAL_CPE_ID] < SWBWA_MAX_TASKS_PER_CPE);
-        task_list[SWBWA_GLOBAL_CPE_ID][task_num[SWBWA_GLOBAL_CPE_ID]++] = cur_id[SWBWA_GLOBAL_CPE_ID];
+    if (cur_id[_MYID] < block_num) {
+        assert(task_num[_MYID] < SWBWA_MAX_TASKS_PER_CPE);
+        task_list[_MYID][task_num[_MYID]++] = cur_id[_MYID];
     }
-    return (int)cur_id[SWBWA_GLOBAL_CPE_ID];
+    return (int)cur_id[_MYID];
 }
 #endif
 
@@ -117,25 +111,25 @@ void worker1_s_pre_fast_cross(void) {
     lwpf_start(l_worker1_1);
 
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+    if(_MYID == 0) work_counter = 0;
 # if SWBWA_USE_CGS
     athread_ssync_node();
 # else
     athread_ssync_array();
 # endif
-    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    task_num[_MYID] = 0;
     int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
         int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+            worker1_pre_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_pre_fast(para->worker_data, i, _MYID, para->alignment_regions);
     }
 #endif
 
@@ -153,17 +147,17 @@ void worker1_s_fast_cross(void) {
     lwpf_start(l_worker1_2);
 
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
-        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+    for(long i = 0; i < task_num[_MYID]; i++) {
+        int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+            worker1_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_fast(para->worker_data, i, _MYID, para->alignment_regions);
     }
 #endif
     lwpf_stop(l_worker1_2);
@@ -181,25 +175,25 @@ void worker2_s_pre_fast_cross(void) {
     lwpf_start(l_worker2_1);
 
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+    if(_MYID == 0) work_counter = 0;
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    task_num[_MYID] = 0;
     int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
         int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+            worker2_pre_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_pre_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_1);
@@ -217,17 +211,17 @@ void worker2_s_fast_cross(void) {
     lwpf_enter(TEST);
     lwpf_start(l_worker2_2);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
-        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+    for(long i = 0; i < task_num[_MYID]; i++) {
+        int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+            worker2_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_2);
@@ -282,7 +276,7 @@ static int format_fastq_partition(swbwa_cpe_task_t *params)
     int is_paired = params->fastq_size[1] > 0;
 
     if (params->fastq_size[0] < SWBWA_CPE_COUNT * (1 << 10)) {
-        if (SWBWA_GLOBAL_CPE_ID == 0) {
+        if (_MYID == 0) {
             return format_seqs(params->fastq_buffer[0], params->fastq_size[0],
                                params->fastq_buffer[1], params->fastq_size[1],
                                params->formatted_buffer[0], params->formatted_buffer[1],
@@ -294,22 +288,22 @@ static int format_fastq_partition(swbwa_cpe_task_t *params)
 
     input_chunk_size = (params->fastq_size[0] + SWBWA_CPE_COUNT - 1) /
                        SWBWA_CPE_COUNT;
-    input_begin = SWBWA_GLOBAL_CPE_ID * input_chunk_size;
+    input_begin = _MYID * input_chunk_size;
     input_end = input_begin + input_chunk_size;
     if (input_end > params->fastq_size[0]) input_end = params->fastq_size[0];
 
-    if (SWBWA_GLOBAL_CPE_ID > 0)
+    if (_MYID > 0)
         input_begin = get_next_fastq(params->fastq_buffer[0],
                                      input_begin - (1 << 10),
                                      params->fastq_size[0]);
-    if (SWBWA_GLOBAL_CPE_ID < SWBWA_CPE_COUNT - 1)
+    if (_MYID < SWBWA_CPE_COUNT - 1)
         input_end = get_next_fastq(params->fastq_buffer[0],
                                    input_end - (1 << 10),
                                    params->fastq_size[0]);
 
     output_chunk_size = (params->formatted_buffer_size + SWBWA_CPE_COUNT - 1) /
                         SWBWA_CPE_COUNT;
-    output_begin = SWBWA_GLOBAL_CPE_ID * output_chunk_size;
+    output_begin = _MYID * output_chunk_size;
     output_end = output_begin + output_chunk_size;
     if (output_end > params->formatted_buffer_size)
         output_end = params->formatted_buffer_size;
@@ -326,7 +320,7 @@ static int format_fastq_partition(swbwa_cpe_task_t *params)
 void cpe_format_pre_cross(void)
 {
     swbwa_enter_cross_runtime();
-    swbwa_task->formatted_read_counts[SWBWA_GLOBAL_CPE_ID] =
+    swbwa_task->formatted_read_counts[_MYID] =
         format_fastq_partition(swbwa_task);
     swbwa_finish_cross_task();
 }
@@ -337,28 +331,28 @@ void worker12_s_pre_fast_cross(void) {
     lwpf_enter(TEST);
     lwpf_start(l_worker12_1);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+    if(_MYID == 0) work_counter = 0;
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    task_num[_MYID] = 0;
     int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
         int l_pos = i * SWBWA_READS_PER_DYNAMIC_TASK;
         int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
         if(r_pos > para->work_item_count) r_pos = para->work_item_count;
         lwpf_start(l_worker12i_1);
-        worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
+        worker12_pre_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
         lwpf_stop(l_worker12i_1);
     }
 #else
     int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
+    int l_pos = _MYID * pre_n;
     int r_pos = l_pos + pre_n;
     if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-    worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
+    worker12_pre_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
 #endif
 
     lwpf_stop(l_worker12_1);
@@ -374,18 +368,18 @@ void worker12_s_fast_cross(void) {
     lwpf_enter(TEST);
     lwpf_start(l_worker12_2);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
-        int l_pos = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+    for(long i = 0; i < task_num[_MYID]; i++) {
+        int l_pos = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
         if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-        worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
+        worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
     }
 #else
     int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
+    int l_pos = _MYID * pre_n;
     int r_pos = l_pos + pre_n;
     if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-    worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
+    worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
 #endif
 
     lwpf_stop(l_worker12_2);
@@ -401,25 +395,25 @@ void worker1_s_pre_fast(swbwa_cpe_task_t *para) {
     lwpf_start(l_worker1_1);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
 # if SWBWA_USE_CGS
-    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+    if(_MYID == 0) work_counter = 0;
     athread_ssync_node();
 # else
     if(_PEN == 0) work_counter = 0;
     athread_ssync_array();
 # endif
-    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    task_num[_MYID] = 0;
     int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
         int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+            worker1_pre_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_pre_fast(para->worker_data, i, _MYID, para->alignment_regions);
     }
 #endif
     lwpf_stop(l_worker1_1);
@@ -430,17 +424,17 @@ void worker1_s_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker1_2);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
-        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+    for(long i = 0; i < task_num[_MYID]; i++) {
+        int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker1_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+            worker1_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->alignment_regions);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker1_fast(para->worker_data, i, _MYID, para->alignment_regions);
     }
 #endif
     lwpf_stop(l_worker1_2);
@@ -454,25 +448,25 @@ void worker2_s_pre_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker2_1);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+    if(_MYID == 0) work_counter = 0;
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    task_num[_MYID] = 0;
     int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
         int range_l = i * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_pre_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+            worker2_pre_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_pre_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_pre_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_1);
@@ -485,17 +479,17 @@ void worker2_s_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker2_2);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
-        int range_l = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+    for(long i = 0; i < task_num[_MYID]; i++) {
+        int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
         if(range_r > para->work_item_count) range_r = para->work_item_count;
         for(int j = range_l; j < range_r; j++) {
-            worker2_fast(para->worker_data, j, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+            worker2_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
 #else
-    for(long i = SWBWA_GLOBAL_CPE_ID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_fast(para->worker_data, i, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records);
+    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
+        worker2_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
     }
 #endif
     lwpf_stop(l_worker2_2);
@@ -505,7 +499,7 @@ void worker2_s_fast(swbwa_cpe_task_t *para) {
 
 void cpe_format_pre(swbwa_cpe_task_t *para)
 {
-    para->formatted_read_counts[SWBWA_GLOBAL_CPE_ID] =
+    para->formatted_read_counts[_MYID] =
         format_fastq_partition(para);
 }
 
@@ -514,28 +508,28 @@ void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker12_1);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(SWBWA_GLOBAL_CPE_ID == 0) work_counter = 0;
+    if(_MYID == 0) work_counter = 0;
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
     athread_ssync_array();
 #endif
-    task_num[SWBWA_GLOBAL_CPE_ID] = 0;
+    task_num[_MYID] = 0;
     int block_num = ceil(1.0 * para->work_item_count / SWBWA_READS_PER_DYNAMIC_TASK);
     for(int i = acquire_task(block_num); i < block_num; i = acquire_task(block_num)) {
         int l_pos = i * SWBWA_READS_PER_DYNAMIC_TASK;
         int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
         if(r_pos > para->work_item_count) r_pos = para->work_item_count;
         lwpf_start(l_worker12i_1);
-        worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
+        worker12_pre_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
         lwpf_stop(l_worker12i_1);
     }
 #else
     int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
+    int l_pos = _MYID * pre_n;
     int r_pos = l_pos + pre_n;
     if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-    worker12_pre_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
+    worker12_pre_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
 #endif
     lwpf_stop(l_worker12_1);
     lwpf_exit(TEST);
@@ -546,18 +540,18 @@ void worker12_s_fast(swbwa_cpe_task_t *para) {
     lwpf_enter(TEST);
     lwpf_start(l_worker12_2);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    for(long i = 0; i < task_num[SWBWA_GLOBAL_CPE_ID]; i++) {
-        int l_pos = task_list[SWBWA_GLOBAL_CPE_ID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
+    for(long i = 0; i < task_num[_MYID]; i++) {
+        int l_pos = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
         if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-        worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
+        worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
     }
 #else
     int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = SWBWA_GLOBAL_CPE_ID * pre_n;
+    int l_pos = _MYID * pre_n;
     int r_pos = l_pos + pre_n;
     if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-    worker12_fast(para->worker_data, l_pos, r_pos, SWBWA_GLOBAL_CPE_ID, para->sam_lengths, para->sam_records, para->sequence_ids);
+    worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
 #endif
     lwpf_stop(l_worker12_2);
     lwpf_exit(TEST);

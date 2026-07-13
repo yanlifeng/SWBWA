@@ -70,13 +70,11 @@ int main(int argc, char *argv[])
 {
 	extern char *bwa_pg;
 	int i, ret;
-	double t_real;
 	kstring_t pg = {0,0,0};
 
 #if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 	swbwa_host_malloc_stats_init();
 #endif
-	t_real = realtime();
 	ksprintf(&pg, "@PG\tID:SWBWA\tPN:SWBWA\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
 	for (i = 1; i < argc; ++i) ksprintf(&pg, " %s", argv[i]);
 	bwa_pg = pg.s;
@@ -109,7 +107,6 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "[%s] CMD:", __func__);
 		for (i = 0; i < argc; ++i)
 			fprintf(stderr, " %s", argv[i]);
-		//fprintf(stderr, "\n[%s] Real time: %.3f sec; CPU: %.3f sec\n", __func__, realtime() - t_real, cputime());
 		fprintf(stderr, "\n");
 	}
 	free(bwa_pg);

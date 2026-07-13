@@ -45,7 +45,7 @@ static inline void _mm_store_si128(__m128i *ptr, __m128i a) {
 	//if(is_valid_address(new_ptr) == 0) {
 	//	fprintf(stderr, "GG store ptr %p\n", new_ptr);
 	//}
-    simd_store(a.val, ptr);
+    simd_store(a.val, (_Float16 *)ptr);
 }
 
 static inline int m128i_allzero(__m128i a) {
@@ -122,8 +122,8 @@ typedef union m128i {
     intv16 val;
 } __m128i;
 
-uintv16 v_min = 0;
-uintv16 v_max = 0xFFFFFFFF;
+intv16 v_min = 0;
+intv16 v_max = -1;
 
 intv16 v_low8 = 255;
 intv16 v_mid8 = 255 << 16;
@@ -144,7 +144,7 @@ static inline __m128i _mm_load_si128(const __m128i *ptr) {
     return r; 
 }
 static inline void _mm_store_si128(__m128i *ptr, __m128i a) { 
-    simd_store(a.val, ptr);
+    simd_store(a.val, (int *)ptr);
 }
 
 static inline int m128i_allzero(__m128i a) {
@@ -172,7 +172,7 @@ static inline __m128i _mm_slli_si128(__m128i a, int n) {
 
 static inline __m128i _mm_max_epu8(__m128i a, __m128i b) {
     intv16 mask = simd_vcmpltw(a.val, b.val);
-    uintv16 extended_mask = simd_vsubw(v_min, mask);
+    intv16 extended_mask = simd_vsubw(v_min, mask);
     intv16 b_selected2 = simd_vandw(extended_mask2, b.val);
     extended_mask2 = simd_vxorw(extended_mask2, v_max);
     intv16 a_selected2 = simd_vandw(extended_mask2, a.val);
@@ -182,13 +182,13 @@ static inline __m128i _mm_max_epu8(__m128i a, __m128i b) {
     intv16 b1 = simd_vandw(v_low8, b.val);
  
     intv16 mask1 = simd_vcmpltw(a1, b1);
-    uintv16 extended_mask1 = simd_vsubw(v_min, mask1);
+    intv16 extended_mask1 = simd_vsubw(v_min, mask1);
     intv16 b_selected1 = simd_vandw(extended_mask1, b1);
     extended_mask1 = simd_vxorw(extended_mask1, v_max);
     intv16 a_selected1 = simd_vandw(extended_mask1, a1);
  
     intv16 mask2 = simd_vcmpltw(a.val, b.val);
-    uintv16 extended_mask2 = simd_vsubw(v_min, mask2);
+    intv16 extended_mask2 = simd_vsubw(v_min, mask2);
     intv16 b_selected2 = simd_vandw(extended_mask2, b.val);
     extended_mask2 = simd_vxorw(extended_mask2, v_max);
     intv16 a_selected2 = simd_vandw(extended_mask2, a.val);
@@ -222,14 +222,14 @@ static inline __m128i _mm_min_epu8(__m128i a, __m128i b) {
     intv16 b2 = simd_vandw(v_mid8, b.val);
 
     intv16 mask1 = simd_vcmpltw(a1, b1);
-    uintv16 extended_mask1 = simd_vsubw(v_min, mask1);
+    intv16 extended_mask1 = simd_vsubw(v_min, mask1);
     intv16 a_selected1 = simd_vandw(extended_mask1, a1);
     extended_mask1 = simd_vxorw(extended_mask1, v_max);
     intv16 b_selected1 = simd_vandw(extended_mask1, b1);
     a1 = simd_vaddw(a_selected1, b_selected1);
  
     intv16 mask2 = simd_vcmpltw(a2, b2);
-    uintv16 extended_mask2 = simd_vsubw(v_min, mask2);
+    intv16 extended_mask2 = simd_vsubw(v_min, mask2);
     intv16 a_selected2 = simd_vandw(extended_mask2, a2);
     extended_mask2 = simd_vxorw(extended_mask2, v_max);
     intv16 b_selected2 = simd_vandw(extended_mask2, b2);
@@ -284,7 +284,7 @@ static inline __m128i _mm_adds_epu8(__m128i a, __m128i b) {
 
     a1= simd_vaddw(a1, b1);
     intv16 mask1 = simd_vcmpltw(a1, v_low8);
-    uintv16 extended_mask1 = simd_vsubw(v_min, mask1);
+    intv16 extended_mask1 = simd_vsubw(v_min, mask1);
     intv16 a_selected1 = simd_vandw(extended_mask1, a1);
     extended_mask1 = simd_vxorw(extended_mask1, v_max);
     intv16 b_selected1 = simd_vandw(extended_mask1, v_low8);
@@ -292,7 +292,7 @@ static inline __m128i _mm_adds_epu8(__m128i a, __m128i b) {
 
     a2= simd_vaddw(a2, b2);
     intv16 mask2 = simd_vcmpltw(a2, v_mid8);
-    uintv16 extended_mask2 = simd_vsubw(v_min, mask2);
+    intv16 extended_mask2 = simd_vsubw(v_min, mask2);
     intv16 a_selected2 = simd_vandw(extended_mask2, a2);
     extended_mask2 = simd_vxorw(extended_mask2, v_max);
     intv16 b_selected2 = simd_vandw(extended_mask2, v_mid8);
@@ -331,7 +331,7 @@ static inline __m128i _mm_subs_epu8(__m128i a, __m128i b) {
 
     a1= simd_vsubw(a1, b1);
     intv16 mask1 = simd_vcmpltw(a1, v_min);
-    uintv16 extended_mask1 = simd_vsubw(v_min, mask1);
+    intv16 extended_mask1 = simd_vsubw(v_min, mask1);
     intv16 b_selected1 = simd_vandw(extended_mask1, v_min);
     extended_mask1 = simd_vxorw(extended_mask1, v_max);
     intv16 a_selected1 = simd_vandw(extended_mask1, a1);
@@ -339,7 +339,7 @@ static inline __m128i _mm_subs_epu8(__m128i a, __m128i b) {
 
     a2= simd_vsubw(a2, b2);
     intv16 mask2 = simd_vcmpltw(a2, v_min);
-    uintv16 extended_mask2 = simd_vsubw(v_min, mask2);
+    intv16 extended_mask2 = simd_vsubw(v_min, mask2);
     intv16 b_selected2 = simd_vandw(extended_mask2, v_min);
     extended_mask2 = simd_vxorw(extended_mask2, v_max);
     intv16 a_selected2 = simd_vandw(extended_mask2, a2);
@@ -382,7 +382,7 @@ static inline __m128i _mm_load_si128(const __m128i *ptr) {
     return r; 
 }
 static inline void _mm_store_si128(__m128i *ptr, __m128i a) { 
-    simd_store(a.val, ptr);
+    simd_store(a.val, (int *)ptr);
 }
 
 static inline int m128i_allzero(__m128i a) {
@@ -417,7 +417,7 @@ static inline __m128i _mm_slli_si128(__m128i a, int n) {
 
 static inline intv16 _mm_max_intv16(intv16 a, intv16 b) {
     intv16 mask = simd_vcmpltw(a, b);
-    uintv16 extended_mask = simd_vsubw(v_min, mask);
+    intv16 extended_mask = simd_vsubw(v_min, mask);
     intv16 b_selected = simd_vandw(extended_mask, b);
     extended_mask = simd_vxorw(extended_mask, v_max);
     intv16 a_selected = simd_vandw(extended_mask, a);
@@ -427,7 +427,7 @@ static inline intv16 _mm_max_intv16(intv16 a, intv16 b) {
 
 static inline intv16 _mm_min_intv16(intv16 a, intv16 b) {
     intv16 mask = simd_vcmpltw(a, b);
-    uintv16 extended_mask = simd_vsubw(v_min, mask);
+    intv16 extended_mask = simd_vsubw(v_min, mask);
     intv16 a_selected = simd_vandw(extended_mask, a);
     extended_mask = simd_vxorw(extended_mask, v_max);
     intv16 b_selected = simd_vandw(extended_mask, b);
@@ -439,7 +439,7 @@ static inline intv16 _mm_min_intv16(intv16 a, intv16 b) {
 static inline __m128i _mm_max_epu8(__m128i a, __m128i b) {
     
     intv16 mask = simd_vcmpltw(a.val, b.val);
-    uintv16 extended_mask = simd_vsubw(v_min, mask);
+    intv16 extended_mask = simd_vsubw(v_min, mask);
     intv16 b_selected = simd_vandw(extended_mask, b.val);
     extended_mask = simd_vxorw(extended_mask, v_max);
     intv16 a_selected = simd_vandw(extended_mask, a.val);
@@ -460,7 +460,7 @@ static inline __m128i _mm_max_epu8(__m128i a, __m128i b) {
 static inline __m128i _mm_min_epu8(__m128i a, __m128i b) {
     
     intv16 mask = simd_vcmpltw(a.val, b.val);
-    uintv16 extended_mask = simd_vsubw(v_min, mask);
+    intv16 extended_mask = simd_vsubw(v_min, mask);
     intv16 a_selected = simd_vandw(extended_mask, a.val);
     extended_mask = simd_vxorw(extended_mask, v_max);
     intv16 b_selected = simd_vandw(extended_mask, b.val);
@@ -498,7 +498,7 @@ static inline __m128i _mm_adds_epu8(__m128i a, __m128i b) {
     static intv16 con_255 = 255;
     a.val = simd_vaddw(a.val, b.val);
     intv16 mask = simd_vcmpltw(a.val, con_255);
-    uintv16 extended_mask = simd_vsubw(v_min, mask);
+    intv16 extended_mask = simd_vsubw(v_min, mask);
     intv16 a_selected = simd_vandw(extended_mask, a.val);
     extended_mask = simd_vxorw(extended_mask, v_max);
     intv16 b_selected = simd_vandw(extended_mask, con_255);
@@ -517,7 +517,7 @@ static inline __m128i _mm_subs_epu8(__m128i a, __m128i b) {
     static intv16 con_0 = 0;
     a.val = simd_vsubw(a.val, b.val);
     intv16 mask = simd_vcmpltw(a.val, con_0);
-    uintv16 extended_mask = simd_vsubw(v_min, mask);
+    intv16 extended_mask = simd_vsubw(v_min, mask);
     intv16 b_selected = simd_vandw(extended_mask, con_0);
     extended_mask = simd_vxorw(extended_mask, v_max);
     intv16 a_selected = simd_vandw(extended_mask, a.val);

@@ -78,8 +78,6 @@
  * When there are gaps, l should be the length of alignment matches (i.e. the M operator in CIGAR)
  */
 
-static const bntseq_t *global_bns = 0; // for debugging only
-
 extern double t_work1;
 extern double t_work2;
 
@@ -1452,10 +1450,8 @@ static void swbwa_enable_cross_execution(void)
             long d_IOADDR_SLB_SPC_BASE = 0x800040004000 + (spaid << 40) + ((speid & 6) << 24) + ((speid & 0x30) << 7);
 
             long d_IOADDR = d_IOADDR_SLB_SPC_BASE + 0x600;
-            long d_IO_ADDR_lo = d_IOADDR;
             long d_IO_ADDR_hi = d_IOADDR + 0x80;
 
-            long *plo = (long*)d_IO_ADDR_lo;
             long *phi = (long*)d_IO_ADDR_hi;
 
             long hi = *phi;

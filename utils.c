@@ -255,9 +255,11 @@ void my_align_write(char *s, int out_fd, int tag, char *out_file) {
     static int cntt = 0;
     cntt++;
     static char* align_write_buf;
-    
+
     if(cntt == 1) {
-        align_write_buf = (unsigned char*)aligned_alloc(4096, BS_size);
+        align_write_buf = aligned_alloc(4096, BS_size);
+        if (align_write_buf == NULL)
+            err_fatal(__func__, "failed to allocate aligned SAM output buffer");
     }
 
     if(tag == 1) {

@@ -68,6 +68,7 @@ extern "C" {
     size_t err_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
 	size_t err_fread_noeof(void *ptr, size_t size, size_t nmemb, FILE *stream);
 
+	int my_align_read(int file, void *ptr, unsigned int len);
 	int err_gzread(gzFile file, void *ptr, unsigned int len);
 	int err_fseek(FILE *stream, long offset, int whence);
 #define err_rewind(FP) err_fseek((FP), 0, SEEK_SET)

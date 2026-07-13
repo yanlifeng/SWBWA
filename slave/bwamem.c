@@ -28,6 +28,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <math.h>
 #ifdef HAVE_PTHREAD
@@ -77,8 +78,6 @@
  *
  * When there are gaps, l should be the length of alignment matches (i.e. the M operator in CIGAR)
  */
-
-static const bntseq_t *global_bns = 0; // for debugging only
 
 extern double t_work1;
 extern double t_work2;
@@ -1543,16 +1542,13 @@ void occ_bench(void *data) {
     int file_value = get_value_from_file("ccc_log");
     if(_PEN >= file_value) return;
     worker_t *w = (worker_t*)data;
-    uint64_t l_p = w->bns->l_pac;
 
 	rng_t rng;
     rng_init(&rng, 99991 * (_PEN + 1));
 	uint64_t N = 1ll << 22;
 	uint64_t pre_cnt = _PEN * rand() + rand();
 	int ggnum = 0;
-    int cnt = 0;
     uint64_t cntt[4];
-	uint64_t pre_k = 0;
     for(uint64_t i = 0; i < N; i++) {
 		//uint64_t k = (pre_cnt + pre_cnt / 991) % SWBWA_BENCH_ADDRESS_MODULUS;
 		uint64_t k = (pre_cnt + rng_rand(&rng)) % SWBWA_BENCH_ADDRESS_MODULUS;
@@ -1568,7 +1564,8 @@ void occ_bench(void *data) {
         pre_cnt += cntt[0] + cntt[1] + cntt[2] + cntt[3];
     }
     athread_lock(&lock_s);
-    fprintf(stderr, "slave%d pre_cnt is %llu, ggnum is %d\n", _PEN, pre_cnt, ggnum);
+    fprintf(stderr, "slave%d pre_cnt is %" PRIu64 ", ggnum is %d\n",
+            _PEN, pre_cnt, ggnum);
     athread_unlock(&lock_s);
 
 }
@@ -1932,7 +1929,6 @@ void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens,
     lwpf_start(l_worker1_2);
     mem_pestat_t pes[4];
 //    w->pes = &pes[0];
-    int local_n = r_pos - l_pos;
     if (w->opt->flag&MEM_F_PE) { // infer insert sizes if not provided
         if (pes0) memcpy(pes, pes0, 4 * sizeof(mem_pestat_t));
         else mem_pestat(w->opt, w->bns->l_pac, l_pos, r_pos, w->regs, pes, s_ids);

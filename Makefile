@@ -10,7 +10,7 @@ AR  = ar
 # CPE_ALLOCATOR: system | pool
 EXEC_MODE           ?= cgs_cross
 FORMAT_MODE         ?= host
-CPE_ALLOCATOR       ?= system
+CPE_ALLOCATOR       ?= pool
 HOST_MALLOC_WRAPPER ?= 1
 LWPF                 ?= 0
 

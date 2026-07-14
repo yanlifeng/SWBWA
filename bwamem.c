@@ -1740,8 +1740,8 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     if (bwa_verbose >= 4) fprintf(stderr, "[M::%s] CPE FASTQ formatting done\n", __func__);
     para->work_item_count = 0;
     for(int i = 0; i < SWBWA_CPE_COUNT; i++) {
-        para->work_item_count = para->work_item_count > para->formatted_read_counts[i] ? para->work_item_count : para->formatted_read_counts[i];
-		// fprintf(stderr, "para->formatted_read_counts[%d] = %d\n", i, para->formatted_read_counts[i]);
+        para->work_item_count += para->formatted_read_counts[i];
+		// fprintf(stderr, "para->formatted_read_counts[%d] = %ld\n", i, para->formatted_read_counts[i]);
     }
     free(block_buffer);
     free(block_buffer2);

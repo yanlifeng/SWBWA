@@ -1,0 +1,123 @@
+the output file is sam_md5_subset_tests/SRR2496709_SE.sam
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+malloc bwt->bwt 3107576584, 0x500002429500
+malloc bwt->sa 1553788264, 0x5000bb7c7020
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x500118228940
+the input file is ../data/SRR2496709_1.fastq_1
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 72442 reads in 1.180 CPU sec, 1.185 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71631 reads in 0.580 CPU sec, 0.577 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.620 CPU sec, 0.615 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.680 CPU sec, 0.681 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.780 CPU sec, 0.786 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.770 CPU sec, 0.768 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.770 CPU sec, 0.774 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.740 CPU sec, 0.742 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.600 CPU sec, 0.603 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.620 CPU sec, 0.622 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.590 CPU sec, 0.587 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.620 CPU sec, 0.626 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.660 CPU sec, 0.663 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 71232 reads in 0.780 CPU sec, 0.778 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70230 reads in 0.540 CPU sec, 0.542 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 1.580 CPU sec, 1.579 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.830 CPU sec, 0.826 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.650 CPU sec, 0.649 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.710 CPU sec, 0.708 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.740 CPU sec, 0.733 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.740 CPU sec, 0.739 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.740 CPU sec, 0.743 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.640 CPU sec, 0.642 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.630 CPU sec, 0.628 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.620 CPU sec, 0.618 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.750 CPU sec, 0.754 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.770 CPU sec, 0.771 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 1.950 CPU sec, 1.955 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 70214 reads in 0.680 CPU sec, 0.679 real sec
+[M::process] read block (19660800)...
+[M::mem_process_seqs_merge2] Processed 49152 reads in 0.520 CPU sec, 0.519 real sec
+[M::process] read block (19660800)...
+
+======================= SWBWA Timing Report =======================
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    43.270 s
+    stage 1 - allocate and read raw FASTQ blocks              4.882 s
+    stage 2 - align reads and generate SAM records           23.094 s
+    stage 3 - write SAM and release batch data               15.257 s
+      SAM output writes                                        14.506 s
+      batch cleanup and loop overhead (derived)                 0.752 s
+
+  Stage 2 worker details
+    total - active merge worker                              23.091 s
+      part 1 - prepare CPE task and reusable buffers            0.855 s
+      part 2 - CPE FASTQ formatting and input release           0.162 s
+      part 3 - CPE alignment and SAM length pass               21.677 s
+      part 4 - assign slices in the shared SAM buffer           0.146 s
+      part 5 - CPE SAM record generation                        0.250 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -t 1 -1 -o sam_md5_subset_tests/SRR2496709_SE.sam -I 170,80,500,1 -K 50000000 ../data/GRCh38.d1.vd1.fa ../data/SRR2496709_1.fastq_1
+
+===================== Host Memory Report =====================
+  Process memory
+    peak virtual memory (VmPeak)                   28.770 GiB  (   29460.711 MiB)
+    current virtual memory (VmSize)                28.768 GiB  (   29458.727 MiB)
+    peak resident memory (VmHWM)                    0.027 GiB  (      27.812 MiB)
+    current resident memory (VmRSS)                 0.027 GiB  (      27.812 MiB)
+
+  Wrapped allocation requests
+    malloc calls                                      191
+    calloc calls                                       44
+    realloc calls                                       3
+    strdup calls                                     5558
+    free calls                                       5823
+    allocation calls                                 5796
+    failed allocation calls                             0
+
+  Requested bytes (cumulative, not concurrent)
+    malloc                                          9.209 GiB  (    9429.578 MiB)
+    calloc                                          5.065 GiB  (    5186.453 MiB)
+    realloc target sizes                            0.000 GiB  (       0.000 MiB)
+    strdup                                          0.000 GiB  (       0.335 MiB)
+    total requested                                14.274 GiB  (   14616.366 MiB)
+    largest single request                          2.894 GiB  (    2963.616 MiB)
+    largest request site: bwt.c:475 (bwt_restore_bwt)
+==============================================================

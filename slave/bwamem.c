@@ -1839,6 +1839,21 @@ truncated_record:
     exit(EXIT_FAILURE);
 }
 
+static int count_fastq_records(char *input, long long input_size)
+{
+    long long line_count = 0;
+
+    for (long long i = 0; i < input_size; ++i) {
+        if (input[i] == '\n') ++line_count;
+    }
+    if (input_size > 0 && input[input_size - 1] != '\n') ++line_count;
+    if (line_count % 4 != 0 || line_count / 4 > INT_MAX) {
+        fprintf(stderr, "invalid FASTQ partition while counting records\n");
+        exit(EXIT_FAILURE);
+    }
+    return (int)(line_count / 4);
+}
+
 static void sync_format_workers(void)
 {
 #if SWBWA_USE_CGS
@@ -1849,7 +1864,8 @@ static void sync_format_workers(void)
 #endif
 }
 
-__uncached long format_seq_count = 0;
+/* Prefixing ordered input partitions avoids a shared atomic per read. */
+__uncached long format_partition_read_counts[SWBWA_CPE_COUNT];
 
 int format_seqs(char *buffer, long long buffer_size, char *buffer2,
                 long long buffer_size2, char *tmp_buffer, char *tmp_buffer2,
@@ -1859,21 +1875,33 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
     const int is_paired = buffer_size2 > 0;
     const int max_work_items = is_paired ?
         SWBWA_MAX_READS_PER_BATCH / 2 : SWBWA_MAX_READS_PER_BATCH;
+    const int local_read_count = count_fastq_records(buffer, buffer_size);
+    long first_read_index = 0;
+    long total_read_count = 0;
     long long buffer_pos = 0;
     long long buffer_pos2 = 0;
     long long tmp_buffer_pos = 0;
     long long tmp_buffer_pos2 = 0;
+    int local_read_index = 0;
     bseq1_t seq;
     bseq1_t seq2;
 
-    if (_MYID == 0) format_seq_count = 0;
+    format_partition_read_counts[_MYID] = local_read_count;
     sync_format_workers();
+
+    for (int i = 0; i < SWBWA_CPE_COUNT; ++i) {
+        if (i < _MYID) first_read_index += format_partition_read_counts[i];
+        total_read_count += format_partition_read_counts[i];
+    }
+    if (total_read_count > max_work_items) {
+        fprintf(stderr, "too many reads in one CPE formatting batch\n");
+        exit(EXIT_FAILURE);
+    }
 
     while (parse_fastq_record(buffer, buffer_size, &buffer_pos,
                               tmp_buffer, tmp_buffer_size, &tmp_buffer_pos,
                               &seq)) {
-        long allocated_index;
-        int seq_count;
+        int seq_count = (int)first_read_index + local_read_index;
 
         if (is_paired &&
             !parse_fastq_record(buffer2, buffer_size2, &buffer_pos2,
@@ -1883,15 +1911,11 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
             exit(EXIT_FAILURE);
         }
 
-        asm volatile("faal %0, 0(%1)\n\t"
-                : "=r"(allocated_index)
-                : "r"(&format_seq_count)
-                : "memory");
-        seq_count = (int)allocated_index;
-        if (seq_count >= max_work_items) {
-            fprintf(stderr, "too many reads in one CPE formatting batch\n");
+        if (local_read_index >= local_read_count) {
+            fprintf(stderr, "FASTQ record count changed during CPE formatting\n");
             exit(EXIT_FAILURE);
         }
+        ++local_read_index;
 
         if (is_paired) {
             w->seqs[seq_count << 1] = seq;
@@ -1900,9 +1924,14 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
             w->seqs[seq_count] = seq;
         }
     }
+    if (local_read_index != local_read_count ||
+        (is_paired && buffer_pos2 != buffer_size2)) {
+        fprintf(stderr, "inconsistent FASTQ partition record count\n");
+        exit(EXIT_FAILURE);
+    }
 
     sync_format_workers();
-    return (int)format_seq_count;
+    return local_read_count;
 }
 
 void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, char **cpe_sams, const mem_pestat_t *pes0, int* s_ids)

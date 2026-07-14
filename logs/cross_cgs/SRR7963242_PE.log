@@ -1,0 +1,82 @@
+the output file is sam_md5_subset_tests/SRR7963242_PE.sam
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is ../data/SRR7963242_1.fastq_1
+the input file is ../data/SRR7963242_2.fastq_1
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 629832 reads in 0.630 CPU sec, 8.879 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 627468 reads in 0.050 CPU sec, 6.824 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 627468 reads in 0.050 CPU sec, 7.196 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 622076 reads in 0.050 CPU sec, 6.609 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 620862 reads in 0.050 CPU sec, 6.758 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 620862 reads in 0.060 CPU sec, 6.553 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 620862 reads in 0.050 CPU sec, 6.755 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 620862 reads in 0.050 CPU sec, 6.564 real sec
+[M::process] read block (117964800)...
+[M::mem_process_seqs_merge2] Processed 9708 reads in 0.010 CPU sec, 0.457 real sec
+[M::process] read block (117964800)...
+
+======================= SWBWA Timing Report =======================
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   127.972 s
+    stage 1 - allocate and read raw FASTQ blocks             20.533 s
+    stage 2 - align reads and generate SAM records           56.595 s
+    stage 3 - write SAM and release batch data               50.805 s
+      SAM output writes                                        49.007 s
+      batch cleanup and loop overhead (derived)                 1.798 s
+
+  Stage 2 worker details
+    total - active merge worker                              56.594 s
+      part 1 - prepare CPE task and reusable buffers            0.708 s
+      part 2 - CPE FASTQ formatting and input release           0.105 s
+      part 3 - CPE alignment and SAM length pass               55.271 s
+      part 4 - assign slices in the shared SAM buffer           0.383 s
+      part 5 - CPE SAM record generation                        0.127 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -t 1 -1 -o sam_md5_subset_tests/SRR7963242_PE.sam -I 170,80,500,1 -K 50000000 ../data/GRCh38.d1.vd1.fa ../data/SRR7963242_1.fastq_1 ../data/SRR7963242_2.fastq_1
+
+===================== Host Memory Report =====================
+  Process memory
+    peak virtual memory (VmPeak)                  116.350 GiB  (  119142.812 MiB)
+    current virtual memory (VmSize)               116.350 GiB  (  119142.812 MiB)
+    peak resident memory (VmHWM)                    0.027 GiB  (      27.898 MiB)
+    current resident memory (VmRSS)                 0.027 GiB  (      27.898 MiB)
+
+  Wrapped allocation requests
+    malloc calls                                       80
+    calloc calls                                       26
+    realloc calls                                       3
+    strdup calls                                     5558
+    free calls                                       5664
+    allocation calls                                 5667
+    failed allocation calls                             0
+
+  Requested bytes (cumulative, not concurrent)
+    malloc                                         17.360 GiB  (   17776.430 MiB)
+    calloc                                          5.065 GiB  (    5186.452 MiB)
+    realloc target sizes                            0.000 GiB  (       0.000 MiB)
+    strdup                                          0.000 GiB  (       0.335 MiB)
+    total requested                                22.425 GiB  (   22963.217 MiB)
+    largest single request                          9.000 GiB  (    9216.000 MiB)
+    largest request site: fastmap.c:416 (init_cpe_allocator)
+==============================================================

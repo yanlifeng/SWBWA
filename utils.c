@@ -45,6 +45,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include "utils.h"
+#include "swbwa_mpi.h"
 
 #include "ksort.h"
 #define pair64_lt(a, b) ((a).x < (b).x || ((a).x == (b).x && (a).y < (b).y))
@@ -150,14 +151,25 @@ extern double t_step1_read;
 int my_align_read(int file, void *ptr, unsigned int len)
 {
     double t0 = realtime();
-	int ret = read(file, ptr, len);
+	int ret = (int)swbwa_input_read(file, ptr, len);
     t_step1_read += realtime() - t0;
 
 	if (ret < 0)
 	{
-		int errnum = 0;
-        const char *msg = strerror(errno);
-		_err_fatal_simple("my_align_read", Z_ERRNO == errnum ? strerror(errno) : msg);
+		int saved_errno = errno;
+#if SWBWA_USE_MPI
+		char message[160];
+
+		snprintf(message, sizeof(message),
+		         "my_align_read failed for fd %d: %s", file,
+		         strerror(saved_errno));
+		swbwa_mpi_abort(message);
+#else
+			int errnum = 0;
+	        const char *msg = strerror(saved_errno);
+			_err_fatal_simple("my_align_read",
+			                  Z_ERRNO == errnum ? strerror(saved_errno) : msg);
+#endif
 	}
 
 	return ret;

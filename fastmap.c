@@ -30,10 +30,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
 #include <ctype.h>
 #include <math.h>
 #include <errno.h>
-#include <fcntl.h>
 #include "swbwa_config.h"
 #include "bwa.h"
 #include "bwamem.h"
@@ -43,16 +43,14 @@
 #include "kseq.h"
 #include "swbwa_cpe.h"
 #include "swbwa_runtime.h"
+#include "swbwa_mpi.h"
+#include "swbwa_output.h"
 
 #include <athread.h>
 //KSEQ_DECLARE(gzFile)
 KSEQ_DECLARE(int)
 
 extern unsigned char nst_nt4_table[256];
-
-#ifndef O_DIRECT
-#define O_DIRECT 0
-#endif
 
 #if SWBWA_ENABLE_LWPF
 #define LWPF_UNITS U(TEST)
@@ -102,7 +100,7 @@ static void print_timing_line(const char *label, double seconds, int indent)
     fprintf(stderr, "%*s%-52s %10.3f s\n", indent, "", label, seconds);
 }
 
-static void print_timing_report(void)
+static void print_timing_report_body(void)
 {
     double stage3_cleanup = t_step3 - t_step3_1;
 
@@ -110,7 +108,12 @@ static void print_timing_report(void)
 
     fprintf(stderr,
             "\n"
-            "======================= SWBWA Timing Report =======================\n"
+            "======================= SWBWA Timing Report =======================\n");
+#if SWBWA_USE_MPI
+    fprintf(stderr, "  MPI rank: %06d / %06d\n",
+            swbwa_mpi_rank(), swbwa_mpi_size());
+#endif
+    fprintf(stderr,
             "  Accumulated wall-clock time; indented rows are included in\n"
             "  their parent row and must not be added to it.\n"
             "\n"
@@ -165,6 +168,11 @@ static void print_timing_report(void)
             "\n");
 }
 
+static void print_timing_report(void)
+{
+    swbwa_mpi_print_rank_ordered(print_timing_report_body);
+}
+
 void *kopen(const char *fn, int *_fd);
 int kclose(void *a);
 void kt_pipeline(int n_threads, void *(*func)(void*, int, void*), void *shared_data, int n_steps);
@@ -173,9 +181,6 @@ void kt_pipeline_thread(int n_threads, void *(*func)(void*, int, void*), void *s
 void kt_pipeline_queue(int n_threads, void *(*func)(void*, int, void*), void *shared_data, int n_steps);
 
 
-static int file_out_fd = -1;
-static char sam_out_file_name[256];
-
 typedef struct {
 	kseq_t *ks, *ks2;
 	mem_opt_t *opt;
@@ -183,6 +188,8 @@ typedef struct {
 	int64_t n_processed;
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
+	int64_t input_position[2];
+	int64_t input_end[2];
 } ktp_aux_t;
 
 typedef struct {
@@ -231,21 +238,27 @@ static int64_t get_next_fastq(char *data_, long long pos_, const long long size_
 static FILE *file1_ptr;
 static FILE *file2_ptr;
 
-static long long read_fastq_block(FILE *file, long long *file_offset,
-                                  char *buffer, long long capacity)
+static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
+                                int64_t file_end, char *buffer,
+                                int64_t capacity)
 {
-    long long bytes_read;
-    long long record_bytes;
+    int64_t bytes_to_read;
+    int64_t bytes_read;
+    int64_t record_bytes;
 
-    if (fseek(file, *file_offset, SEEK_SET) != 0)
+    if (*file_offset >= file_end) return 0;
+    bytes_to_read = capacity;
+    if (file_end - *file_offset < bytes_to_read)
+        bytes_to_read = file_end - *file_offset;
+    if (fseeko(file, (off_t)*file_offset, SEEK_SET) != 0)
         err_fatal(__func__, "failed to seek FASTQ input: %s", strerror(errno));
 
-    bytes_read = fread(buffer, 1, capacity, file);
+    bytes_read = (int64_t)fread(buffer, 1, (size_t)bytes_to_read, file);
     if (ferror(file))
         err_fatal(__func__, "failed to read FASTQ input: %s", strerror(errno));
 
     record_bytes = bytes_read;
-    if (bytes_read == capacity)
+    if (bytes_read == capacity && *file_offset + bytes_read < file_end)
         record_bytes = get_next_fastq(buffer, bytes_read - (1 << 10), bytes_read);
     *file_offset += record_bytes;
     return record_bytes;
@@ -260,8 +273,6 @@ static void *process(void *shared, int step, void *_data)
 	if (step == 0) {
         double t0 = GetTime();
 #if SWBWA_ENABLE_CPE_FORMAT
-        static long long now_file1_pos = 0;
-        static long long now_file2_pos = 0;
         const long long total_block_size =
             SWBWA_CPE_COUNT * SWBWA_READS_PER_CPE_BLOCK *
             SWBWA_ESTIMATED_FASTQ_RECORD_BYTES;
@@ -277,11 +288,13 @@ static void *process(void *shared, int step, void *_data)
         if (bwa_verbose >= 3)
             fprintf(stderr, "[M::%s] read block (%lld)...\n", __func__, total_block_size);
 
-        real_size = read_fastq_block(file1_ptr, &now_file1_pos,
-                                     block_buffer, total_block_size);
+        real_size = read_fastq_block(file1_ptr, &aux->input_position[0],
+                                     aux->input_end[0], block_buffer,
+                                     total_block_size);
         if (is_paired) {
-            real_size2 = read_fastq_block(file2_ptr, &now_file2_pos,
-                                          block_buffer2, total_block_size);
+            real_size2 = read_fastq_block(file2_ptr, &aux->input_position[1],
+                                          aux->input_end[1], block_buffer2,
+                                          total_block_size);
             if (real_size != real_size2)
                 err_fatal(__func__, "paired FASTQ blocks have different sizes: %lld != %lld",
                           real_size, real_size2);
@@ -340,9 +353,11 @@ static void *process(void *shared, int step, void *_data)
         double t0 = GetTime();
 		for (i = 0; i < data->n_seqs; ++i) {
             double t1 = GetTime();
-            if (data->seqs[i].sam) {
-                if (file_out_fd >= 0) my_align_write(data->seqs[i].sam, file_out_fd, 0, NULL);
-                else err_fputs(data->seqs[i].sam, stdout);
+			if (data->seqs[i].sam) {
+                if (swbwa_output_write(data->seqs[i].sam,
+                                       strlen(data->seqs[i].sam)) != 0)
+                    err_fatal(__func__, "failed to write SAM output: %s",
+                              strerror(errno));
             }
             t_step3_1 += GetTime() - t1;
 #if !SWBWA_ENABLE_CPE_FORMAT
@@ -357,7 +372,8 @@ static void *process(void *shared, int step, void *_data)
         t_step3 += GetTime() - t0;
 		return 0;
 	} else if(step == 3) {
-        if (file_out_fd >= 0) my_align_write(NULL, file_out_fd, 1, sam_out_file_name);
+        if (swbwa_output_flush() != 0)
+            err_fatal(__func__, "failed to flush SAM output: %s", strerror(errno));
     }
 	return 0;
 }
@@ -379,32 +395,36 @@ static void update_a(mem_opt_t *opt, const mem_opt_t *opt0)
 }
 
 
-static void open_sam_output(const char *path)
-{
-    int n = snprintf(sam_out_file_name, sizeof(sam_out_file_name), "%s", path);
-    if (n < 0 || (size_t)n >= sizeof(sam_out_file_name))
-        err_fatal(__func__, "output path is too long: '%s'", path);
-    file_out_fd = open(sam_out_file_name, O_CREAT | O_RDWR | O_DIRECT, 0666);
-    if (file_out_fd == -1)
-        err_fatal(__func__, "failed to open output file '%s': %s", sam_out_file_name, strerror(errno));
-    fprintf(stderr, "the output file is %s\n", sam_out_file_name);
-}
-
-static void open_fastq_input(const char *path, FILE **file_ptr, void **ko, int *fd)
+static void open_fastq_input(const char *path, FILE **file_ptr, void **ko, int *fd,
+                             int64_t start, int64_t end)
 {
     char resolved_path[PATH_MAX];
     int n = snprintf(resolved_path, sizeof(resolved_path), "%s", path);
     if (n < 0 || (size_t)n >= sizeof(resolved_path))
         err_fatal(__func__, "input path is too long: '%s'", path);
-    fprintf(stderr, "the input file is %s\n", resolved_path);
+    if (swbwa_mpi_is_root())
+        fprintf(stderr, "the input file is %s\n", resolved_path);
 
     *file_ptr = fopen(resolved_path, "r");
     if (*file_ptr == NULL)
         err_fatal(__func__, "failed to open input file '%s': %s", resolved_path, strerror(errno));
+#if SWBWA_USE_MPI
+    if (fseeko(*file_ptr, (off_t)start, SEEK_SET) != 0)
+        err_fatal(__func__, "failed to seek input file '%s': %s",
+                  resolved_path, strerror(errno));
+#else
+    (void)start;
+    (void)end;
+#endif
 
     *ko = kopen(resolved_path, fd);
     if (*ko == NULL)
         err_fatal(__func__, "failed to open input stream '%s'", resolved_path);
+#if SWBWA_USE_MPI
+    if (swbwa_input_register_fd(*fd, start, end) != 0)
+        err_fatal(__func__, "failed to set input range for '%s': %s",
+                  resolved_path, strerror(errno));
+#endif
 }
 
 static void init_cpe_allocator(void)
@@ -432,6 +452,7 @@ int main_mem(int argc, char *argv[])
 	//gzFile fp, fp2 = 0;
 	char *p, *rg_line = 0, *hdr_line = 0;
 	const char *mode = 0;
+	const char *output_path = 0;
 	void *ko = 0, *ko2 = 0;
 	mem_pestat_t pes[4];
 	ktp_aux_t aux;
@@ -472,9 +493,7 @@ int main_mem(int argc, char *argv[])
 		else if (c == 's') opt->split_width = atoi(optarg), opt0.split_width = 1;
 		else if (c == 'G') opt->max_chain_gap = atoi(optarg), opt0.max_chain_gap = 1;
 		else if (c == 'N') opt->max_chain_extend = atoi(optarg), opt0.max_chain_extend = 1;
-		else if (c == 'o' || c == 'f') {
-			open_sam_output(optarg);
-        }
+		else if (c == 'o' || c == 'f') output_path = optarg;
         //xreopen(optarg, "wb", stdout);
         else if (c == 'W') opt->min_chain_weight = atoi(optarg), opt0.min_chain_weight = 1;
         else if (c == 'y') opt->max_mem_intv = atol(optarg), opt0.max_mem_intv = 1;
@@ -540,12 +559,17 @@ int main_mem(int argc, char *argv[])
 				pes[1].high = (int)(strtod(p+1, &p) + .499);
 			if (*p != 0 && ispunct(*p) && isdigit(p[1]))
 				pes[1].low  = (int)(strtod(p+1, &p) + .499);
-			if (bwa_verbose >= 3)
+			if (bwa_verbose >= 3 && swbwa_mpi_is_root())
 				fprintf(stderr, "[M::%s] mean insert size: %.3f, stddev: %.3f, max: %d, min: %d\n",
 						__func__, pes[1].avg, pes[1].std, pes[1].high, pes[1].low);
 		}
 		else return 1;
 	}
+
+#if SWBWA_USE_MPI
+	if (!swbwa_mpi_is_root() && bwa_verbose > 1 && bwa_verbose < 4)
+		bwa_verbose = 1;
+#endif
 
 	if (rg_line) {
 		hdr_line = bwa_insert_header(rg_line, hdr_line);
@@ -554,6 +578,10 @@ int main_mem(int argc, char *argv[])
 
 	if (opt->n_threads < 1) opt->n_threads = 1;
 	if (optind + 1 >= argc || optind + 3 < argc) {
+		if (!swbwa_mpi_is_root()) {
+			free(opt);
+			return 1;
+		}
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage: SWBWA mem [options] <idxbase> <in1.fq> [in2.fq]\n\n");
 		fprintf(stderr, "Algorithm options:\n\n");
@@ -648,6 +676,39 @@ int main_mem(int argc, char *argv[])
 	} else update_a(opt, &opt0);
 	bwa_fill_scmat(opt->a, opt->b, opt->mat);
 
+	aux.input_position[0] = aux.input_position[1] = 0;
+	aux.input_end[0] = aux.input_end[1] = INT64_MAX;
+#if SWBWA_USE_MPI
+	{
+		const char *read2_path =
+			(optind + 2 < argc && !(opt->flag & MEM_F_PE)) ? argv[optind + 2] : NULL;
+#if SWBWA_ENABLE_MPI_READ_ID_SCAN
+		const int is_paired_input = read2_path != NULL;
+#endif
+		swbwa_fastq_range_t range;
+
+		if (swbwa_mpi_fastq_range(argv[optind + 1], read2_path, &range) != 0)
+			return 1;
+		aux.input_position[0] = aux.input_position[1] = range.start;
+		aux.input_end[0] = aux.input_end[1] = range.end;
+#if SWBWA_ENABLE_MPI_READ_ID_SCAN
+		aux.n_processed = range.first_record * (is_paired_input ? 2 : 1);
+		fprintf(stderr,
+		        "[MPI rank %06d/%06d] input range: records=[%lld, %lld)"
+		        " bytes=[%lld, %lld)\n",
+		        swbwa_mpi_rank(), swbwa_mpi_size(),
+		        (long long)range.first_record,
+		        (long long)(range.first_record + range.record_count),
+		        (long long)range.start, (long long)range.end);
+#else
+		fprintf(stderr,
+		        "[MPI rank %06d/%06d] input range: bytes=[%lld, %lld)\n",
+		        swbwa_mpi_rank(), swbwa_mpi_size(),
+		        (long long)range.start, (long long)range.end);
+#endif
+	}
+#endif
+
 	swbwa_runtime_init();
 
 	aux.idx = bwa_idx_load_from_shm(argv[optind]);
@@ -659,7 +720,8 @@ int main_mem(int argc, char *argv[])
 		for (i = 0; i < aux.idx->bns->n_seqs; ++i)
 			aux.idx->bns->anns[i].is_alt = 0;
 
-	open_fastq_input(argv[optind + 1], &file1_ptr, &ko, &fd);
+	open_fastq_input(argv[optind + 1], &file1_ptr, &ko, &fd,
+	                 aux.input_position[0], aux.input_end[0]);
 	//fp = gzdopen(fd, "r");
 	//aux.ks = kseq_init(fp);
 	aux.ks = kseq_init(fd);
@@ -668,7 +730,8 @@ int main_mem(int argc, char *argv[])
 			if (bwa_verbose >= 2)
 				fprintf(stderr, "[W::%s] when '-p' is in use, the second query file is ignored.\n", __func__);
 		} else {
-			open_fastq_input(argv[optind + 2], &file2_ptr, &ko2, &fd2);
+			open_fastq_input(argv[optind + 2], &file2_ptr, &ko2, &fd2,
+			                 aux.input_position[1], aux.input_end[1]);
 			//fp2 = gzdopen(fd2, "r");
 			//aux.ks2 = kseq_init(fp2);
 			aux.ks2 = kseq_init(fd2);
@@ -677,6 +740,21 @@ int main_mem(int argc, char *argv[])
 	}
 	//bwa_print_sam_hdr(aux.idx->bns, hdr_line);
 	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+
+#if SWBWA_USE_MPI
+	if (output_path == NULL || strcmp(output_path, "-") == 0)
+		err_fatal(__func__, "MPI output requires an explicit -o FILE path");
+#endif
+	if (swbwa_output_open(output_path) != 0)
+		err_fatal(__func__, "failed to open SAM output: %s", strerror(errno));
+	if (output_path != NULL || SWBWA_USE_MPI) {
+#if SWBWA_USE_MPI
+		fprintf(stderr, "[MPI rank %06d/%06d] output: %s\n",
+		        swbwa_mpi_rank(), swbwa_mpi_size(), swbwa_output_name());
+#else
+		fprintf(stderr, "the output file is %s\n", swbwa_output_name());
+#endif
+	}
 
 	init_cpe_allocator();
 
@@ -687,6 +765,8 @@ int main_mem(int argc, char *argv[])
     double t0 = GetTime();
     if(no_mt_io) kt_pipeline_single(1, process, &aux, 3);
     else kt_pipeline_queue(3, process, &aux, 3);
+	if (swbwa_output_close() != 0)
+		err_fatal(__func__, "failed to close SAM output: %s", strerror(errno));
 
 #if SWBWA_ENABLE_LWPF
     char filename[50];
@@ -712,15 +792,16 @@ int main_mem(int argc, char *argv[])
 	bwa_idx_destroy(aux.idx);
 	kseq_destroy(aux.ks);
 	//err_gzclose(fp);
+    swbwa_input_unregister_fd(fd);
     kclose(ko);
     if (file1_ptr) fclose(file1_ptr);
 	if (aux.ks2) {
 		kseq_destroy(aux.ks2);
 		//err_gzclose(fp2);
+        swbwa_input_unregister_fd(fd2);
         kclose(ko2);
         if (file2_ptr) fclose(file2_ptr);
 	}
-    //if(file_out_fd != -1) close(file_out_fd);
 	return 0;
 }
 

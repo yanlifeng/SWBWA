@@ -269,6 +269,6 @@ extern "C" void kt_pipeline_queue(int n_threads, void* (*func)(void*, int, void*
     writer.join();
 
 
-    delete read_queue.q_data;
-    delete write_queue.q_data;
+    delete[] read_queue.q_data;
+    delete[] write_queue.q_data;
 }

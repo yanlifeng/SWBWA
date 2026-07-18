@@ -310,10 +310,11 @@ bwaidx_t *bwa_idx_load_from_disk(const char *hint, int which)
 			fprintf(stderr, "[M::%s] read %d ALT contigs\n", __func__, c);
 		if (which & BWA_IDX_PAC) {
 			size_t pac_len = idx->bns->l_pac / 4 + 1;
-			idx->pac = calloc(pac_len, 1);
+            idx->pac = calloc(pac_len, 1);
             if (idx->pac == NULL)
                 err_fatal(__func__, "failed to allocate PAC data: bytes=%lld", (long long)pac_len);
-            fprintf(stderr, "malloc pac %lld, %p\n", (long long)pac_len, idx->pac);
+            if (bwa_verbose >= 3)
+                fprintf(stderr, "malloc pac %lld, %p\n", (long long)pac_len, idx->pac);
             err_fread_noeof(idx->pac, 1, pac_len, idx->bns->fp_pac); // concatenated 2-bit encoded sequence
 			err_fclose(idx->bns->fp_pac);
 			idx->bns->fp_pac = 0;

@@ -7,7 +7,9 @@
 #endif
 
 #include "malloc_wrap.h"
+#include "swbwa_mpi.h"
 
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
 typedef struct {
     unsigned long long malloc_calls;
     unsigned long long calloc_calls;
@@ -98,7 +100,7 @@ void swbwa_host_malloc_stats_init(void)
     memset(&host_malloc_stats, 0, sizeof(host_malloc_stats));
 }
 
-void swbwa_host_malloc_stats_print(void)
+static void swbwa_host_malloc_stats_print_body(void)
 {
     process_memory_stats_t memory;
     unsigned long long total_calls;
@@ -116,7 +118,12 @@ void swbwa_host_malloc_stats_print(void)
 
     fprintf(stderr,
             "\n"
-            "===================== Host Memory Report =====================\n"
+            "===================== Host Memory Report =====================\n");
+#if SWBWA_USE_MPI
+    fprintf(stderr, "  MPI rank: %06d / %06d\n",
+            swbwa_mpi_rank(), swbwa_mpi_size());
+#endif
+    fprintf(stderr,
             "  Process memory\n");
     if (memory.available) {
         print_bytes("peak virtual memory (VmPeak)", memory.vm_peak_kib << 10);
@@ -154,15 +161,37 @@ void swbwa_host_malloc_stats_print(void)
             "\n");
 }
 
+void swbwa_host_malloc_stats_print(void)
+{
+    swbwa_mpi_print_rank_ordered(swbwa_host_malloc_stats_print_body);
+}
+#else
+void swbwa_host_malloc_stats_init(void)
+{
+}
+
+void swbwa_host_malloc_stats_print(void)
+{
+}
+#endif
+
 void *wrap_malloc(size_t size, const char *file, unsigned int line, const char *func)
 {
     void *ptr;
 
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
     record_request(&host_malloc_stats.malloc_calls,
                    &host_malloc_stats.malloc_bytes,
                    size, file, line, func);
+#else
+    (void)file;
+    (void)line;
+    (void)func;
+#endif
     ptr = malloc(size);
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
     if (ptr == NULL) record_failure(size);
+#endif
     return ptr;
 }
 
@@ -171,7 +200,9 @@ void wrap_free(void *ptr, const char *file, unsigned int line, const char *func)
     (void)file;
     (void)line;
     (void)func;
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
     ++host_malloc_stats.free_calls;
+#endif
     free(ptr);
 }
 
@@ -179,11 +210,19 @@ void *wrap_realloc(void *ptr, size_t size, const char *file, unsigned int line, 
 {
     void *new_ptr;
 
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
     record_request(&host_malloc_stats.realloc_calls,
                    &host_malloc_stats.realloc_bytes,
                    size, file, line, func);
+#else
+    (void)file;
+    (void)line;
+    (void)func;
+#endif
     new_ptr = realloc(ptr, size);
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
     if (new_ptr == NULL && size > 0) record_failure(size);
+#endif
     return new_ptr;
 }
 
@@ -193,21 +232,36 @@ void *wrap_calloc(size_t nmemb, size_t size, const char *file, unsigned int line
     void *ptr;
 
     if (size != 0 && nmemb > (size_t)-1 / size) {
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
         ++host_malloc_stats.calloc_calls;
         ++host_malloc_stats.failed_calls;
+#else
+        (void)file;
+        (void)line;
+        (void)func;
+#endif
         return NULL;
     }
 
     bytes = nmemb * size;
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
     record_request(&host_malloc_stats.calloc_calls,
                    &host_malloc_stats.calloc_bytes,
                    bytes, file, line, func);
+#else
+    (void)file;
+    (void)line;
+    (void)func;
+#endif
     ptr = malloc(bytes);
     if (ptr != NULL) {
         memset(ptr, 0, bytes);
-    } else {
+    }
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
+    else {
         record_failure(bytes);
     }
+#endif
     return ptr;
 }
 
@@ -217,20 +271,35 @@ char *wrap_strdup(const char *s, const char *file, unsigned int line, const char
     char *copy;
 
     if (s == NULL) {
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
         ++host_malloc_stats.strdup_calls;
         ++host_malloc_stats.failed_calls;
+#else
+        (void)file;
+        (void)line;
+        (void)func;
+#endif
         return NULL;
     }
 
     len = strlen(s) + 1;
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
     record_request(&host_malloc_stats.strdup_calls,
                    &host_malloc_stats.strdup_bytes,
                    len, file, line, func);
+#else
+    (void)file;
+    (void)line;
+    (void)func;
+#endif
     copy = malloc(len);
     if (copy != NULL) {
         memcpy(copy, s, len);
-    } else {
+    }
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
+    else {
         record_failure(len);
     }
+#endif
     return copy;
 }

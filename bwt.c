@@ -39,6 +39,8 @@
 #  include "malloc_wrap.h"
 #endif
 
+extern int bwa_verbose;
+
 //extern double t_extend;
 //extern double t_bwt_sa;
 
@@ -456,7 +458,8 @@ void bwt_restore_sa(const char *fn, bwt_t *bwt)
     bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
     if (bwt->sa == NULL)
         err_fatal(__func__, "failed to allocate BWT SA: bytes=%lld", (long long)sa_bytes);
-    fprintf(stderr, "malloc bwt->sa %lld, %p\n", (long long)sa_bytes, bwt->sa);
+    if (bwa_verbose >= 3)
+        fprintf(stderr, "malloc bwt->sa %lld, %p\n", (long long)sa_bytes, bwt->sa);
     bwt->sa[0] = -1;
     fread_fix(fp, sizeof(bwtint_t) * (bwt->n_sa - 1), bwt->sa + 1);
 	err_fclose(fp);
@@ -475,7 +478,8 @@ bwt_t *bwt_restore_bwt(const char *fn)
 	bwt->bwt = (uint32_t*)calloc(bwt->bwt_size, 4);
     if (bwt->bwt == NULL)
         err_fatal(__func__, "failed to allocate BWT data: bytes=%lld", (long long)bwt_bytes);
-    fprintf(stderr, "malloc bwt->bwt %lld, %p\n", (long long)bwt_bytes, bwt->bwt);
+    if (bwa_verbose >= 3)
+        fprintf(stderr, "malloc bwt->bwt %lld, %p\n", (long long)bwt_bytes, bwt->bwt);
 	err_fseek(fp, 0, SEEK_SET);
 	err_fread_noeof(&bwt->primary, sizeof(bwtint_t), 1, fp);
 	err_fread_noeof(bwt->L2+1, sizeof(bwtint_t), 4, fp);

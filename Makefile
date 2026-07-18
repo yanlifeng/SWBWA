@@ -8,16 +8,33 @@ AR  = ar
 # EXEC_MODE:    single | cgs | cgs_cross
 # FORMAT_MODE:  host | cpe
 # CPE_ALLOCATOR: system | pool
-EXEC_MODE           ?= cgs_cross
+# HOST_MALLOC_WRAPPER: 0 | 1
+# HOST_MALLOC_STATS:   0 | 1 (requires HOST_MALLOC_WRAPPER=1)
+# USE_MPI:       0 | 1
+# OUTPUT_MODE:   split | single_unordered
+# MPI_READ_ID_SCAN: 0 | 1
+EXEC_MODE           ?= single
 FORMAT_MODE         ?= host
-CPE_ALLOCATOR       ?= pool
+CPE_ALLOCATOR       ?= system
 HOST_MALLOC_WRAPPER ?= 1
+HOST_MALLOC_STATS   ?= 0
 LWPF                 ?= 0
+
+USE_MPI              ?= 1
+OUTPUT_MODE          ?= split
+MPI_READ_ID_SCAN     ?= 0
+
+ifeq ($(USE_MPI),1)
+MPI_LINK_VARIANT := multi_static
+else
+MPI_LINK_VARIANT := wrapper_default
+endif
 
 VALID_EXEC_MODES     := single cgs cgs_cross
 VALID_FORMAT_MODES   := host cpe
 VALID_CPE_ALLOCATORS := system pool
 VALID_BOOLEAN_VALUES := 0 1
+VALID_OUTPUT_MODES   := split single_unordered
 
 ifeq ($(filter $(EXEC_MODE),$(VALID_EXEC_MODES)),)
 $(error EXEC_MODE must be one of: $(VALID_EXEC_MODES))
@@ -31,8 +48,25 @@ endif
 ifeq ($(filter $(HOST_MALLOC_WRAPPER),$(VALID_BOOLEAN_VALUES)),)
 $(error HOST_MALLOC_WRAPPER must be 0 or 1)
 endif
+ifeq ($(filter $(HOST_MALLOC_STATS),$(VALID_BOOLEAN_VALUES)),)
+$(error HOST_MALLOC_STATS must be 0 or 1)
+endif
+ifeq ($(HOST_MALLOC_STATS),1)
+ifneq ($(HOST_MALLOC_WRAPPER),1)
+$(error HOST_MALLOC_STATS=1 requires HOST_MALLOC_WRAPPER=1)
+endif
+endif
 ifeq ($(filter $(LWPF),$(VALID_BOOLEAN_VALUES)),)
 $(error LWPF must be 0 or 1)
+endif
+ifeq ($(filter $(USE_MPI),$(VALID_BOOLEAN_VALUES)),)
+$(error USE_MPI must be 0 or 1)
+endif
+ifeq ($(filter $(MPI_READ_ID_SCAN),$(VALID_BOOLEAN_VALUES)),)
+$(error MPI_READ_ID_SCAN must be 0 or 1)
+endif
+ifeq ($(filter $(OUTPUT_MODE),$(VALID_OUTPUT_MODES)),)
+$(error OUTPUT_MODE must be one of: $(VALID_OUTPUT_MODES))
 endif
 
 EXEC_MODE_VALUE_single    := SWBWA_EXEC_SINGLE_CG
@@ -44,14 +78,20 @@ CPE_ALLOC_VALUE_system    := SWBWA_CPE_ALLOC_SYSTEM
 CPE_ALLOC_VALUE_pool      := SWBWA_CPE_ALLOC_POOL
 CPE_MALLOC_WRAPPER_system := 0
 CPE_MALLOC_WRAPPER_pool   := 1
+OUTPUT_MODE_VALUE_split            := SWBWA_OUTPUT_SPLIT
+OUTPUT_MODE_VALUE_single_unordered := SWBWA_OUTPUT_SINGLE_UNORDERED
 
 SWBWA_CPPFLAGS := \
 	-DSWBWA_EXEC_MODE=$(EXEC_MODE_VALUE_$(EXEC_MODE)) \
 	-DSWBWA_FORMAT_MODE=$(FORMAT_MODE_VALUE_$(FORMAT_MODE)) \
 	-DSWBWA_CPE_ALLOC_MODE=$(CPE_ALLOC_VALUE_$(CPE_ALLOCATOR)) \
 	-DSWBWA_ENABLE_HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER) \
+	-DSWBWA_ENABLE_HOST_MALLOC_STATS=$(HOST_MALLOC_STATS) \
 	-DSWBWA_ENABLE_CPE_MALLOC_WRAPPER=$(CPE_MALLOC_WRAPPER_$(CPE_ALLOCATOR)) \
-	-DSWBWA_ENABLE_LWPF=$(LWPF)
+	-DSWBWA_ENABLE_LWPF=$(LWPF) \
+	-DSWBWA_USE_MPI=$(USE_MPI) \
+	-DSWBWA_ENABLE_MPI_READ_ID_SCAN=$(MPI_READ_ID_SCAN) \
+	-DSWBWA_OUTPUT_MODE=$(OUTPUT_MODE_VALUE_$(OUTPUT_MODE))
 
 # Compiler and linker options
 LWPF3_DIR ?= /home/export/online1/mdt00/shisuan/sweq/ylf/someGit/lwpf3
@@ -63,7 +103,7 @@ DBGFLAGS  ?= -g
 CPPFLAGS += -include swbwa_config.h $(SWBWA_CPPFLAGS)
 INCLUDES += -I$(LWPF3_DIR)
 DFLAGS   += -DHAVE_PTHREAD
-CFLAGS   += $(WARNFLAGS) $(DBGFLAGS) $(OPTFLAGS) -D_GNU_SOURCE
+CFLAGS   += $(WARNFLAGS) $(DBGFLAGS) $(OPTFLAGS) -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
 CXXFLAGS += -std=c++11
 LDFLAGS  +=
 
@@ -87,7 +127,8 @@ LIB_OBJS := \
 APP_OBJS := \
 	bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o \
 	kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o \
-	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o
+	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o swbwa_mpi.o \
+	swbwa_output.o
 
 SLAVE_DIR     := slave
 SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
@@ -103,7 +144,12 @@ print-config:
 	@echo "FORMAT_MODE=$(FORMAT_MODE)"
 	@echo "CPE_ALLOCATOR=$(CPE_ALLOCATOR)"
 	@echo "HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER)"
+	@echo "HOST_MALLOC_STATS=$(HOST_MALLOC_STATS)"
 	@echo "LWPF=$(LWPF)"
+	@echo "USE_MPI=$(USE_MPI)"
+	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
+	@echo "MPI_READ_ID_SCAN=$(MPI_READ_ID_SCAN)"
+	@echo "MPI_LINK_VARIANT=$(MPI_LINK_VARIANT)"
 
 # Compile rules
 $(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c swbwa_config.h
@@ -117,7 +163,33 @@ $(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c swbwa_config.h
 
 # Link and archive rules
 $(PROG): libbwa.a $(APP_OBJS) main.o $(SLAVE_OBJECTS)
+
+ifeq ($(USE_MPI),1)
+	@set -e; \
+	link_cmd="$$( \
+		$(CXX) -show $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) \
+		$(APP_OBJS) main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS) \
+		| sed 's#/single_static#/multi_static#g' \
+	)"; \
+	case "$$link_cmd" in \
+		*"/single_static"*) \
+			echo "error: MPI link command still references single_static" >&2; \
+			exit 1; \
+			;; \
+		*"/multi_static"*) \
+			;; \
+		*) \
+			echo "error: MPI wrapper did not expose a multi_static library path" >&2; \
+			echo "       check the output of: $(CXX) -show" >&2; \
+			exit 1; \
+			;; \
+	esac; \
+	echo "LINK $@ (MPI multi_static)"; \
+	echo "$$link_cmd"; \
+	eval "$$link_cmd"
+else
 	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS)
+endif
 
 bwamem-lite: libbwa.a example.o
 	$(CC) $(CFLAGS) $(LDFLAGS) example.o -o $@ -L. -lbwa $(LIBS)
@@ -179,3 +251,8 @@ pemerge.o: ksw.h kseq.h malloc_wrap.h kstring.h bwa.h bntseq.h bwt.h utils.h
 rle.o: rle.h
 rope.o: rle.h rope.h
 utils.o: utils.h ksort.h malloc_wrap.h kseq.h
+fastmap.o: swbwa_mpi.h swbwa_output.h
+main.o: swbwa_mpi.h
+swbwa_mpi.o: swbwa_config.h swbwa_mpi.h
+swbwa_output.o: swbwa_config.h swbwa_mpi.h swbwa_output.h
+utils.o: swbwa_mpi.h

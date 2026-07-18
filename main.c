@@ -29,6 +29,7 @@
 #include "kstring.h"
 #include "utils.h"
 #include "malloc_wrap.h"
+#include "swbwa_mpi.h"
 
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "0.0.1"
@@ -54,8 +55,9 @@ int main_shm(int argc, char *argv[]);
 int main_pemerge(int argc, char *argv[]);
 int main_maxk(int argc, char *argv[]);
 	
-static int usage()
+static int usage(void)
 {
+	if (!swbwa_mpi_is_root()) return 1;
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Program: SWBWA (efficient implementation of bwamem on the next-generation Sunway platform)\n");
 	fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
@@ -69,16 +71,23 @@ static int usage()
 int main(int argc, char *argv[])
 {
 	extern char *bwa_pg;
-	int i, ret;
+	int i, ret = 1;
 	kstring_t pg = {0,0,0};
 
-#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
+	if (swbwa_mpi_init(&argc, &argv) != 0) {
+		fprintf(stderr, "[main] failed to initialize MPI\n");
+		return 1;
+	}
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
 	swbwa_host_malloc_stats_init();
 #endif
 	ksprintf(&pg, "@PG\tID:SWBWA\tPN:SWBWA\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
 	for (i = 1; i < argc; ++i) ksprintf(&pg, " %s", argv[i]);
 	bwa_pg = pg.s;
-	if (argc < 2) return usage();
+	if (argc < 2) {
+		ret = usage();
+		goto cleanup;
+	}
 	if (strcmp(argv[1], "fa2pac") == 0) ret = bwa_fa2pac(argc-1, argv+1);
 	else if (strcmp(argv[1], "pac2bwt") == 0) ret = bwa_pac2bwt(argc-1, argv+1);
 	else if (strcmp(argv[1], "pac2bwtgen") == 0) ret = bwt_bwtgen_main(argc-1, argv+1);
@@ -97,21 +106,24 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "pemerge") == 0) ret = main_pemerge(argc-1, argv+1);
 	else if (strcmp(argv[1], "maxk") == 0) ret = main_maxk(argc-1, argv+1);
 	else {
-		fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
-		return 1;
+		if (swbwa_mpi_is_root())
+			fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
+		goto cleanup;
 	}
 	err_fflush(stdout);
 	err_fclose(stdout);
-	if (ret == 0) {
+	if (ret == 0 && swbwa_mpi_is_root()) {
 		fprintf(stderr, "[%s] Version: %s\n", __func__, PACKAGE_VERSION);
 		fprintf(stderr, "[%s] CMD:", __func__);
 		for (i = 0; i < argc; ++i)
 			fprintf(stderr, " %s", argv[i]);
 		fprintf(stderr, "\n");
 	}
+cleanup:
 	free(bwa_pg);
-#if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
+#if SWBWA_ENABLE_HOST_MALLOC_STATS
 	swbwa_host_malloc_stats_print();
 #endif
+	swbwa_mpi_finalize();
 	return ret;
 }

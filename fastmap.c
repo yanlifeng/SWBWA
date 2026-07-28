@@ -188,6 +188,8 @@ typedef struct {
 	int64_t n_processed;
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
+	int input_fd[2];
+	int64_t cpe_chunk_bytes;
 	int64_t input_position[2];
 	int64_t input_end[2];
 } ktp_aux_t;
@@ -196,8 +198,9 @@ typedef struct {
 	ktp_aux_t *aux;
 	int n_seqs;
 	bseq1_t *seqs;
-    char *fastq_buffer[2];
-    long long fastq_size[2];
+	int64_t n_processed;
+	char *fastq_buffer[2];
+	long long fastq_size[2];
 } ktp_data_t;
 
 static void skip_to_line_end(char *data_, long long *pos_, const long long size_) {
@@ -271,50 +274,128 @@ static void *process(void *shared, int step, void *_data)
 	ktp_data_t *data = (ktp_data_t*)_data;
 	int i;
 	if (step == 0) {
-        double t0 = GetTime();
-#if SWBWA_ENABLE_CPE_FORMAT
-        const long long total_block_size =
-            SWBWA_CPE_COUNT * SWBWA_READS_PER_CPE_BLOCK *
-            SWBWA_ESTIMATED_FASTQ_RECORD_BYTES;
-        const int is_paired = aux->ks2 != NULL;
-        char *block_buffer = malloc(total_block_size + 1024);
-        char *block_buffer2 = is_paired ? malloc(total_block_size + 1024) : NULL;
-        long long real_size;
-        long long real_size2 = 0;
-        ktp_data_t *ret = calloc(1, sizeof(*ret));
+		double t0 = GetTime();
+		ktp_data_t *ret = calloc(1, sizeof(*ret));
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+		swbwa_fastq_range_t chunk;
+		int next_chunk;
 
-        if (ret == NULL || block_buffer == NULL || (is_paired && block_buffer2 == NULL))
-            err_fatal(__func__, "failed to allocate FASTQ input buffers");
-        if (bwa_verbose >= 3)
-            fprintf(stderr, "[M::%s] read block (%lld)...\n", __func__, total_block_size);
+		if (ret == NULL)
+			err_fatal(__func__, "failed to allocate pipeline batch");
+		next_chunk = swbwa_mpi_fastq_scheduler_next(&chunk);
+		if (next_chunk < 0)
+			err_fatal(__func__, "failed to claim FASTQ chunk: %s", strerror(errno));
+		if (next_chunk == 0) {
+			free(ret);
+			t_step1 += GetTime() - t0;
+			return 0;
+		}
+		aux->input_position[0] = aux->input_position[1] = chunk.start;
+		aux->input_end[0] = aux->input_end[1] = chunk.end;
+		{
+			int64_t read_index;
+			int index_scale = aux->ks2 != NULL ? 2 : 1;
 
-        real_size = read_fastq_block(file1_ptr, &aux->input_position[0],
-                                     aux->input_end[0], block_buffer,
-                                     total_block_size);
-        if (is_paired) {
-            real_size2 = read_fastq_block(file2_ptr, &aux->input_position[1],
-                                          aux->input_end[1], block_buffer2,
-                                          total_block_size);
-            if (real_size != real_size2)
-                err_fatal(__func__, "paired FASTQ blocks have different sizes: %lld != %lld",
-                          real_size, real_size2);
-        }
-        if (real_size == 0) {
-            free(block_buffer);
-            free(block_buffer2);
-            free(ret);
-            return 0;
-        }
-        ret->fastq_buffer[0] = block_buffer;
-        ret->fastq_buffer[1] = block_buffer2;
-        ret->fastq_size[0] = real_size;
-        ret->fastq_size[1] = real_size2;
+#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
+			read_index = chunk.first_record;
 #else
-		ktp_data_t *ret;
+			/* Fast mode needs only a stable, non-overlapping hash seed. */
+			read_index = chunk.start;
+#endif
+			if (read_index > INT64_MAX / index_scale)
+				err_fatal(__func__, "FASTQ read index overflow");
+			ret->n_processed = read_index * index_scale;
+		}
+#if !SWBWA_ENABLE_CPE_FORMAT
+		if (swbwa_input_set_range(aux->input_fd[0], chunk.start, chunk.end) != 0)
+			err_fatal(__func__, "failed to select FASTQ chunk: %s", strerror(errno));
+		kseq_rewind(aux->ks);
+		if (aux->ks2 != NULL) {
+			if (swbwa_input_set_range(aux->input_fd[1], chunk.start, chunk.end) != 0)
+				err_fatal(__func__, "failed to select paired FASTQ chunk: %s",
+				          strerror(errno));
+			kseq_rewind(aux->ks2);
+		}
+#endif
+#else
+		if (ret == NULL)
+			err_fatal(__func__, "failed to allocate pipeline batch");
+#endif
+#if SWBWA_ENABLE_CPE_FORMAT
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+		long long block_capacity = chunk.end - chunk.start;
+#else
+		long long block_capacity = aux->cpe_chunk_bytes;
+		int64_t remaining_bytes =
+			aux->input_end[0] - aux->input_position[0];
+
+		if (remaining_bytes <= 0) {
+			free(ret);
+			t_step1 += GetTime() - t0;
+			return 0;
+		}
+		if (remaining_bytes < block_capacity)
+			block_capacity = remaining_bytes;
+#endif
+		const int is_paired = aux->ks2 != NULL;
+		char *block_buffer;
+		char *block_buffer2;
+		long long real_size;
+		long long real_size2 = 0;
+
+		if (block_capacity <= 0 ||
+		    (uint64_t)block_capacity > SIZE_MAX - 1024)
+			err_fatal(__func__, "FASTQ chunk is too large: %lld bytes",
+			          block_capacity);
+		block_buffer = malloc((size_t)block_capacity + 1024);
+		block_buffer2 = is_paired
+			? malloc((size_t)block_capacity + 1024) : NULL;
+
+		if (block_buffer == NULL || (is_paired && block_buffer2 == NULL))
+			err_fatal(__func__, "failed to allocate FASTQ input buffers");
+		if (bwa_verbose >= 3)
+			fprintf(stderr,
+			        "[M::%s] read chunk (target %d bases, %lld bytes)...\n",
+			        __func__, aux->actual_chunk_size, block_capacity);
+
+		real_size = read_fastq_block(file1_ptr, &aux->input_position[0],
+		                             aux->input_end[0], block_buffer,
+		                             block_capacity);
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+		if (real_size != block_capacity)
+			err_fatal(__func__, "short FASTQ chunk read: %lld != %lld",
+			          real_size, block_capacity);
+#endif
+		if (is_paired) {
+			real_size2 = read_fastq_block(
+				file2_ptr, &aux->input_position[1], aux->input_end[1],
+				block_buffer2, block_capacity);
+			if (real_size != real_size2)
+				err_fatal(__func__,
+				          "paired FASTQ blocks have different sizes:"
+				          " %lld != %lld",
+				          real_size, real_size2);
+		}
+		if (real_size == 0) {
+			free(block_buffer);
+			free(block_buffer2);
+			free(ret);
+			t_step1 += GetTime() - t0;
+			return 0;
+		}
+		ret->fastq_buffer[0] = block_buffer;
+		ret->fastq_buffer[1] = block_buffer2;
+		ret->fastq_size[0] = real_size;
+		ret->fastq_size[1] = real_size2;
+#else
 		int64_t size = 0;
-		ret = calloc(1, sizeof(ktp_data_t));
-        double t1 = GetTime();
-		ret->seqs = bseq_read(aux->actual_chunk_size, &ret->n_seqs, aux->ks, aux->ks2);
+		double t1 = GetTime();
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+		ret->seqs = bseq_read(INT_MAX, &ret->n_seqs, aux->ks, aux->ks2);
+#else
+		ret->seqs = bseq_read(aux->actual_chunk_size, &ret->n_seqs,
+		                      aux->ks, aux->ks2);
+#endif
         t_step1_1 += GetTime() - t1;
 		if (ret->seqs == 0) {
 			free(ret);
@@ -336,17 +417,29 @@ static void *process(void *shared, int step, void *_data)
         double t0 = GetTime();
 		const mem_opt_t *opt = aux->opt;
 		const bwaidx_t *idx = aux->idx;
+		int64_t n_processed = aux->n_processed;
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+		n_processed = data->n_processed;
+#endif
 		if (opt->flag & MEM_F_SMARTPE) {
 			err_fatal(__func__, "smart pairing is not supported by SWBWA");
 		} else {
 
 #if SWBWA_ENABLE_CPE_FORMAT
-            mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, &(data->n_seqs), &(data->seqs), data->fastq_buffer[0], data->fastq_buffer[1], data->fastq_size[0], data->fastq_size[1], aux->pes);
+			mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, n_processed, &(data->n_seqs), &(data->seqs), data->fastq_buffer[0], data->fastq_buffer[1], data->fastq_size[0], data->fastq_size[1], aux->pes);
 #else
-            mem_process_seqs_merge(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes);
+			mem_process_seqs_merge(opt, idx->bwt, idx->bns, idx->pac, n_processed, data->n_seqs, data->seqs, aux->pes);
 #endif
-        }
+		}
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+		if (aux->ks2 != NULL && (data->n_seqs & 1) != 0)
+			err_fatal(__func__, "paired FASTQ chunk produced an odd read count");
+		swbwa_mpi_fastq_scheduler_add_records(
+			data->n_seqs / (aux->ks2 != NULL ? 2 : 1));
+#endif
+#if !SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
 		aux->n_processed += data->n_seqs;
+#endif
         t_step2 += GetTime() - t0;
 		return data;
 	} else if (step == 2) {
@@ -360,6 +453,7 @@ static void *process(void *shared, int step, void *_data)
                               strerror(errno));
             }
             t_step3_1 += GetTime() - t1;
+
 #if !SWBWA_ENABLE_CPE_FORMAT
 			free(data->seqs[i].name); free(data->seqs[i].comment);
 			free(data->seqs[i].seq); free(data->seqs[i].qual);
@@ -453,6 +547,9 @@ int main_mem(int argc, char *argv[])
 	char *p, *rg_line = 0, *hdr_line = 0;
 	const char *mode = 0;
 	const char *output_path = 0;
+#if SWBWA_ENABLE_CPE_FORMAT || SWBWA_USE_MPI
+	const char *read2_path;
+#endif
 	void *ko = 0, *ko2 = 0;
 	mem_pestat_t pes[4];
 	ktp_aux_t aux;
@@ -498,7 +595,14 @@ int main_mem(int argc, char *argv[])
         else if (c == 'W') opt->min_chain_weight = atoi(optarg), opt0.min_chain_weight = 1;
         else if (c == 'y') opt->max_mem_intv = atol(optarg), opt0.max_mem_intv = 1;
 		else if (c == 'C') aux.copy_comment = 1;
-		else if (c == 'K') fixed_chunk_size = atoi(optarg);
+		else if (c == 'K') {
+			char *end = NULL;
+			long value = strtol(optarg, &end, 10);
+
+			if (end == optarg || *end != '\0' || value <= 0 || value > INT_MAX)
+				err_fatal(__func__, "invalid -K value: '%s'", optarg);
+			fixed_chunk_size = (int)value;
+		}
 		else if (c == 'X') opt->mask_level = atof(optarg);
 		else if (c == 'F') bwa_dbg = atoi(optarg);
 		else if (c == 'h') {
@@ -617,7 +721,7 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "       -j            treat ALT contigs as part of the primary assembly (i.e. ignore <idxbase>.alt file)\n");
 		fprintf(stderr, "       -5            for split alignment, take the alignment with the smallest query (not genomic) coordinate as primary\n");
 		fprintf(stderr, "       -q            don't modify mapQ of supplementary alignments\n");
-		fprintf(stderr, "       -K INT        process INT input bases in each batch regardless of nThreads (for reproducibility) []\n");
+		fprintf(stderr, "       -K INT        approximate target input bases per complete-read chunk regardless of nThreads []\n");
 		fprintf(stderr, "\n");
 		fprintf(stderr, "       -v INT        verbosity level: 1=error, 2=warning, 3=message, 4+=debugging [%d]\n", bwa_verbose);
 		fprintf(stderr, "       -T INT        minimum score to output [%d]\n", opt->T);
@@ -675,23 +779,70 @@ int main_mem(int argc, char *argv[])
 		}
 	} else update_a(opt, &opt0);
 	bwa_fill_scmat(opt->a, opt->b, opt->mat);
+	aux.actual_chunk_size = fixed_chunk_size > 0
+		? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+#if SWBWA_ENABLE_CPE_FORMAT || SWBWA_USE_MPI
+	read2_path = (optind + 2 < argc && !(opt->flag & MEM_F_PE))
+		? argv[optind + 2] : NULL;
+#endif
 
 	aux.input_position[0] = aux.input_position[1] = 0;
 	aux.input_end[0] = aux.input_end[1] = INT64_MAX;
-#if SWBWA_USE_MPI
+#if SWBWA_ENABLE_CPE_FORMAT && !SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
 	{
-		const char *read2_path =
-			(optind + 2 < argc && !(opt->flag & MEM_F_PE)) ? argv[optind + 2] : NULL;
-#if SWBWA_ENABLE_MPI_READ_ID_SCAN
-		const int is_paired_input = read2_path != NULL;
+		int64_t file_size;
+
+		if (swbwa_fastq_estimate_chunk_bytes(
+		        argv[optind + 1], read2_path, aux.actual_chunk_size,
+		        &file_size, &aux.cpe_chunk_bytes) != 0)
+			return 1;
+#if !SWBWA_USE_MPI
+		aux.input_end[0] = aux.input_end[1] = file_size;
 #endif
+		if (swbwa_mpi_is_root() && bwa_verbose >= 3)
+			fprintf(stderr,
+			        "[CPE input] target_bases=%d estimated_chunk_bytes=%lld"
+			        " file_bytes=%lld\n",
+			        aux.actual_chunk_size,
+			        (long long)aux.cpe_chunk_bytes,
+			        (long long)file_size);
+	}
+#endif
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+	{
+		swbwa_fastq_range_t assigned_range;
+		int64_t chunk_count;
+
+		if (swbwa_mpi_fastq_scheduler_open(
+		        argv[optind + 1], read2_path, aux.actual_chunk_size,
+		        &assigned_range, &chunk_count) != 0)
+			return 1;
+		aux.input_position[0] = aux.input_position[1] = assigned_range.start;
+		aux.input_end[0] = aux.input_end[1] = assigned_range.end;
+		if (swbwa_mpi_is_root())
+			fprintf(stderr,
+			        "[MPI input] mode=dynamic chunks=%lld target_bases=%d"
+			        " estimated_chunk_bytes=%lld file_bytes=%lld"
+			        " scheduler=distributed"
+#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
+			        " read_index=exact\n",
+#else
+			        " read_index=byte_offset\n",
+#endif
+			        (long long)chunk_count, aux.actual_chunk_size,
+			        (long long)swbwa_mpi_fastq_scheduler_chunk_bytes(),
+			        (long long)assigned_range.file_size);
+	}
+#elif SWBWA_USE_MPI
+	{
+		const int is_paired_input = read2_path != NULL;
 		swbwa_fastq_range_t range;
 
 		if (swbwa_mpi_fastq_range(argv[optind + 1], read2_path, &range) != 0)
 			return 1;
 		aux.input_position[0] = aux.input_position[1] = range.start;
 		aux.input_end[0] = aux.input_end[1] = range.end;
-#if SWBWA_ENABLE_MPI_READ_ID_SCAN
+#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
 		aux.n_processed = range.first_record * (is_paired_input ? 2 : 1);
 		fprintf(stderr,
 		        "[MPI rank %06d/%06d] input range: records=[%lld, %lld)"
@@ -701,6 +852,7 @@ int main_mem(int argc, char *argv[])
 		        (long long)(range.first_record + range.record_count),
 		        (long long)range.start, (long long)range.end);
 #else
+		(void)is_paired_input;
 		fprintf(stderr,
 		        "[MPI rank %06d/%06d] input range: bytes=[%lld, %lld)\n",
 		        swbwa_mpi_rank(), swbwa_mpi_size(),
@@ -722,6 +874,7 @@ int main_mem(int argc, char *argv[])
 
 	open_fastq_input(argv[optind + 1], &file1_ptr, &ko, &fd,
 	                 aux.input_position[0], aux.input_end[0]);
+	aux.input_fd[0] = fd;
 	//fp = gzdopen(fd, "r");
 	//aux.ks = kseq_init(fp);
 	aux.ks = kseq_init(fd);
@@ -732,6 +885,7 @@ int main_mem(int argc, char *argv[])
 		} else {
 			open_fastq_input(argv[optind + 2], &file2_ptr, &ko2, &fd2,
 			                 aux.input_position[1], aux.input_end[1]);
+			aux.input_fd[1] = fd2;
 			//fp2 = gzdopen(fd2, "r");
 			//aux.ks2 = kseq_init(fp2);
 			aux.ks2 = kseq_init(fd2);
@@ -739,8 +893,6 @@ int main_mem(int argc, char *argv[])
 		}
 	}
 	//bwa_print_sam_hdr(aux.idx->bns, hdr_line);
-	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
-
 #if SWBWA_USE_MPI
 	if (output_path == NULL || strcmp(output_path, "-") == 0)
 		err_fatal(__func__, "MPI output requires an explicit -o FILE path");
@@ -762,9 +914,28 @@ int main_mem(int argc, char *argv[])
     lwpf_init(NULL);
 #endif
 
-    double t0 = GetTime();
-    if(no_mt_io) kt_pipeline_single(1, process, &aux, 3);
-    else kt_pipeline_queue(3, process, &aux, 3);
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+	if (swbwa_mpi_barrier() != 0)
+		err_fatal(__func__, "failed to synchronize dynamic MPI workers");
+#endif
+
+	double t0 = GetTime();
+	if (no_mt_io) kt_pipeline_single(1, process, &aux, 3);
+	else kt_pipeline_queue(3, process, &aux, 3);
+#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+	{
+		int64_t chunks, records, bytes;
+
+		swbwa_mpi_fastq_scheduler_stats(&chunks, &records, &bytes);
+		fprintf(stderr,
+		        "[MPI rank %06d/%06d] input work: chunks=%lld records=%lld"
+		        " bytes=%lld\n",
+		        swbwa_mpi_rank(), swbwa_mpi_size(),
+		        (long long)chunks, (long long)records,
+		        (long long)bytes);
+	}
+	swbwa_mpi_fastq_scheduler_close();
+#endif
 	if (swbwa_output_close() != 0)
 		err_fatal(__func__, "failed to close SAM output: %s", strerror(errno));
 

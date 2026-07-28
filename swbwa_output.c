@@ -90,6 +90,7 @@ static int write_single_unordered(const unsigned char *data, size_t length)
     uint64_t increment;
     uint64_t offset;
     size_t position = 0;
+    int result;
 
     if (length == 0) return 0;
     increment = (uint64_t)length;
@@ -97,12 +98,13 @@ static int write_single_unordered(const unsigned char *data, size_t length)
         errno = EOVERFLOW;
         return -1;
     }
-    if (mpi_check(MPI_Fetch_and_op(&increment, &offset, MPI_UINT64_T, 0, 0,
-                                   MPI_SUM, output_state.offset_window),
-                  "MPI_Fetch_and_op") != 0)
-        return -1;
-    if (mpi_check(MPI_Win_flush(0, output_state.offset_window),
-                  "MPI_Win_flush") != 0)
+    swbwa_mpi_call_lock();
+    result = MPI_Fetch_and_op(&increment, &offset, MPI_UINT64_T, 0, 0,
+                              MPI_SUM, output_state.offset_window);
+    if (result == MPI_SUCCESS)
+        result = MPI_Win_flush(0, output_state.offset_window);
+    swbwa_mpi_call_unlock();
+    if (mpi_check(result, "MPI output offset reservation") != 0)
         return -1;
     if (offset > (uint64_t)INT64_MAX - increment) {
         errno = EOVERFLOW;
@@ -115,13 +117,14 @@ static int write_single_unordered(const unsigned char *data, size_t length)
         MPI_Status status;
         int count;
 
-        if (mpi_check(MPI_File_write_at(output_state.file,
-                                        (MPI_Offset)(offset + position),
-                                        data + position, chunk, MPI_BYTE, &status),
-                      "MPI_File_write_at") != 0)
-            return -1;
-        if (mpi_check(MPI_Get_count(&status, MPI_BYTE, &count),
-                      "MPI_Get_count") != 0)
+        swbwa_mpi_call_lock();
+        result = MPI_File_write_at(output_state.file,
+                                   (MPI_Offset)(offset + position),
+                                   data + position, chunk, MPI_BYTE, &status);
+        if (result == MPI_SUCCESS)
+            result = MPI_Get_count(&status, MPI_BYTE, &count);
+        swbwa_mpi_call_unlock();
+        if (mpi_check(result, "MPI_File_write_at/MPI_Get_count") != 0)
             return -1;
         if (count != chunk) {
             errno = EIO;

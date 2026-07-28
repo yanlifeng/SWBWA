@@ -454,14 +454,16 @@ void bwt_restore_sa(const char *fn, bwt_t *bwt)
 	xassert(primary == bwt->seq_len, "SA-BWT inconsistency: seq_len is not the same.");
 
 	bwt->n_sa = (bwt->seq_len + bwt->sa_intv) / bwt->sa_intv;
-    size_t sa_bytes = bwt->n_sa * sizeof(*bwt->sa);
-    bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
-    if (bwt->sa == NULL)
-        err_fatal(__func__, "failed to allocate BWT SA: bytes=%lld", (long long)sa_bytes);
-    if (bwa_verbose >= 3)
-        fprintf(stderr, "malloc bwt->sa %lld, %p\n", (long long)sa_bytes, bwt->sa);
-    bwt->sa[0] = -1;
-    fread_fix(fp, sizeof(bwtint_t) * (bwt->n_sa - 1), bwt->sa + 1);
+	size_t sa_bytes = bwt->n_sa * sizeof(*bwt->sa);
+	bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
+	if (bwt->sa == NULL) {
+		err_fatal(__func__, "failed to allocate BWT SA: bytes=%lld", (long long)sa_bytes);
+	}
+	if (bwa_verbose >= 3) {
+		fprintf(stderr, "malloc bwt->sa %lld, %p\n", (long long)sa_bytes, bwt->sa);
+	}
+	bwt->sa[0] = -1;
+	fread_fix(fp, sizeof(bwtint_t) * (bwt->n_sa - 1), bwt->sa + 1);
 	err_fclose(fp);
 }
 
@@ -474,17 +476,19 @@ bwt_t *bwt_restore_bwt(const char *fn)
 	fp = xopen(fn, "rb");
 	err_fseek(fp, 0, SEEK_END);
 	bwt->bwt_size = (err_ftell(fp) - sizeof(bwtint_t) * 5) >> 2;
-    size_t bwt_bytes = bwt->bwt_size * sizeof(*bwt->bwt);
+	size_t bwt_bytes = bwt->bwt_size * sizeof(*bwt->bwt);
 	bwt->bwt = (uint32_t*)calloc(bwt->bwt_size, 4);
-    if (bwt->bwt == NULL)
-        err_fatal(__func__, "failed to allocate BWT data: bytes=%lld", (long long)bwt_bytes);
-    if (bwa_verbose >= 3)
-        fprintf(stderr, "malloc bwt->bwt %lld, %p\n", (long long)bwt_bytes, bwt->bwt);
+	if (bwt->bwt == NULL) {
+		err_fatal(__func__, "failed to allocate BWT data: bytes=%lld", (long long)bwt_bytes);
+	}
+	if (bwa_verbose >= 3) {
+		fprintf(stderr, "malloc bwt->bwt %lld, %p\n", (long long)bwt_bytes, bwt->bwt);
+	}
 	err_fseek(fp, 0, SEEK_SET);
 	err_fread_noeof(&bwt->primary, sizeof(bwtint_t), 1, fp);
 	err_fread_noeof(bwt->L2+1, sizeof(bwtint_t), 4, fp);
-    fread_fix(fp, bwt->bwt_size<<2, bwt->bwt);
-    bwt->seq_len = bwt->L2[4];
+	fread_fix(fp, bwt->bwt_size<<2, bwt->bwt);
+	bwt->seq_len = bwt->L2[4];
 	err_fclose(fp);
 	bwt_gen_cnt_table(bwt);
 

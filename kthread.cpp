@@ -143,7 +143,8 @@ extern "C" void kt_pipeline_single(int n_threads, void* (*func)(void*, int, void
 
 using DataType = void*;
 
-const int queue_item_limit = SWBWA_PIPELINE_QUEUE_CAPACITY;
+const int read_queue_item_limit = SWBWA_PIPELINE_INPUT_QUEUE_CAPACITY;
+const int write_queue_item_limit = SWBWA_PIPELINE_QUEUE_CAPACITY;
 
 
 
@@ -164,15 +165,15 @@ void reader_thread(ktp_t* p, MyQueue& queue, std::atomic<bool>& done_reading) {
     //set_thread_affinity(1);
     DataType data = nullptr;
     while (true) {
+        while (queue.q_num >= read_queue_item_limit) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         {
             //std::lock_guard<std::mutex> lock(mtx);
             data = p->func(p->shared, 0, nullptr);
         }
         if (data == nullptr) break;
 
-        while (queue.q_num >= queue_item_limit) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
         queue.q_data[queue.q_p2++] = data;
         queue.q_num++;
         printf("step1 %p\n", data);
@@ -201,7 +202,7 @@ void processor_thread(ktp_t* p, MyQueue& read_queue, MyQueue& write_queue, std::
         processed_data = p->func(p->shared, 1, item);
         printf("step2 put %p\n", processed_data);
 
-        while (write_queue.q_num >= queue_item_limit) {
+        while (write_queue.q_num >= write_queue_item_limit) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         write_queue.q_data[write_queue.q_p2++] = processed_data;

@@ -27,28 +27,40 @@ make -j4
 
 ### Build configuration
 
-The default build uses cross-segment CGS execution, host-side FASTQ
-formatting, the system CPE allocator, and the host malloc wrapper:
+The default build uses single-CG execution, CPE FASTQ formatting, the system
+CPE allocator, dynamic MPI input, and unordered single-file MPI output:
 
 ```bash
 make print-config
 ```
 
+FASTQ formatting is always performed on the CPEs; there is no separate
+formatting-mode switch.
+
 The supported build variables are:
 
 | Variable | Values | Default |
 | --- | --- | --- |
-| `EXEC_MODE` | `single`, `cgs`, `cgs_cross` | `cgs_cross` |
-| `FORMAT_MODE` | `host`, `cpe` | `host` |
+| `EXEC_MODE` | `single`, `cgs`, `cgs_cross` | `single` |
 | `CPE_ALLOCATOR` | `system`, `pool` | `system` |
 | `HOST_MALLOC_WRAPPER` | `0`, `1` | `1` |
-| `LWPF` | `0`, `1` | `0` |
+| `HOST_MALLOC_STATS` | `0`, `1` | `0` |
+| `USE_MPI` | `0`, `1` | `1` |
+| `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
+| `OUTPUT_MODE` | `split`, `single_unordered` | `single_unordered` |
+| `MPI_EXACT_READ_INDEX` | `0`, `1` | `0` |
+
+The three `MPI_*`/`OUTPUT_MODE` options are only defined and validated when
+`USE_MPI=1`; they have no effect in a non-MPI build.
+
+`MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the
+complete FASTQ once before alignment to build exact record prefixes.
 
 For example:
 
 ```bash
 make clean
-make -j4 EXEC_MODE=cgs FORMAT_MODE=host CPE_ALLOCATOR=system
+make -j4 EXEC_MODE=cgs CPE_ALLOCATOR=system
 ```
 
 Run `make clean` before changing build modes because Make does not track
@@ -58,7 +70,7 @@ After source changes, regenerate the linked CPE layout and relocation data for
 cross-segment execution:
 
 ```bash
-./build_cross.sh EXEC_MODE=cgs_cross FORMAT_MODE=host CPE_ALLOCATOR=system
+./build_cross.sh EXEC_MODE=cgs_cross CPE_ALLOCATOR=system
 ```
 
 ## Simple usage

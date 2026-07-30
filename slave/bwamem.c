@@ -50,7 +50,6 @@
 #include "../utils.h"
 
 
-#include "lwpf3_my_cpe.h"
 
 #if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
@@ -242,13 +241,10 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
 	int split_len = (int)(opt->min_seed_len * opt->split_factor + .499);
 	a->mem.n = 0;
 
-    lwpf_start(l_collect_1);
 	// first pass: find all SMEMs
 	while (x < len) {
 		if (seq[x] < 4) {
-            lwpf_start(l_my_smem1);
 			x = bwt_smem1(bwt, len, seq, x, start_width, &a->mem1, a->tmpv);
-            lwpf_stop(l_my_smem1);
 			for (i = 0; i < a->mem1.n; ++i) {
 				bwtintv_t *p = &a->mem1.a[i];
 				int slen = (uint32_t)p->info - (p->info>>32); // seed length
@@ -257,9 +253,7 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
 			}
 		} else ++x;
 	}
-    lwpf_stop(l_collect_1);
 
-    lwpf_start(l_collect_2);
 	// second pass: find MEMs inside a long SMEM
 	old_n = a->mem.n;
 #if SWBWA_ENABLE_TWO_PASS_BATCH
@@ -276,29 +270,23 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
     }
     for (k = 0; k < cnt_2_pass; k += SWBWA_TWO_PASS_BATCH_SIZE) {
         int cnt_now = cnt_2_pass - k >= SWBWA_TWO_PASS_BATCH_SIZE ? SWBWA_TWO_PASS_BATCH_SIZE: cnt_2_pass - k;
-        lwpf_start(l_my_smem2);
         bwt_smem1_batch(cnt_now, bwt, len, seq, b_x + k, b_min_intv + k, &a->mem1);
         for (i = 0; i < a->mem1.n; ++i)
             if ((uint32_t)a->mem1.a[i].info - (a->mem1.a[i].info>>32) >= opt->min_seed_len)
                 kv_push(bwtintv_t, a->mem, a->mem1.a[i]);
-        lwpf_stop(l_my_smem2);
     }
 #else
     for (k = 0; k < old_n; ++k) {
         bwtintv_t *p = &a->mem.a[k];
         int start = p->info>>32, end = (int32_t)p->info;
         if (end - start < split_len || p->x[2] > opt->split_width) continue;
-        lwpf_start(l_my_smem2);
         bwt_smem1(bwt, len, seq, (start + end)>>1, p->x[2]+1, &a->mem1, a->tmpv);
-        lwpf_stop(l_my_smem2);
         for (i = 0; i < a->mem1.n; ++i)
             if ((uint32_t)a->mem1.a[i].info - (a->mem1.a[i].info>>32) >= opt->min_seed_len)
                 kv_push(bwtintv_t, a->mem, a->mem1.a[i]);
     }
 #endif
-    lwpf_stop(l_collect_2);
 
-    lwpf_start(l_collect_3);
     // third pass: LAST-like
     if (opt->max_mem_intv > 0) {
         x = 0;
@@ -306,9 +294,7 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
             if (seq[x] < 4) {
                 if (1) {
                     bwtintv_t m;
-                    lwpf_start(l_my_seed_stra);
                     x = bwt_seed_strategy1(bwt, len, seq, x, opt->min_seed_len, opt->max_mem_intv, &m);
-                    lwpf_stop(l_my_seed_stra);
                     if (m.x[2] > 0) kv_push(bwtintv_t, a->mem, m);
                 } else { // for now, we never come to this block which is slower
                     x = bwt_smem1a(bwt, len, seq, x, start_width, opt->max_mem_intv, &a->mem1, a->tmpv);
@@ -318,12 +304,9 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
             } else ++x;
         }
     }
-    lwpf_stop(l_collect_3);
 
-    lwpf_start(l_collect_4);
     // sort
     ks_introsort(mem_intv, a->mem.n, a->mem.a);
-    lwpf_stop(l_collect_4);
 }
 
 /************
@@ -432,11 +415,8 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     aux = buf? (smem_aux_t*)buf : smem_aux_init();
     int max_s_size = opt->max_occ;
 
-    lwpf_start(l_collect_intv);
     mem_collect_intv(opt, bwt, len, seq, aux);
-    lwpf_stop(l_collect_intv);
 
-    lwpf_start(l_my_cal_rep);
     for (i = 0, b = e = l_rep = 0; i < aux->mem.n; ++i) { // compute frac_rep
         bwtintv_t *p = &aux->mem.a[i];
         if(p->x[2] > max_s_size) max_s_size = p->x[2];
@@ -446,10 +426,8 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
         else e = e > se? e : se;
 	}
 	l_rep += e - b;
-    lwpf_stop(l_my_cal_rep);
 
 
-    lwpf_start(l_my_btree_chain);
 
     //static long mem_cnt = 0;
     //static long k_cnt = 0;
@@ -466,13 +444,11 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	//	// if (slen < opt->min_seed_len) continue; // ignore if too short or too repetitive
 	//	step = p->x[2] > opt->max_occ? p->x[2] / opt->max_occ : 1;
 	//	for (k = count = 0; k < p->x[2] && count < opt->max_occ; k += step, ++count) {
-    //        lwpf_start(l_my_btree_sa);
     //        //reg_num++;
 	//		reg_pos[reg_num++] = bwt_sa(bwt, p->x[0] + k); // this is the base coordinate in the forward-reverse reference
     //        if(reg_num == 3000) {
     //            fprintf(stderr, "GGGGGGGGGGGGGGG %d\n", reg_num);
     //        }
-    //        lwpf_stop(l_my_btree_sa);
     //    }
     //}
     //if(reg_num >= 2222) fprintf(stderr, "GGGGGGGGGGGGGGG %d\n", reg_num);
@@ -491,42 +467,30 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 			mem_chain_t tmp, *lower, *upper;
 			mem_seed_t s;
 			int rid, to_add = 0;
-            lwpf_start(l_my_btree_sa);
             //k_cnt++;
 			s.rbeg = tmp.pos = bwt_sa(bwt, p->x[0] + k); // this is the base coordinate in the forward-reverse reference
 			//s.rbeg = tmp.pos = reg_pos[now_pos++];
-            lwpf_stop(l_my_btree_sa);
 			s.qbeg = p->info>>32;
 			s.score= s.len = slen;
-            lwpf_start(l_my_btree_rid);
 			rid = bns_intv2rid(bns, s.rbeg, s.rbeg + s.len);
-            lwpf_stop(l_my_btree_rid);
 			if (rid < 0) continue; // bridging multiple reference sequences or the forward-reverse boundary; TODO: split the seed; don't discard it!!!
 			if (kb_size(tree)) {
-                lwpf_start(l_my_btree_find);
 				kb_intervalp(chn, tree, &tmp, &lower, &upper); // find the closest chain
-                lwpf_stop(l_my_btree_find);
 
-                lwpf_start(l_my_btree_merge);
 				if (!lower || !test_and_merge(opt, l_pac, lower, &s, rid)) to_add = 1;
-                lwpf_stop(l_my_btree_merge);
 			} else to_add = 1;
 			if (to_add) { // add the seed as a new chain
-                lwpf_start(l_my_btree_add);
 				tmp.n = 1; tmp.m = 4;
 				tmp.seeds = calloc(tmp.m, sizeof(mem_seed_t));
 				tmp.seeds[0] = s;
 				tmp.rid = rid;
 				tmp.is_alt = !!bns->anns[rid].is_alt;
 				kb_putp(chn, tree, &tmp);
-                lwpf_stop(l_my_btree_add);
 			}
 		}
 	}
     //if(cntt_0 % 10000 == 0) fprintf(stderr, "%d [mem_cnt] %.3f, [k_cnt] %.3f\n", cntt_0, 1.0 * mem_cnt / cntt_0, 1.0 * k_cnt / cntt_0);
-    lwpf_stop(l_my_btree_chain);
 
-    lwpf_start(l_my_btree_free);
 	if (buf == 0) smem_aux_destroy(aux);
 
 	kv_resize(mem_chain_t, chain, kb_size(tree));
@@ -539,7 +503,6 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	if (bwa_verbose >= 4) printf("* fraction of repetitive seeds: %.3f\n", (float)l_rep / len);
 
 	kb_destroy(chn, tree);
-    lwpf_stop(l_my_btree_free);
 	return chain;
 }
 
@@ -668,13 +631,7 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 	int m, i, j;
 	if (n <= 1) return n;
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_sort_1);
-#endif
 	ks_introsort(mem_ars2, n, a); // sort by the END position, not START!
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_sort_1);
-#endif
 	for (i = 0; i < n; ++i) a[i].n_comp = 1;
 	for (i = 1; i < n; ++i) {
 		mem_alnreg_t *p = &a[i];
@@ -712,13 +669,7 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 		}
 	n = m;
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_sort_2);
-#endif
 	ks_introsort(mem_ars, n, a);
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_sort_2);
-#endif
 	for (i = 1; i < n; ++i) { // mark identical hits
 		if (a[i].score == a[i-1].score && a[i].rb == a[i-1].rb && a[i].qb == a[i-1].qb)
 			a[i].qe = a[i].qb;
@@ -881,7 +832,6 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 	uint64_t *srt;
 
 
-    lwpf_start(l_chain2aln1);
 	if (c->n == 0) return;
 	// get the max possible span
 	rmax[0] = l_pac<<1; rmax[1] = 0;
@@ -909,7 +859,6 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 		srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
 	ks_introsort_64(c->n, srt);
 
-    lwpf_stop(l_chain2aln1);
 
 	for (k = c->n - 1; k >= 0; --k) {
 		mem_alnreg_t *a;
@@ -960,7 +909,6 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 
 		if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
 
-        lwpf_start(l_chain2aln2);
 		if (s->qbeg) { // left extension
 			uint8_t *rs, *qs;
 			int qle, tle, gtle, gscore;
@@ -977,9 +925,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 					printf("*** Left ref:   "); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
 					printf("*** Left query: "); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
 				}
-                lwpf_start(l_2aln_ksw1);
 				a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
-                lwpf_stop(l_2aln_ksw1);
 				if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
 				if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
 			}
@@ -993,9 +939,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 			}
 			free(qs); free(rs);
 		} else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
-        lwpf_stop(l_chain2aln2);
 
-        lwpf_start(l_chain2aln3);
 		if (s->qbeg + s->len != l_query) { // right extension
 			int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
 			qe = s->qbeg + s->len;
@@ -1010,9 +954,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 					printf("*** Right query: "); for (j = 0; j < l_query - qe; ++j) putchar("ACGTN"[(int)query[qe+j]]); putchar('\n');
 				}
 
-                lwpf_start(l_2aln_ksw2);
                 a->score = ksw_extend2(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[1], opt->pen_clip3, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
-                lwpf_stop(l_2aln_ksw2);
 				if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
 				if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;
 			}
@@ -1025,7 +967,6 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 				a->truesc += gscore - sc0;
 			}
 		} else a->qe = l_query, a->re = s->rbeg + s->len;
-        lwpf_stop(l_chain2aln3);
 		if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
 
 		// compute seedcov
@@ -1326,21 +1267,14 @@ mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt, const bwt_t *init_bwt
 	for (i = 0; i < l_seq; ++i) // convert to 2-bit encoding if we have not done so
 		seq[i] = seq[i] < 4? seq[i] : nst_nt4_table[(int)seq[i]];
 
-    lwpf_start(l_mem_chain);
 	chn = mem_chain(opt, bwt, bns, l_seq, (uint8_t*)seq, buf);
-    lwpf_stop(l_mem_chain);
 
-    lwpf_start(l_mem_chain_flt);
 	chn.n = mem_chain_flt(opt, chn.n, chn.a);
-    lwpf_stop(l_mem_chain_flt);
 
-    lwpf_start(l_mem_flt_chained_seeds);
 	mem_flt_chained_seeds(opt, bns, pac, l_seq, (uint8_t*)seq, chn.n, chn.a);
-    lwpf_stop(l_mem_flt_chained_seeds);
 	if (bwa_verbose >= 4) mem_print_chain(bns, &chn);
 
 
-    lwpf_start(l_mem_chain2aln);
 	kv_init(regs);
 	for (i = 0; i < chn.n; ++i) {
 		mem_chain_t *p = &chn.a[i];
@@ -1348,12 +1282,9 @@ mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt, const bwt_t *init_bwt
 		mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
 		free(chn.a[i].seeds);
 	}
-    lwpf_stop(l_mem_chain2aln);
 	free(chn.a);
 
-    lwpf_start(l_mem_sort_dedup_patch1);
 	regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
-    lwpf_stop(l_mem_sort_dedup_patch1);
 
 	if (bwa_verbose >= 4) {
 		err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
@@ -1581,9 +1512,6 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
     } else {
         if (bwa_verbose >= 4) printf("=====> Finalizing read pair '%s' <=====\n", w->seqs[i<<1|0].name);
 
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_2_pre);
-#endif
         mem_alnreg_v tmp_reg[2];
         for(int id = 0; id < 2; id++) {
             tmp_reg[id].n = w->regs[i<<1|id].n;
@@ -1657,56 +1585,29 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
         }
 
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_2_pre);
-#endif
 
 	
 
 
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_2_mem);
-#endif
      
 //        mem_sam_pe(w->opt, w->bns, w->pac, w->pes, (w->n_processed>>1) + i, &w->seqs[i<<1], &w->regs[i<<1]);
         mem_sam_pe(w->opt, w->bns, w->pac, w->pes, (w->n_processed>>1) + i, tmp_seq, tmp_reg);
 
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_2_mem);
-#endif
      
 
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_2_after);
-#endif
      
         for(int id = 0; id < 2; id++) {
 
-#if SWBWA_ENABLE_LWPF
-            lwpf_start(l_2_after_1);
-#endif
             //int mpe_sam_len = strlen(w->seqs[i<<1|id].sam);
             //assert(mpe_sam_len == (w->seqs[i<<1|id].l_seq << 6));
 //            int mpe_sam_len = w->seqs[i<<1|id].l_seq << 6;
-#if SWBWA_ENABLE_LWPF
-            lwpf_stop(l_2_after_1);
-#endif
 
-#if SWBWA_ENABLE_LWPF
-            lwpf_start(l_2_after_2);
-#endif
             int cpe_sam_len = strlen(tmp_seq[id].sam);
             cpe_sams[i<<1|id] = tmp_seq[id].sam;
             sam_lens[i<<1|id] = cpe_sam_len;
 
             memcpy(w->seqs[i<<1|id].seq, tmp_seq[id].seq, w->seqs[i<<1|id].l_seq * sizeof(char));
-#if SWBWA_ENABLE_LWPF
-            lwpf_stop(l_2_after_2);
-#endif
 
-#if SWBWA_ENABLE_LWPF
-            lwpf_start(l_2_after_3);
-#endif
 
 #if SWBWA_ENABLE_WORKER2_LDM
             int name_len = w->seqs[i<<1|id].name ? strlen(w->seqs[i<<1|id].name) : 0;
@@ -1728,15 +1629,9 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             if(tmp_seq[id].qual) free(tmp_seq[id].qual);
 #endif
 //            if(tmp_seq[id].sam) free(tmp_seq[id].sam);
-#if SWBWA_ENABLE_LWPF
-            lwpf_stop(l_2_after_3);
-#endif
         }
     }
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_2_after);
-#endif
      
 }
 
@@ -1940,7 +1835,6 @@ void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens,
     extern void mem_reg2ovlp(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a);
     worker_t *w = (worker_t*)data;
 
-    lwpf_start(l_worker1_1);
     if (!(w->opt->flag&MEM_F_PE)) {
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
@@ -1953,18 +1847,14 @@ void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens,
             w->regs[i<<1|1] = mem_align1_core(i * 2 + 1, w->opt, w->bwt, w->bns, w->pac, w->seqs[i<<1|1].l_seq, w->seqs[i<<1|1].seq, w->aux[tid]);
         }
     }
-    lwpf_stop(l_worker1_1);
 
-    lwpf_start(l_worker1_2);
     mem_pestat_t pes[4];
 //    w->pes = &pes[0];
     if (w->opt->flag&MEM_F_PE) { // infer insert sizes if not provided
         if (pes0) memcpy(pes, pes0, 4 * sizeof(mem_pestat_t));
         else mem_pestat(w->opt, w->bns->l_pac, l_pos, r_pos, w->regs, pes, s_ids);
     }
-    lwpf_stop(l_worker1_2);
 
-    lwpf_start(l_worker2_1);
     if (!(w->opt->flag&MEM_F_PE)) {
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
@@ -1994,7 +1884,6 @@ void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens,
             }
         }
     }
-    lwpf_stop(l_worker2_1);
 }
 
 void worker12_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, char **cpe_sams, int* s_ids)

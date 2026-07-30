@@ -47,7 +47,6 @@
 #define UNLIKELY(x) (x)
 #endif
 
-#include "lwpf3_my_cpe.h"
 #include <slave.h>
 
 const kswr_t g_defr = { 0, -1, -1, -1, -1, -1, -1 };
@@ -87,12 +86,10 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 #endif
 	slen = (qlen + p - 1) / p; // segmented length
 
-    lwpf_start(l_init_malloc);
 	q = (kswq_t*)malloc(sizeof(kswq_t) + 256 + 64 * 4 * slen * (m + 4)); // a single block of memory
     //memset(q, 0, sizeof(kswq_t) + 256 + 64 * 4 * slen * (m + 4));
     //q = (kswq_t*)kswq_fix;
 	//q = (kswq_t*)ldm_malloc(32 << 10); // a single block of memory
-    lwpf_stop(l_init_malloc);
 	q->qp = (__m128i*)(((size_t)q + sizeof(kswq_t) + 63) >> 6 << 6); // align memory
 	q->H0 = q->qp + slen * m;
 	q->H1 = q->H0 + slen;
@@ -120,7 +117,6 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 		int *t = (int*)q->qp;
 #endif
 
-        lwpf_start(l_init_cal);
 		for (a = 0; a < m; ++a) {
 			int i, k, nlen = slen * p;
 			const int8_t *ma = mat + a * m;
@@ -128,7 +124,6 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 				for (k = i; k < nlen; k += slen) // p iterations
 					*t++ = (k >= qlen? 0 : ma[query[k]]) + q->shift;
 		}
-        lwpf_stop(l_init_cal);
 	} else {
 		int16_t *t = (int16_t*)q->qp;
 		for (a = 0; a < m; ++a) {
@@ -419,59 +414,31 @@ static inline void revseq(int l, uint8_t *s)
 
 kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int xtra, kswq_t **qry)
 {
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_ksw_1);
-#endif
 	int size;
 	kswq_t *q;
 	kswr_t r, rr;
 	kswr_t (*func)(kswq_t*, int, const uint8_t*, int, int, int, int, int);
 	q = (qry && *qry)? *qry : ksw_qinit((xtra&KSW_XBYTE)? 1 : 2, qlen, query, m, mat);
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_ksw_1);
-#endif
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_ksw_2);
-#endif
 	if (qry && *qry == 0) *qry = q;
 	func = q->size == 2? ksw_i16 : ksw_u8;
 	size = q->size;
 	r = func(q, tlen, target, o_del, e_del, o_ins, e_ins, xtra);
 	if (qry == 0) free(q);
 	//if (qry == 0) ldm_free(q, 32 << 10);
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_ksw_2);
-#endif
 
 	if ((xtra&KSW_XSTART) == 0 || ((xtra&KSW_XSUBO) && r.score < (xtra&0xffff))) return r;
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_ksw_3);
-#endif
-    lwpf_start(l_ksw_3_1);
 	revseq(r.qe + 1, query); revseq(r.te + 1, target); // +1 because qe/te points to the exact end, not the position after the end
-    lwpf_stop(l_ksw_3_1);
 
-    lwpf_start(l_ksw_3_2);
 	q = ksw_qinit(size, r.qe + 1, query, m, mat);
-    lwpf_stop(l_ksw_3_2);
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_ksw_3);
-#endif
 
-	#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_ksw_4);
-#endif
 	rr = func(q, tlen, target, o_del, e_del, o_ins, e_ins, KSW_XSTOP | r.score);
 	revseq(r.qe + 1, query); revseq(r.te + 1, target);
 	free(q);
 	//ldm_free(q, 32 << 10);
 	if (r.score == rr.score)
 		r.tb = r.te - rr.te, r.qb = r.qe - rr.qe;
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_ksw_4);
-#endif
 
 	return r;
 }
@@ -615,9 +582,6 @@ static inline uint32_t *push_cigar(int *n_cigar, int *m_cigar, uint32_t *cigar, 
 
 int ksw_global2(int qlen, const uint8_t *query, int tlen, const uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w, int *n_cigar_, uint32_t **cigar_)
 {
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_ksw_global2);
-#endif
 	
 	eh_t *eh;
 	int8_t *qp; // query profile
@@ -718,9 +682,6 @@ int ksw_global2(int qlen, const uint8_t *query, int tlen, const uint8_t *target,
 		*n_cigar_ = n_cigar, *cigar_ = cigar;
 	}
 	free(eh); free(qp); free(z);
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_ksw_global2);
-#endif
 	return score;
 }
 

@@ -2,7 +2,6 @@
 #include "swbwa_mpi.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <pthread.h>
@@ -10,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "malloc_wrap.h"
@@ -19,18 +19,9 @@
 #endif
 
 enum {
-    SWBWA_MAX_BOUNDED_INPUTS = 4,
     SWBWA_FASTQ_ESTIMATE_RECORDS = 1024
 };
 
-typedef struct {
-    int active;
-    int fd;
-    int64_t position;
-    int64_t end;
-} swbwa_bounded_input_t;
-
-static swbwa_bounded_input_t bounded_inputs[SWBWA_MAX_BOUNDED_INPUTS];
 static int mpi_rank;
 static int mpi_size = 1;
 static int mpi_initialized;
@@ -38,17 +29,49 @@ static int mpi_initialized;
 static pthread_mutex_t mpi_call_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
-#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+#if SWBWA_USE_MPI && \
+    SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
+typedef struct {
+    int64_t start;
+    int64_t end;
+    int64_t records;
+    double stage2_seconds;
+    int claimed;
+    int completed;
+} swbwa_chunk_debug_t;
+
 typedef struct {
     FILE *boundary_file;
     const char *read1_path;
     int64_t *record_offsets;
+    int64_t *claimed_chunk_ids;
+    swbwa_chunk_debug_t *chunk_debug;
     int64_t chunk_count;
     int64_t chunk_bytes;
     int64_t file_size;
     int64_t local_chunks;
     int64_t local_records;
     int64_t local_bytes;
+    int64_t next_calls;
+    int64_t rma_attempts;
+    int64_t remote_attempts;
+    int64_t out_of_range_tickets;
+    int64_t empty_chunks;
+    int64_t remote_chunks;
+    double setup_win_create_seconds;
+    double setup_lock_all_seconds;
+    double setup_barrier_seconds;
+    double next_seconds;
+    double rma_seconds;
+    double mpi_lock_wait_seconds;
+    double fetch_and_op_seconds;
+    double win_flush_seconds;
+    double boundary_seconds;
+    double close_flush_all_seconds;
+    double close_barrier_seconds;
+    double close_unlock_all_seconds;
+    double close_win_free_seconds;
+    int debug_enabled;
     int opened;
     int next_queue;
     unsigned long long local_ticket;
@@ -67,8 +90,24 @@ typedef struct {
     size_t quality_capacity;
 } swbwa_fastq_record_buffer_t;
 
-#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+#if SWBWA_USE_MPI && \
+    SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 static swbwa_fastq_scheduler_t chunk_scheduler;
+
+static double scheduler_debug_now(void)
+{
+    struct timespec now;
+
+    if (!chunk_scheduler.debug_enabled) return 0.0;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0.0;
+    return (double)now.tv_sec + (double)now.tv_nsec * 1.0e-9;
+}
+
+static void scheduler_debug_finish_next(double start)
+{
+    if (chunk_scheduler.debug_enabled)
+        chunk_scheduler.next_seconds += scheduler_debug_now() - start;
+}
 #endif
 
 static int64_t fastq_file_size(const char *path)
@@ -350,60 +389,89 @@ done:
 }
 #endif
 
-#if SWBWA_USE_MPI && SWBWA_ENABLE_MPI_EXACT_READ_INDEX
-static int64_t count_fastq_records_in_range(
-    FILE *file, const char *path, int64_t start, int64_t end,
-    swbwa_fastq_record_buffer_t *buffer)
+#if SWBWA_USE_MPI && SWBWA_MPI_EXACT_READ_INDEX
+static int scan_fastq_record_offsets(
+    FILE *file, const char *path, const int64_t *boundaries,
+    int64_t boundary_count, int64_t *record_offsets)
 {
-    int64_t count = 0;
+    swbwa_fastq_record_buffer_t buffer = {0};
+    int64_t next_boundary = 0;
+    int64_t record_count = 0;
+    int64_t file_end = 0;
+    int status = -1;
 
-    if (fseeko(file, (off_t)start, SEEK_SET) != 0) {
-        fprintf(stderr,
-                "[E::MPI input rank %d] cannot scan '%s' at byte %" PRId64
-                ": %s\n", mpi_rank, path, start, strerror(errno));
+    if (file == NULL || path == NULL || boundaries == NULL ||
+        record_offsets == NULL || boundary_count <= 0) {
+        errno = EINVAL;
         return -1;
     }
-
-    while (1) {
-        int result;
-        int64_t record_start, record_end, sequence_bases;
-        off_t position = ftello(file);
-
-        if (position < 0) return -1;
-        if ((int64_t)position == end) break;
-        if ((int64_t)position > end) return -1;
-
-        result = read_fastq_record(file, path, buffer, &record_start,
-                                   &record_end, &sequence_bases);
-        if (result <= 0 || record_start != (int64_t)position ||
-            record_end > end) {
-            fprintf(stderr,
-                    "[E::MPI input rank %d] invalid FASTQ record in '%s'"
-                    " at byte %" PRId64 "\n",
-                    mpi_rank, path, (int64_t)position);
+    for (int64_t i = 0; i < boundary_count; ++i) {
+        if (boundaries[i] < 0 ||
+            (i > 0 && boundaries[i] < boundaries[i - 1])) {
+            errno = EINVAL;
             return -1;
         }
-        ++count;
     }
-    return count;
-}
-
-static int64_t count_fastq_records(const char *path, int64_t start, int64_t end)
-{
-    FILE *file = fopen(path, "rb");
-    swbwa_fastq_record_buffer_t buffer = {0};
-    int64_t count;
-
-    if (file == NULL) {
-        fprintf(stderr, "[E::MPI input rank %d] cannot open '%s': %s\n",
-                mpi_rank, path, strerror(errno));
-        return -1;
+    if (fseeko(file, 0, SEEK_SET) != 0) {
+        fprintf(stderr,
+                "[E::MPI input] cannot rewind '%s' for exact indexing: %s\n",
+                path, strerror(errno));
+        goto done;
     }
-    count = count_fastq_records_in_range(file, path, start, end, &buffer);
-    fclose(file);
+
+    while (next_boundary < boundary_count &&
+           boundaries[next_boundary] == 0) {
+        record_offsets[next_boundary++] = 0;
+    }
+
+    for (;;) {
+        int64_t record_start, record_end, sequence_bases;
+        int result;
+
+        result = read_fastq_record(file, path, &buffer, &record_start,
+                                   &record_end, &sequence_bases);
+        if (result < 0) goto done;
+        if (result == 0) break;
+        (void)sequence_bases;
+
+        if (next_boundary < boundary_count &&
+            boundaries[next_boundary] < record_start) {
+            fprintf(stderr,
+                    "[E::MPI input] byte %" PRId64
+                    " is not a FASTQ record boundary in '%s'\n",
+                    boundaries[next_boundary], path);
+            goto done;
+        }
+        while (next_boundary < boundary_count &&
+               boundaries[next_boundary] == record_start) {
+            record_offsets[next_boundary++] = record_count;
+        }
+        if (record_count == INT64_MAX) {
+            errno = EOVERFLOW;
+            goto done;
+        }
+        ++record_count;
+        file_end = record_end;
+    }
+
+    while (next_boundary < boundary_count &&
+           boundaries[next_boundary] == file_end) {
+        record_offsets[next_boundary++] = record_count;
+    }
+    if (next_boundary != boundary_count) {
+        fprintf(stderr,
+                "[E::MPI input] exact-index boundary %" PRId64
+                " lies beyond parsed FASTQ data in '%s'\n",
+                boundaries[next_boundary], path);
+        goto done;
+    }
+    status = 0;
+
+done:
     fastq_record_buffer_destroy(&buffer);
-    return count;
+    return status;
 }
+
 #endif
 
 int swbwa_mpi_init(int *argc, char ***argv)
@@ -521,10 +589,8 @@ int swbwa_mpi_fastq_range(const char *read1_path, const char *read2_path,
     int status = 0;
     int64_t *boundaries = NULL;
     int64_t file_size = 0;
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
-    int local_status;
-    int64_t local_record_count;
-    int64_t first_record = 0;
+#if SWBWA_MPI_EXACT_READ_INDEX
+    int64_t *record_offsets = NULL;
 #endif
 
     if (mpi_rank == 0) {
@@ -547,7 +613,7 @@ int swbwa_mpi_fastq_range(const char *read1_path, const char *read2_path,
 
         if (status == 0) {
             boundaries = calloc((size_t)mpi_size + 1, sizeof(*boundaries));
-            file = fopen(read1_path, "r");
+            file = fopen(read1_path, "rb");
             if (boundaries == NULL || file == NULL) {
                 fprintf(stderr, "[E::MPI input] cannot prepare FASTQ boundaries: %s\n",
                         strerror(errno));
@@ -573,47 +639,71 @@ int swbwa_mpi_fastq_range(const char *read1_path, const char *read2_path,
                     boundaries[i] = boundaries[i - 1];
             }
         }
+#if SWBWA_MPI_EXACT_READ_INDEX
+        if (status == 0) {
+            record_offsets = calloc((size_t)mpi_size + 1,
+                                    sizeof(*record_offsets));
+            if (record_offsets == NULL ||
+                scan_fastq_record_offsets(
+                    file, read1_path, boundaries, mpi_size + 1,
+                    record_offsets) != 0)
+                status = -1;
+        }
+#endif
         if (file != NULL) fclose(file);
     }
 
     MPI_Bcast(&status, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (status != 0) {
         free(boundaries);
+#if SWBWA_MPI_EXACT_READ_INDEX
+        free(record_offsets);
+#endif
         return -1;
     }
     MPI_Bcast(&file_size, 1, MPI_INT64_T, 0, MPI_COMM_WORLD);
     if (mpi_rank != 0) {
         boundaries = malloc(((size_t)mpi_size + 1) * sizeof(*boundaries));
         if (boundaries == NULL) swbwa_mpi_abort("cannot allocate FASTQ boundary table");
+#if SWBWA_MPI_EXACT_READ_INDEX
+        record_offsets = malloc(
+            ((size_t)mpi_size + 1) * sizeof(*record_offsets));
+        if (record_offsets == NULL)
+            swbwa_mpi_abort("cannot allocate FASTQ record-offset table");
+#endif
     }
     MPI_Bcast(boundaries, mpi_size + 1, MPI_INT64_T, 0, MPI_COMM_WORLD);
+#if SWBWA_MPI_EXACT_READ_INDEX
+    if (MPI_Bcast(record_offsets, mpi_size + 1, MPI_INT64_T, 0,
+                  MPI_COMM_WORLD) != MPI_SUCCESS) {
+        free(boundaries);
+        free(record_offsets);
+        return -1;
+    }
+#endif
 
+    range->chunk_id = -1;
     range->start = boundaries[mpi_rank];
     range->end = boundaries[mpi_rank + 1];
     range->file_size = file_size;
-    free(boundaries);
 
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
-    local_record_count = count_fastq_records(read1_path, range->start, range->end);
-    local_status = local_record_count < 0;
-    MPI_Allreduce(&local_status, &status, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-    if (status != 0) return -1;
-
-    MPI_Exscan(&local_record_count, &first_record, 1, MPI_INT64_T,
-               MPI_SUM, MPI_COMM_WORLD);
-    if (mpi_rank == 0) first_record = 0;
-    range->first_record = first_record;
-    range->record_count = local_record_count;
+#if SWBWA_MPI_EXACT_READ_INDEX
+    range->first_record = record_offsets[mpi_rank];
+    range->record_count =
+        record_offsets[mpi_rank + 1] - record_offsets[mpi_rank];
+    free(record_offsets);
 #else
     range->first_record = 0;
     range->record_count = 0;
 #endif
+    free(boundaries);
 #else
     int64_t file_size;
 
     (void)read2_path;
     file_size = fastq_file_size(read1_path);
     if (file_size < 0) return -1;
+    range->chunk_id = -1;
     range->start = 0;
     range->end = file_size;
     range->file_size = file_size;
@@ -623,7 +713,8 @@ int swbwa_mpi_fastq_range(const char *read1_path, const char *read2_path,
     return 0;
 }
 
-#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+#if SWBWA_USE_MPI && \
+    SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 static int64_t chunk_nominal_offset(int64_t index)
 {
     if (index <= 0) return 0;
@@ -660,7 +751,8 @@ static int scheduler_chunk_range(int64_t index, swbwa_fastq_range_t *range)
         return -1;
     }
     range->file_size = chunk_scheduler.file_size;
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
+    range->chunk_id = index;
+#if SWBWA_MPI_EXACT_READ_INDEX
     if (chunk_scheduler.record_offsets != NULL) {
         range->first_record = chunk_scheduler.record_offsets[index];
         range->record_count = chunk_scheduler.record_offsets[index + 1] -
@@ -670,99 +762,66 @@ static int scheduler_chunk_range(int64_t index, swbwa_fastq_range_t *range)
     return 0;
 }
 
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
-static int allreduce_int64_sum(int64_t *values, int64_t count)
-{
-    int64_t offset = 0;
-
-    while (offset < count) {
-        int block = count - offset > INT_MAX
-                  ? INT_MAX : (int)(count - offset);
-
-        if (MPI_Allreduce(MPI_IN_PLACE, values + offset, block, MPI_INT64_T,
-                          MPI_SUM, MPI_COMM_WORLD) != MPI_SUCCESS)
-            return -1;
-        offset += block;
-    }
-    return 0;
-}
-
+#if SWBWA_MPI_EXACT_READ_INDEX
 static int build_exact_record_offsets(void)
 {
-    swbwa_fastq_record_buffer_t buffer = {0};
-    int64_t index;
-    int64_t first_chunk;
-    int64_t local_chunk_count;
-    int local_status = 0;
+    int64_t *boundaries = NULL;
+    int value_count;
+    int local_status;
     int global_status = 0;
+    int root_status = 0;
 
-    if (chunk_scheduler.chunk_count >
-        (int64_t)(SIZE_MAX / sizeof(*chunk_scheduler.record_offsets)) - 1) {
+    if (chunk_scheduler.chunk_count >= INT_MAX) {
         errno = EOVERFLOW;
         return -1;
     }
+    value_count = (int)chunk_scheduler.chunk_count + 1;
     chunk_scheduler.record_offsets = calloc(
-        (size_t)chunk_scheduler.chunk_count + 1,
+        (size_t)value_count,
         sizeof(*chunk_scheduler.record_offsets));
     local_status = chunk_scheduler.record_offsets == NULL;
     if (MPI_Allreduce(&local_status, &global_status, 1, MPI_INT, MPI_MAX,
                       MPI_COMM_WORLD) != MPI_SUCCESS || global_status != 0)
         return -1;
-    local_status = 0;
-    global_status = 0;
 
-    local_chunk_count = chunk_scheduler.chunk_count / mpi_size;
-    first_chunk = local_chunk_count * mpi_rank;
-    if (mpi_rank < chunk_scheduler.chunk_count % mpi_size) {
-        ++local_chunk_count;
-        first_chunk += mpi_rank;
-    } else {
-        first_chunk += chunk_scheduler.chunk_count % mpi_size;
-    }
-
-    for (index = first_chunk; index < first_chunk + local_chunk_count;
-         ++index) {
-        swbwa_fastq_range_t range;
-        int64_t count;
-
-        if (scheduler_chunk_range(index, &range) != 0) {
-            local_status = 1;
-            break;
+    if (mpi_rank == 0 && chunk_scheduler.chunk_count > 0) {
+        boundaries = malloc((size_t)value_count * sizeof(*boundaries));
+        if (boundaries == NULL) {
+            root_status = -1;
+        } else {
+            for (int index = 0; index < value_count; ++index) {
+                boundaries[index] = find_fastq_boundary(
+                    chunk_scheduler.boundary_file,
+                    chunk_nominal_offset(index),
+                    chunk_scheduler.file_size);
+                if (boundaries[index] < 0 ||
+                    (index > 0 &&
+                     boundaries[index] < boundaries[index - 1])) {
+                    root_status = -1;
+                    break;
+                }
+            }
         }
-        count = count_fastq_records_in_range(
-            chunk_scheduler.boundary_file, chunk_scheduler.read1_path,
-            range.start, range.end, &buffer);
-        if (count < 0) {
-            local_status = 1;
-            break;
-        }
-        chunk_scheduler.record_offsets[index + 1] = count;
+        if (root_status == 0 &&
+            scan_fastq_record_offsets(
+                chunk_scheduler.boundary_file, chunk_scheduler.read1_path,
+                boundaries, value_count,
+                chunk_scheduler.record_offsets) != 0)
+            root_status = -1;
     }
-    fastq_record_buffer_destroy(&buffer);
-
-    if (MPI_Allreduce(&local_status, &global_status, 1, MPI_INT, MPI_MAX,
-                      MPI_COMM_WORLD) != MPI_SUCCESS || global_status != 0)
+    free(boundaries);
+    if (MPI_Bcast(&root_status, 1, MPI_INT, 0, MPI_COMM_WORLD) != MPI_SUCCESS ||
+        root_status != 0)
         return -1;
-    if (allreduce_int64_sum(chunk_scheduler.record_offsets,
-                            chunk_scheduler.chunk_count + 1) != 0)
-        return -1;
-
-    for (index = 1; index <= chunk_scheduler.chunk_count; ++index) {
-        if (chunk_scheduler.record_offsets[index] >
-            INT64_MAX - chunk_scheduler.record_offsets[index - 1]) {
-            errno = EOVERFLOW;
-            return -1;
-        }
-        chunk_scheduler.record_offsets[index] +=
-            chunk_scheduler.record_offsets[index - 1];
-    }
-    return 0;
+    return MPI_Bcast(chunk_scheduler.record_offsets, value_count, MPI_INT64_T,
+                     0, MPI_COMM_WORLD) == MPI_SUCCESS ? 0 : -1;
 }
 #endif
 
 int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
                                    const char *read2_path,
                                    int64_t target_bases,
+                                   int debug_enabled,
                                    swbwa_fastq_range_t *assigned_range,
                                    int64_t *chunk_count)
 {
@@ -775,6 +834,7 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
     }
     memset(&chunk_scheduler, 0, sizeof(chunk_scheduler));
     chunk_scheduler.read1_path = read1_path;
+    chunk_scheduler.debug_enabled = debug_enabled != 0;
     local_status = swbwa_fastq_estimate_chunk_bytes(
         read1_path, read2_path, target_bases, &chunk_scheduler.file_size,
         &chunk_scheduler.chunk_bytes) != 0;
@@ -814,6 +874,25 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
     } else {
         local_status = 0;
     }
+    if (chunk_scheduler.debug_enabled && chunk_scheduler.chunk_count > 0) {
+        if ((uint64_t)chunk_scheduler.chunk_count >
+            SIZE_MAX / sizeof(*chunk_scheduler.claimed_chunk_ids) ||
+            (uint64_t)chunk_scheduler.chunk_count >
+            SIZE_MAX / sizeof(*chunk_scheduler.chunk_debug)) {
+            errno = EOVERFLOW;
+            local_status = 1;
+        } else {
+            chunk_scheduler.claimed_chunk_ids = malloc(
+                (size_t)chunk_scheduler.chunk_count *
+                sizeof(*chunk_scheduler.claimed_chunk_ids));
+            chunk_scheduler.chunk_debug = calloc(
+                (size_t)chunk_scheduler.chunk_count,
+                sizeof(*chunk_scheduler.chunk_debug));
+            if (chunk_scheduler.claimed_chunk_ids == NULL ||
+                chunk_scheduler.chunk_debug == NULL)
+                local_status = 1;
+        }
+    }
 
     {
         int global_status = 0;
@@ -823,28 +902,50 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
             goto fail;
     }
 
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
+#if SWBWA_MPI_EXACT_READ_INDEX
     if (build_exact_record_offsets() != 0) goto fail;
 #endif
 
     chunk_scheduler.local_ticket = 0;
     chunk_scheduler.next_queue = mpi_rank;
-    if (MPI_Win_create(&chunk_scheduler.local_ticket,
-                       sizeof(chunk_scheduler.local_ticket),
-                       sizeof(chunk_scheduler.local_ticket), MPI_INFO_NULL,
-                       MPI_COMM_WORLD,
-                       &chunk_scheduler.ticket_window) != MPI_SUCCESS)
-        goto fail;
-    if (MPI_Win_lock_all(0, chunk_scheduler.ticket_window) != MPI_SUCCESS)
-        goto fail_window;
-    if (MPI_Barrier(MPI_COMM_WORLD) != MPI_SUCCESS)
-        goto fail_locked_window;
+    {
+        double start = scheduler_debug_now();
+
+        if (MPI_Win_create(&chunk_scheduler.local_ticket,
+                           sizeof(chunk_scheduler.local_ticket),
+                           sizeof(chunk_scheduler.local_ticket), MPI_INFO_NULL,
+                           MPI_COMM_WORLD,
+                           &chunk_scheduler.ticket_window) != MPI_SUCCESS)
+            goto fail;
+        if (chunk_scheduler.debug_enabled)
+            chunk_scheduler.setup_win_create_seconds +=
+                scheduler_debug_now() - start;
+    }
+    {
+        double start = scheduler_debug_now();
+
+        if (MPI_Win_lock_all(0, chunk_scheduler.ticket_window) != MPI_SUCCESS)
+            goto fail_window;
+        if (chunk_scheduler.debug_enabled)
+            chunk_scheduler.setup_lock_all_seconds +=
+                scheduler_debug_now() - start;
+    }
+    {
+        double start = scheduler_debug_now();
+
+        if (MPI_Barrier(MPI_COMM_WORLD) != MPI_SUCCESS)
+            goto fail_locked_window;
+        if (chunk_scheduler.debug_enabled)
+            chunk_scheduler.setup_barrier_seconds +=
+                scheduler_debug_now() - start;
+    }
 
     memset(assigned_range, 0, sizeof(*assigned_range));
+    assigned_range->chunk_id = -1;
     assigned_range->file_size = chunk_scheduler.file_size;
     assigned_range->start = 0;
     assigned_range->end = chunk_scheduler.file_size;
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX
+#if SWBWA_MPI_EXACT_READ_INDEX
     if (chunk_scheduler.record_offsets != NULL)
         assigned_range->record_count =
             chunk_scheduler.record_offsets[chunk_scheduler.chunk_count];
@@ -861,6 +962,8 @@ fail:
     if (chunk_scheduler.boundary_file != NULL)
         fclose(chunk_scheduler.boundary_file);
     free(chunk_scheduler.record_offsets);
+    free(chunk_scheduler.claimed_chunk_ids);
+    free(chunk_scheduler.chunk_debug);
     memset(&chunk_scheduler, 0, sizeof(chunk_scheduler));
     return -1;
 }
@@ -872,10 +975,15 @@ int64_t swbwa_mpi_fastq_scheduler_chunk_bytes(void)
 
 int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
 {
+    double next_start;
+
     if (!chunk_scheduler.opened || range == NULL) {
         errno = EINVAL;
         return -1;
     }
+    next_start = scheduler_debug_now();
+    if (chunk_scheduler.debug_enabled) ++chunk_scheduler.next_calls;
+
     for (;;) {
         /* Queue q owns chunk IDs q, q + mpi_size, ... . */
         int start_queue = chunk_scheduler.next_queue;
@@ -888,44 +996,118 @@ int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
             unsigned long long ticket = 0;
             int64_t index;
             int result;
+            double rma_start = scheduler_debug_now();
+            double operation_start;
 
+            if (chunk_scheduler.debug_enabled) {
+                ++chunk_scheduler.rma_attempts;
+                if (queue != mpi_rank) ++chunk_scheduler.remote_attempts;
+            }
             swbwa_mpi_call_lock();
+            operation_start = scheduler_debug_now();
+            if (chunk_scheduler.debug_enabled)
+                chunk_scheduler.mpi_lock_wait_seconds +=
+                    operation_start - rma_start;
+
             result = MPI_Fetch_and_op(
                 &increment, &ticket, MPI_UNSIGNED_LONG_LONG, queue, 0,
                 MPI_SUM, chunk_scheduler.ticket_window);
-            if (result == MPI_SUCCESS)
+            if (chunk_scheduler.debug_enabled) {
+                double operation_end = scheduler_debug_now();
+
+                chunk_scheduler.fetch_and_op_seconds +=
+                    operation_end - operation_start;
+                operation_start = operation_end;
+            }
+            if (result == MPI_SUCCESS) {
                 result = MPI_Win_flush(queue, chunk_scheduler.ticket_window);
+                if (chunk_scheduler.debug_enabled)
+                    chunk_scheduler.win_flush_seconds +=
+                        scheduler_debug_now() - operation_start;
+            }
             swbwa_mpi_call_unlock();
+            if (chunk_scheduler.debug_enabled)
+                chunk_scheduler.rma_seconds +=
+                    scheduler_debug_now() - rma_start;
+
             if (result != MPI_SUCCESS) {
                 errno = EIO;
+                scheduler_debug_finish_next(next_start);
                 return -1;
             }
             if (ticket >
                 (unsigned long long)(INT64_MAX - queue) /
                     (unsigned long long)mpi_size) {
                 errno = EOVERFLOW;
+                scheduler_debug_finish_next(next_start);
                 return -1;
             }
 
             index = queue + (int64_t)ticket * mpi_size;
-            if (index >= chunk_scheduler.chunk_count) continue;
+            if (index >= chunk_scheduler.chunk_count) {
+                if (chunk_scheduler.debug_enabled)
+                    ++chunk_scheduler.out_of_range_tickets;
+                continue;
+            }
 
             claimed_valid_chunk = 1;
             chunk_scheduler.next_queue = queue;
-            if (scheduler_chunk_range(index, range) != 0) return -1;
-            if (range->start == range->end) break;
+            {
+                double boundary_start = scheduler_debug_now();
+                int range_status = scheduler_chunk_range(index, range);
 
+                if (chunk_scheduler.debug_enabled)
+                    chunk_scheduler.boundary_seconds +=
+                        scheduler_debug_now() - boundary_start;
+                if (range_status != 0) {
+                    scheduler_debug_finish_next(next_start);
+                    return -1;
+                }
+            }
+            if (range->start == range->end) {
+                if (chunk_scheduler.debug_enabled)
+                    ++chunk_scheduler.empty_chunks;
+                break;
+            }
+
+            if (chunk_scheduler.debug_enabled) {
+                swbwa_chunk_debug_t *debug_chunk =
+                    &chunk_scheduler.chunk_debug[index];
+
+                chunk_scheduler.claimed_chunk_ids[
+                    chunk_scheduler.local_chunks] = index;
+                debug_chunk->start = range->start;
+                debug_chunk->end = range->end;
+                debug_chunk->claimed = 1;
+                if (queue != mpi_rank) ++chunk_scheduler.remote_chunks;
+            }
             ++chunk_scheduler.local_chunks;
             chunk_scheduler.local_bytes += range->end - range->start;
+            scheduler_debug_finish_next(next_start);
             return 1;
         }
-        if (!claimed_valid_chunk) return 0;
+        if (!claimed_valid_chunk) {
+            scheduler_debug_finish_next(next_start);
+            return 0;
+        }
     }
 }
 
-void swbwa_mpi_fastq_scheduler_add_records(int64_t records)
+void swbwa_mpi_fastq_scheduler_record_stage2(int64_t chunk_id,
+                                             int64_t records,
+                                             double seconds)
 {
     if (records > 0) chunk_scheduler.local_records += records;
+    if (chunk_scheduler.debug_enabled &&
+        chunk_id >= 0 && chunk_id < chunk_scheduler.chunk_count) {
+        swbwa_chunk_debug_t *debug_chunk =
+            &chunk_scheduler.chunk_debug[chunk_id];
+
+        if (!debug_chunk->claimed) return;
+        debug_chunk->records = records;
+        debug_chunk->stage2_seconds = seconds;
+        debug_chunk->completed = 1;
+    }
 }
 
 void swbwa_mpi_fastq_scheduler_stats(int64_t *chunks, int64_t *records,
@@ -936,102 +1118,214 @@ void swbwa_mpi_fastq_scheduler_stats(int64_t *chunks, int64_t *records,
     if (bytes != NULL) *bytes = chunk_scheduler.local_bytes;
 }
 
+static void print_scheduler_debug_time(const char *label, double seconds,
+                                       int64_t calls, int indent)
+{
+    fprintf(stderr, "%*s%-42s %10.6f s", indent, "", label, seconds);
+    if (calls > 0)
+        fprintf(stderr, "  (%" PRId64 " calls, %9.3f us/call)",
+                calls, seconds * 1.0e6 / calls);
+    fputc('\n', stderr);
+}
+
+static void print_scheduler_debug_report_body(void)
+{
+    double local_next_seconds =
+        chunk_scheduler.next_seconds -
+        chunk_scheduler.rma_seconds -
+        chunk_scheduler.boundary_seconds;
+    double other_rma_seconds =
+        chunk_scheduler.rma_seconds -
+        chunk_scheduler.mpi_lock_wait_seconds -
+        chunk_scheduler.fetch_and_op_seconds -
+        chunk_scheduler.win_flush_seconds;
+    double stage2_seconds = 0.0;
+    double max_stage2_seconds = 0.0;
+    int64_t completed_chunks = 0;
+    int64_t max_stage2_chunk = -1;
+    int64_t order;
+
+    if (local_next_seconds < 0.0) local_next_seconds = 0.0;
+    if (other_rma_seconds < 0.0) other_rma_seconds = 0.0;
+
+    for (order = 0; order < chunk_scheduler.local_chunks; ++order) {
+        int64_t chunk_id = chunk_scheduler.claimed_chunk_ids[order];
+        const swbwa_chunk_debug_t *debug_chunk =
+            &chunk_scheduler.chunk_debug[chunk_id];
+
+        if (!debug_chunk->completed) continue;
+        ++completed_chunks;
+        stage2_seconds += debug_chunk->stage2_seconds;
+        if (max_stage2_chunk < 0 ||
+            debug_chunk->stage2_seconds > max_stage2_seconds) {
+            max_stage2_seconds = debug_chunk->stage2_seconds;
+            max_stage2_chunk = chunk_id;
+        }
+    }
+
+    fprintf(stderr,
+            "\n"
+            "================ MPI Dynamic Scheduler Debug =================\n"
+            "  MPI rank: %06d / %06d\n"
+            "\n"
+            "  Work summary\n"
+            "    claimed chunks                               %12" PRId64 "\n"
+            "    claimed from this rank's queue               %12" PRId64 "\n"
+            "    claimed from another rank's queue            %12" PRId64 "\n"
+            "    completed FASTQ records                      %12" PRId64 "\n"
+            "    claimed input bytes                          %12" PRId64 "\n"
+            "\n"
+            "  Scheduler counters\n"
+            "    scheduler_next calls                         %12" PRId64 "\n"
+            "    RMA ticket attempts                          %12" PRId64 "\n"
+            "    attempts against another rank's queue        %12" PRId64 "\n"
+            "    tickets beyond the final chunk               %12" PRId64 "\n"
+            "    empty aligned chunks                         %12" PRId64 "\n",
+            mpi_rank, mpi_size,
+            chunk_scheduler.local_chunks,
+            chunk_scheduler.local_chunks - chunk_scheduler.remote_chunks,
+            chunk_scheduler.remote_chunks,
+            chunk_scheduler.local_records,
+            chunk_scheduler.local_bytes,
+            chunk_scheduler.next_calls,
+            chunk_scheduler.rma_attempts,
+            chunk_scheduler.remote_attempts,
+            chunk_scheduler.out_of_range_tickets,
+            chunk_scheduler.empty_chunks);
+
+    fprintf(stderr, "\n  Scheduler timing\n");
+    print_scheduler_debug_time(
+        "MPI_Win_create (setup)",
+        chunk_scheduler.setup_win_create_seconds, 1, 4);
+    print_scheduler_debug_time(
+        "MPI_Win_lock_all (setup)",
+        chunk_scheduler.setup_lock_all_seconds, 1, 4);
+    print_scheduler_debug_time(
+        "MPI_Barrier after setup",
+        chunk_scheduler.setup_barrier_seconds, 1, 4);
+    print_scheduler_debug_time(
+        "scheduler_next total",
+        chunk_scheduler.next_seconds, chunk_scheduler.next_calls, 4);
+    print_scheduler_debug_time(
+        "RMA ticket path total",
+        chunk_scheduler.rma_seconds, chunk_scheduler.rma_attempts, 6);
+    print_scheduler_debug_time(
+        "wait for process-local MPI mutex",
+        chunk_scheduler.mpi_lock_wait_seconds,
+        chunk_scheduler.rma_attempts, 8);
+    print_scheduler_debug_time(
+        "MPI_Fetch_and_op",
+        chunk_scheduler.fetch_and_op_seconds,
+        chunk_scheduler.rma_attempts, 8);
+    print_scheduler_debug_time(
+        "MPI_Win_flush",
+        chunk_scheduler.win_flush_seconds,
+        chunk_scheduler.rma_attempts, 8);
+    print_scheduler_debug_time(
+        "RMA call/unlock overhead (derived)",
+        other_rma_seconds, chunk_scheduler.rma_attempts, 8);
+    print_scheduler_debug_time(
+        "align nominal offsets to FASTQ records",
+        chunk_scheduler.boundary_seconds,
+        chunk_scheduler.local_chunks + chunk_scheduler.empty_chunks, 6);
+    print_scheduler_debug_time(
+        "scheduler loop/bookkeeping (derived)",
+        local_next_seconds, chunk_scheduler.next_calls, 6);
+
+    fprintf(stderr, "\n  Scheduler teardown timing\n");
+    print_scheduler_debug_time(
+        "MPI_Win_flush_all",
+        chunk_scheduler.close_flush_all_seconds, 1, 4);
+    print_scheduler_debug_time(
+        "MPI_Barrier (wait for other ranks)",
+        chunk_scheduler.close_barrier_seconds, 1, 4);
+    print_scheduler_debug_time(
+        "MPI_Win_unlock_all",
+        chunk_scheduler.close_unlock_all_seconds, 1, 4);
+    print_scheduler_debug_time(
+        "MPI_Win_free",
+        chunk_scheduler.close_win_free_seconds, 1, 4);
+
+    fprintf(stderr,
+            "\n"
+            "  Stage 2 by chunk\n"
+            "    completed chunks                             %12" PRId64 "\n"
+            "    accumulated stage 2                          %12.6f s\n"
+            "    average stage 2 per chunk                    %12.6f s\n"
+            "    slowest chunk                                %12" PRId64 "\n"
+            "    slowest chunk stage 2                        %12.6f s\n"
+            "\n"
+            "    order   chunk  queue        byte range"
+            "                       bytes      records   stage2(s)\n",
+            completed_chunks,
+            stage2_seconds,
+            completed_chunks > 0 ? stage2_seconds / completed_chunks : 0.0,
+            max_stage2_chunk,
+            max_stage2_seconds);
+
+    for (order = 0; order < chunk_scheduler.local_chunks; ++order) {
+        int64_t chunk_id = chunk_scheduler.claimed_chunk_ids[order];
+        const swbwa_chunk_debug_t *debug_chunk =
+            &chunk_scheduler.chunk_debug[chunk_id];
+
+        fprintf(stderr,
+                "    %5" PRId64 " %7" PRId64 " %6d"
+                "  [%12" PRId64 ", %12" PRId64 ")"
+                " %12" PRId64 " %12" PRId64 " %11.6f%s\n",
+                order, chunk_id, (int)(chunk_id % mpi_size),
+                debug_chunk->start, debug_chunk->end,
+                debug_chunk->end - debug_chunk->start,
+                debug_chunk->records,
+                debug_chunk->stage2_seconds,
+                debug_chunk->completed ? "" : "  incomplete");
+    }
+    fprintf(stderr,
+            "==============================================================\n"
+            "\n");
+}
+
+static void scheduler_debug_report(void)
+{
+    if (!chunk_scheduler.opened || !chunk_scheduler.debug_enabled) return;
+    swbwa_mpi_print_rank_ordered(print_scheduler_debug_report_body);
+}
+
 void swbwa_mpi_fastq_scheduler_close(void)
 {
+    double start;
+
     if (!chunk_scheduler.opened) return;
+
+    start = scheduler_debug_now();
     MPI_Win_flush_all(chunk_scheduler.ticket_window);
+    if (chunk_scheduler.debug_enabled)
+        chunk_scheduler.close_flush_all_seconds +=
+            scheduler_debug_now() - start;
+
+    start = scheduler_debug_now();
     MPI_Barrier(MPI_COMM_WORLD);
+    if (chunk_scheduler.debug_enabled)
+        chunk_scheduler.close_barrier_seconds +=
+            scheduler_debug_now() - start;
+
+    start = scheduler_debug_now();
     MPI_Win_unlock_all(chunk_scheduler.ticket_window);
+    if (chunk_scheduler.debug_enabled)
+        chunk_scheduler.close_unlock_all_seconds +=
+            scheduler_debug_now() - start;
+
+    start = scheduler_debug_now();
     MPI_Win_free(&chunk_scheduler.ticket_window);
+    if (chunk_scheduler.debug_enabled)
+        chunk_scheduler.close_win_free_seconds +=
+            scheduler_debug_now() - start;
+
+    scheduler_debug_report();
     if (chunk_scheduler.boundary_file != NULL)
         fclose(chunk_scheduler.boundary_file);
     free(chunk_scheduler.record_offsets);
+    free(chunk_scheduler.claimed_chunk_ids);
+    free(chunk_scheduler.chunk_debug);
     memset(&chunk_scheduler, 0, sizeof(chunk_scheduler));
 }
 #endif
-
-int swbwa_input_register_fd(int fd, int64_t start, int64_t end)
-{
-    int i;
-
-    if (start < 0 || end < start) {
-        errno = EINVAL;
-        return -1;
-    }
-#ifdef O_DIRECT
-    {
-        int flags = fcntl(fd, F_GETFL);
-
-        if (flags < 0) return -1;
-        /* FASTQ record boundaries do not satisfy O_DIRECT alignment. */
-        if ((flags & O_DIRECT) != 0 &&
-            fcntl(fd, F_SETFL, flags & ~O_DIRECT) < 0)
-            return -1;
-    }
-#endif
-    if (lseek(fd, (off_t)start, SEEK_SET) < 0) return -1;
-    for (i = 0; i < SWBWA_MAX_BOUNDED_INPUTS; ++i) {
-        if (!bounded_inputs[i].active) {
-            bounded_inputs[i].active = 1;
-            bounded_inputs[i].fd = fd;
-            bounded_inputs[i].position = start;
-            bounded_inputs[i].end = end;
-            return 0;
-        }
-    }
-    errno = EMFILE;
-    return -1;
-}
-
-int swbwa_input_set_range(int fd, int64_t start, int64_t end)
-{
-    int i;
-
-    if (start < 0 || end < start) {
-        errno = EINVAL;
-        return -1;
-    }
-    for (i = 0; i < SWBWA_MAX_BOUNDED_INPUTS; ++i) {
-        swbwa_bounded_input_t *input = &bounded_inputs[i];
-
-        if (!input->active || input->fd != fd) continue;
-        if (lseek(fd, (off_t)start, SEEK_SET) < 0) return -1;
-        input->position = start;
-        input->end = end;
-        return 0;
-    }
-    errno = ENOENT;
-    return -1;
-}
-
-void swbwa_input_unregister_fd(int fd)
-{
-    int i;
-
-    for (i = 0; i < SWBWA_MAX_BOUNDED_INPUTS; ++i) {
-        if (bounded_inputs[i].active && bounded_inputs[i].fd == fd) {
-            memset(&bounded_inputs[i], 0, sizeof(bounded_inputs[i]));
-            return;
-        }
-    }
-}
-
-ssize_t swbwa_input_read(int fd, void *buffer, size_t bytes)
-{
-    int i;
-
-    for (i = 0; i < SWBWA_MAX_BOUNDED_INPUTS; ++i) {
-        swbwa_bounded_input_t *input = &bounded_inputs[i];
-        ssize_t result;
-        int64_t remaining;
-
-        if (!input->active || input->fd != fd) continue;
-        remaining = input->end - input->position;
-        if (remaining <= 0) return 0;
-        if ((uint64_t)remaining < bytes) bytes = (size_t)remaining;
-        result = read(fd, buffer, bytes);
-        if (result > 0) input->position += result;
-        return result;
-    }
-    return read(fd, buffer, bytes);
-}

@@ -6,29 +6,25 @@ AR  = ar
 # SWBWA configuration
 #
 # EXEC_MODE:    single | cgs | cgs_cross
-# FORMAT_MODE:  host | cpe
 # CPE_ALLOCATOR: system | pool
 # HOST_MALLOC_WRAPPER: 0 | 1
 # HOST_MALLOC_STATS:   0 | 1 (requires HOST_MALLOC_WRAPPER=1)
 # USE_MPI:       0 | 1
-# MPI_INPUT_MODE: static | dynamic
-# OUTPUT_MODE:   split | single_unordered
-# MPI_EXACT_READ_INDEX: 0 | 1 (exact n_processed for correctness checks)
+# MPI-only options:
+#   MPI_INPUT_MODE: static | dynamic
+#   OUTPUT_MODE: split | single_unordered
+#   MPI_EXACT_READ_INDEX: 0 | 1 (exact n_processed for correctness checks)
 EXEC_MODE           ?= single
-FORMAT_MODE         ?= cpe
 CPE_ALLOCATOR       ?= system
 HOST_MALLOC_WRAPPER ?= 1
 HOST_MALLOC_STATS   ?= 0
-LWPF                 ?= 0
 
 USE_MPI              ?= 1
 ifeq ($(USE_MPI),1)
 MPI_INPUT_MODE       ?= dynamic
-else
-MPI_INPUT_MODE       ?= static
-endif
 OUTPUT_MODE          ?= single_unordered
 MPI_EXACT_READ_INDEX ?= 0
+endif
 
 ifeq ($(USE_MPI),1)
 MPI_LINK_VARIANT := multi_static
@@ -37,7 +33,6 @@ MPI_LINK_VARIANT := wrapper_default
 endif
 
 VALID_EXEC_MODES     := single cgs cgs_cross
-VALID_FORMAT_MODES   := host cpe
 VALID_CPE_ALLOCATORS := system pool
 VALID_BOOLEAN_VALUES := 0 1
 VALID_MPI_INPUT_MODES := static dynamic
@@ -45,9 +40,6 @@ VALID_OUTPUT_MODES   := split single_unordered
 
 ifeq ($(filter $(EXEC_MODE),$(VALID_EXEC_MODES)),)
 $(error EXEC_MODE must be one of: $(VALID_EXEC_MODES))
-endif
-ifeq ($(filter $(FORMAT_MODE),$(VALID_FORMAT_MODES)),)
-$(error FORMAT_MODE must be one of: $(VALID_FORMAT_MODES))
 endif
 ifeq ($(filter $(CPE_ALLOCATOR),$(VALID_CPE_ALLOCATORS)),)
 $(error CPE_ALLOCATOR must be one of: $(VALID_CPE_ALLOCATORS))
@@ -63,37 +55,24 @@ ifneq ($(HOST_MALLOC_WRAPPER),1)
 $(error HOST_MALLOC_STATS=1 requires HOST_MALLOC_WRAPPER=1)
 endif
 endif
-ifeq ($(filter $(LWPF),$(VALID_BOOLEAN_VALUES)),)
-$(error LWPF must be 0 or 1)
-endif
 ifeq ($(filter $(USE_MPI),$(VALID_BOOLEAN_VALUES)),)
 $(error USE_MPI must be 0 or 1)
 endif
+ifeq ($(USE_MPI),1)
 ifeq ($(filter $(MPI_EXACT_READ_INDEX),$(VALID_BOOLEAN_VALUES)),)
 $(error MPI_EXACT_READ_INDEX must be 0 or 1)
-endif
-ifeq ($(MPI_EXACT_READ_INDEX),1)
-ifneq ($(USE_MPI),1)
-$(error MPI_EXACT_READ_INDEX=1 requires USE_MPI=1)
-endif
 endif
 ifeq ($(filter $(MPI_INPUT_MODE),$(VALID_MPI_INPUT_MODES)),)
 $(error MPI_INPUT_MODE must be one of: $(VALID_MPI_INPUT_MODES))
 endif
-ifeq ($(MPI_INPUT_MODE),dynamic)
-ifneq ($(USE_MPI),1)
-$(error MPI_INPUT_MODE=dynamic requires USE_MPI=1)
-endif
-endif
 ifeq ($(filter $(OUTPUT_MODE),$(VALID_OUTPUT_MODES)),)
 $(error OUTPUT_MODE must be one of: $(VALID_OUTPUT_MODES))
+endif
 endif
 
 EXEC_MODE_VALUE_single    := SWBWA_EXEC_SINGLE_CG
 EXEC_MODE_VALUE_cgs       := SWBWA_EXEC_CGS
 EXEC_MODE_VALUE_cgs_cross := SWBWA_EXEC_CGS_CROSS
-FORMAT_MODE_VALUE_host    := SWBWA_FORMAT_HOST
-FORMAT_MODE_VALUE_cpe     := SWBWA_FORMAT_CPE
 CPE_ALLOC_VALUE_system    := SWBWA_CPE_ALLOC_SYSTEM
 CPE_ALLOC_VALUE_pool      := SWBWA_CPE_ALLOC_POOL
 CPE_MALLOC_WRAPPER_system := 0
@@ -105,26 +84,25 @@ OUTPUT_MODE_VALUE_single_unordered := SWBWA_OUTPUT_SINGLE_UNORDERED
 
 SWBWA_CPPFLAGS := \
 	-DSWBWA_EXEC_MODE=$(EXEC_MODE_VALUE_$(EXEC_MODE)) \
-	-DSWBWA_FORMAT_MODE=$(FORMAT_MODE_VALUE_$(FORMAT_MODE)) \
 	-DSWBWA_CPE_ALLOC_MODE=$(CPE_ALLOC_VALUE_$(CPE_ALLOCATOR)) \
 	-DSWBWA_ENABLE_HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER) \
 	-DSWBWA_ENABLE_HOST_MALLOC_STATS=$(HOST_MALLOC_STATS) \
 	-DSWBWA_ENABLE_CPE_MALLOC_WRAPPER=$(CPE_MALLOC_WRAPPER_$(CPE_ALLOCATOR)) \
-	-DSWBWA_ENABLE_LWPF=$(LWPF) \
-	-DSWBWA_USE_MPI=$(USE_MPI) \
+	-DSWBWA_USE_MPI=$(USE_MPI)
+
+ifeq ($(USE_MPI),1)
+SWBWA_CPPFLAGS += \
 	-DSWBWA_MPI_INPUT_MODE=$(MPI_INPUT_MODE_VALUE_$(MPI_INPUT_MODE)) \
-	-DSWBWA_ENABLE_MPI_EXACT_READ_INDEX=$(MPI_EXACT_READ_INDEX) \
+	-DSWBWA_MPI_EXACT_READ_INDEX=$(MPI_EXACT_READ_INDEX) \
 	-DSWBWA_OUTPUT_MODE=$(OUTPUT_MODE_VALUE_$(OUTPUT_MODE))
+endif
 
 # Compiler and linker options
-LWPF3_DIR ?= /home/export/online1/mdt00/shisuan/sweq/ylf/someGit/lwpf3
-
 OPTFLAGS  ?= -O2
 WARNFLAGS ?= -Wall -Wno-unused-function
 DBGFLAGS  ?= -g
 
 CPPFLAGS += -include swbwa_config.h $(SWBWA_CPPFLAGS)
-INCLUDES += -I$(LWPF3_DIR)
 DFLAGS   += -DHAVE_PTHREAD
 CFLAGS   += $(WARNFLAGS) $(DBGFLAGS) $(OPTFLAGS) -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
 CXXFLAGS += -std=c++11
@@ -164,15 +142,15 @@ all: $(PROG)
 
 print-config:
 	@echo "EXEC_MODE=$(EXEC_MODE)"
-	@echo "FORMAT_MODE=$(FORMAT_MODE)"
 	@echo "CPE_ALLOCATOR=$(CPE_ALLOCATOR)"
 	@echo "HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER)"
 	@echo "HOST_MALLOC_STATS=$(HOST_MALLOC_STATS)"
-	@echo "LWPF=$(LWPF)"
 	@echo "USE_MPI=$(USE_MPI)"
+ifeq ($(USE_MPI),1)
 	@echo "MPI_INPUT_MODE=$(MPI_INPUT_MODE)"
 	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
 	@echo "MPI_EXACT_READ_INDEX=$(MPI_EXACT_READ_INDEX)"
+endif
 	@echo "MPI_LINK_VARIANT=$(MPI_LINK_VARIANT)"
 
 # Compile rules

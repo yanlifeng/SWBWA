@@ -39,7 +39,6 @@
 #  include "malloc_wrap.h"
 #endif
 
-#include "lwpf3_my_cpe.h"
 
 #define MIN_RATIO     0.8
 #define MIN_DIR_CNT   10
@@ -159,9 +158,6 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 {
 	extern int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, uint8_t *query, int n, mem_alnreg_t *a);
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_mem_matesw1);
-#endif
 
 
 	int64_t l_pac = bns->l_pac;
@@ -175,14 +171,8 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 			skip[r] = 1;
 	}
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_mem_matesw1);
-#endif
 	if (skip[0] + skip[1] + skip[2] + skip[3] == 4) return 0; // consistent pair exist; no need to perform SW
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_mem_matesw2);
-#endif
 	for (r = 0; r < 4; ++r) {
 		int is_rev, is_larger;
 		uint8_t *seq, *rev = 0, *ref = 0;
@@ -204,13 +194,7 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		}
 		if (rb < 0) rb = 0;
 		if (re > l_pac<<1) re = l_pac<<1;
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_bns_fetch_seq);
-#endif
 		if (rb < re) ref = bns_fetch_seq(bns, pac, &rb, (rb+re)>>1, &re, &rid);
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_bns_fetch_seq);
-#endif
 		if (a->rid == rid && re - rb >= opt->min_seed_len) { // no funny things happening
 			kswr_t aln;
 			mem_alnreg_t b;
@@ -239,20 +223,11 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 			}
 			++n;
 		}
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_mem_sort_dedup_patch);
-#endif
 		if (n) ma->n = mem_sort_dedup_patch(opt, 0, 0, 0, ma->n, ma->a);
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_mem_sort_dedup_patch);
-#endif
 		if (rev) free(rev);
 		free(ref);
 	}
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_mem_matesw2);
-#endif
 	return n;
 }
 
@@ -345,9 +320,6 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	extern void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a, int extra_flag, const mem_aln_t *m);
 	extern char **mem_gen_alt(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_alnreg_v *a, int l_query, const char *query);
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_2_mem_1);
-#endif
 
 	int n = 0, i, j, z[2], o, subo, n_sub, extra_flag = 1, n_pri[2], n_aa[2];
 	kstring_t str;
@@ -376,26 +348,14 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		mem_reorder_primary5(opt->T, &a[1]);
 	}
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_2_mem_1);
-#endif
 
 	if (opt->flag&MEM_F_NOPAIRING) goto no_pairing;
 
 	// pairing single-end hits
 	//if (n_pri[0] && n_pri[1] && (o = mem_pair(opt, bns, pac, pes, s, a, id, &subo, &n_sub, z, n_pri)) > 0) {
 	if (n_pri[0] && n_pri[1]) {
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_2_mem_2);
-#endif
         o = mem_pair(opt, bns, pac, pes, s, a, id, &subo, &n_sub, z, n_pri);
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_2_mem_2);
-#endif
         if(o <= 0) goto no_pairing;
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_2_mem_3);
-#endif
 		int is_multi[2], q_pe, score_un, q_se[2];
 		char **XA[2];
 		// check if an end has multiple hits even after mate-SW
@@ -404,13 +364,7 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 				if (a[i].a[j].secondary < 0 && a[i].a[j].score >= opt->T) break;
 			is_multi[i] = j < n_pri[i]? 1 : 0;
 		}
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_2_mem_3);
-#endif
 		if (is_multi[0] || is_multi[1]) goto no_pairing; // TODO: in rare cases, the true hit may be long but with low score
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_2_mem_4);
-#endif
 		// compute mapQ for the best SE hit
 		score_un = a[0].a[0].score + a[1].a[0].score - opt->pen_unpaired;
 		//q_pe = o && subo < o? (int)(MEM_MAPQ_COEF * (1. - (double)subo / o) * log(a[0].a[z[0]].seedcov + a[1].a[z[1]].seedcov) + .499) : 0;
@@ -451,19 +405,10 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 			}
 		}
 		if (!(opt->flag & MEM_F_ALL)) {
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_mem_gen_alt);
-#endif
 			for (i = 0; i < 2; ++i)
 				XA[i] = mem_gen_alt(opt, bns, pac, &a[i], s[i].l_seq, s[i].seq);
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_mem_gen_alt);
-#endif
 		} else XA[0] = XA[1] = 0;
 		// write SAM
-#if SWBWA_ENABLE_LWPF
-        lwpf_start(l_mem_reg2aln);
-#endif
 		for (i = 0; i < 2; ++i) {
 			h[i] = mem_reg2aln(opt, bns, pac, s[i].l_seq, s[i].seq, &a[i].a[z[i]]);
 			h[i].mapq = q_se[i];
@@ -479,9 +424,6 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 				aa[i][n_aa[i]++] = g[i];
 			}
 		}
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_mem_reg2aln);
-#endif
 		for (i = 0; i < n_aa[0]; ++i)
 			mem_aln2sam(opt, bns, &str, &s[0], n_aa[0], aa[0], i, &h[1]); // write read1 hits
 		s[0].sam = strdup(str.s); str.l = 0;
@@ -496,18 +438,12 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 			for (j = 0; j < a[i].n; ++j) free(XA[i][j]);
 			free(XA[i]);
 		}
-#if SWBWA_ENABLE_LWPF
-        lwpf_stop(l_2_mem_4);
-#endif
 	} else goto no_pairing;
 
 	return n;
 
 no_pairing:
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_start(l_2_mem_5);
-#endif
 	for (i = 0; i < 2; ++i) {
 		int which = -1;
 		if (a[i].n) {
@@ -529,8 +465,5 @@ no_pairing:
 	if (strcmp(s[0].name, s[1].name) != 0) err_fatal(__func__, "paired reads have different names: \"%s\", \"%s\"\n", s[0].name, s[1].name);
 	free(h[0].cigar); free(h[1].cigar);
 
-#if SWBWA_ENABLE_LWPF
-    lwpf_stop(l_2_mem_5);
-#endif
 	return n;
 }

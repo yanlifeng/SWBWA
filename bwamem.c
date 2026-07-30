@@ -31,7 +31,6 @@
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
-#include <time.h>
 #include <unistd.h>
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
@@ -1548,119 +1547,6 @@ static long swbwa_cross_entry(const swbwa_cross_runtime_t *runtime,
                               const void *entry)
 {
     return (long)entry - (long)swbwa_cpe_text_start + (long)runtime->segments;
-}
-
-
-static void shuffle(int *array, int n) {
-	srand((unsigned int)time(NULL));
-    for (int i = n - 1; i > 0; i--) {
-        int j = rand() % (i + 1);
-        int temp = array[i];
-        array[i] = array[j];
-        array[j] = temp;
-    }
-}
-
-
-void mem_process_seqs_merge(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)
-{
-    //assert(n < (4 << 20));
-    worker_t w;
-    double ctime, rtime;
-    ctime = cputime(); rtime = realtime();
-    worker_init(&w, opt, bwt, bns, pac, n_processed, n, seqs, NULL);
-
-    long nn = (opt->flag&MEM_F_PE)? n>>1 : n;
-    double t0 = GetTime();
-    double tt0;
-
-
-    tt0 = GetTime();
-
-    static swbwa_cpe_task_t *para;
-#if SWBWA_USE_CROSS_SEGMENT
-    static swbwa_cross_runtime_t cross_runtime;
-    long pre_entry;
-    long write_entry;
-#endif
-
-    if (para == NULL) {
-        para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
-    }
-
-    para->work_item_count = nn;
-    para->worker_data = (void*)&w;
-    para->sam_records = checked_malloc_array(n, sizeof(*para->sam_records), "CPE SAM pointers");
-    para->sam_lengths = checked_malloc_array(n, sizeof(*para->sam_lengths), "CPE SAM lengths");
-    para->pes = pes0;
-    for(int i = 0; i < n; i++) para->sam_lengths[i] = 0;
-
-
-#if SWBWA_USE_CROSS_SEGMENT
-    swbwa_cross_runtime_init(&cross_runtime, para);
-    pre_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_pre_fast_cross);
-    write_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_fast_cross);
-#endif
-    t_work1_1 += GetTime() - tt0;
-
-
-    tt0 = GetTime();
-#if SWBWA_USE_CROSS_SEGMENT
-    swbwa_cross_run(pre_entry);
-#else
-    swbwa_cpe_run((void*)slave_worker12_s_pre_fast, para);
-#endif
-    if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
-    t_work1_2 += GetTime() - tt0;
-
-
-    tt0 = GetTime();
-	char *current_block = NULL;
-    size_t current_offset = SWBWA_SAM_OUTPUT_BLOCK_BYTES;
-
-    for (int i = 0; i < n; i++) {
-        size_t len = para->sam_lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES;
-        if (current_offset + len > SWBWA_SAM_OUTPUT_BLOCK_BYTES) {
-            current_block = checked_malloc_array(SWBWA_SAM_OUTPUT_BLOCK_BYTES, sizeof(*current_block), "SAM output block");
-            current_offset = 0;
-            w.seqs[i].is_new_addr = 1;
-            memset(current_block, 'A', SWBWA_SAM_OUTPUT_BLOCK_BYTES);
-        } else {
-            w.seqs[i].is_new_addr = 0;
-        }
-        w.seqs[i].sam = current_block + current_offset;
-        current_offset += len;
-        w.seqs[i].sam[(para->sam_lengths[i])] = '\0';
-    }
-    
-    //for(int i = 0; i < n; i++) {
-    //    w.seqs[i].sam = malloc((para->sam_lengths[i]) * sizeof(char) + 1);
-    //    memset(w.seqs[i].sam, 'A', (para->sam_lengths[i]) * sizeof(char));
-    //    w.seqs[i].sam[(para->sam_lengths[i])] = '\0';
-    //}
-    t_work1_3 += GetTime() - tt0;
-
-
-    tt0 = GetTime();
-#if SWBWA_USE_CROSS_SEGMENT
-    swbwa_cross_run(write_entry);
-#else
-    swbwa_cpe_run((void*)slave_worker12_s_fast, para);
-#endif
-    t_work1_4 += GetTime() - tt0;
-
-
-    tt0 = GetTime();
-    checked_free_array(para->sam_lengths);
-    checked_free_array(para->sam_records);
-    worker_destroy(&w);
-    t_work1_5 += GetTime() - tt0;
-
-
-    t_work1 += GetTime() - t0;
-
-    if (bwa_verbose >= 3)
-        fprintf(stderr, "[M::%s] Processed %d reads in %.3f CPU sec, %.3f real sec\n", __func__, n, cputime() - ctime, realtime() - rtime);
 }
 
 

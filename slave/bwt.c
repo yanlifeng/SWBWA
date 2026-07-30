@@ -35,7 +35,6 @@
 #include "bwt.h"
 #include "kvec.h"
 
-#include "lwpf3_my_cpe.h"
 
 #if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
@@ -136,7 +135,6 @@ bwtint_t bwt_occ(const bwt_t *bwt, bwtint_t k, ubyte_t c)
 	if (k == (bwtint_t)(-1)) return 0;
 	k -= (k >= bwt->primary); // because $ is not in bwt
 
-    //lwpf_start(l_my_2ooc1);
 	// retrieve Occ at k/OCC_INTERVAL
     //reply=0;
     //athread_dma_iget(&n1, ((bwtint_t*)bwt_occ_intv(bwt, k)) + c, sizeof(bwtint_t), &reply);
@@ -146,9 +144,7 @@ bwtint_t bwt_occ(const bwt_t *bwt, bwtint_t k, ubyte_t c)
     //int p_size = (((k>>5) - ((k&~OCC_INTV_MASK)>>5))<<1) * sizeof(uint32_t);
     //p_size += 2 * sizeof(uint32_t);
     //assert(p_size <= 40);
-    //lwpf_stop(l_my_2ooc1);
 
-    //lwpf_start(l_my_2ooc2);
     p = bwt_occ_intv(bwt, k) + sizeof(bwtint_t);
     //p = p_tmp;
     //athread_dma_get(p, bwt_occ_intv(bwt, k) + sizeof(bwtint_t), p_size);
@@ -163,7 +159,6 @@ bwtint_t bwt_occ(const bwt_t *bwt, bwtint_t k, ubyte_t c)
 	if (c == 0) n2 -= ~k&31; // corrected for the masked bits
 
     //assert((p + 2 - pp) * sizeof(uint32_t) <= p_size);
-    //lwpf_stop(l_my_2ooc2);
     //athread_dma_wait_value(&reply,1);
 	return n1 + n2;
 }
@@ -187,7 +182,6 @@ void bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t l, ubyte_t c, bwtint_t *ok,
 		if (k >= bwt->primary) --k;
 		if (l >= bwt->primary) --l;
 
-        //lwpf_start(l_my_2ooc3);
         //reply=0;
         //athread_dma_iget(&n1, ((bwtint_t*)bwt_occ_intv(bwt, k)) + c, sizeof(bwtint_t), &reply);
         //assert(n == ((bwtint_t*)bwt_occ_intv(bwt, k))[c]);
@@ -196,9 +190,7 @@ void bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t l, ubyte_t c, bwtint_t *ok,
         //int p_size = (((l>>5) - ((k&~OCC_INTV_MASK)>>5))<<1) * sizeof(uint32_t);
         //p_size += 2 * sizeof(uint32_t);
         //assert(p_size <= 40);
-        //lwpf_stop(l_my_2ooc3);
 
-        //lwpf_start(l_my_2ooc4);
         p = bwt_occ_intv(bwt, k) + sizeof(bwtint_t);
         //p = p_tmp;
         //athread_dma_get(p, bwt_occ_intv(bwt, k) + sizeof(bwtint_t), p_size);
@@ -221,7 +213,6 @@ void bwt_2occ(const bwt_t *bwt, bwtint_t k, bwtint_t l, ubyte_t c, bwtint_t *ok,
 		*ok = n1 + n2;
 		*ol = n1 + m1 + m2;
         //assert((p + 2 - pp) * sizeof(uint32_t) <= p_size);
-        //lwpf_stop(l_my_2ooc4);
 	}
 }
 
@@ -332,14 +323,10 @@ void bwt_extend_forward_base(const bwt_t *bwt, const bwtintv_t *ik, bwtintv_t ok
 {
 	bwtint_t tk, tl;
 
-    lwpf_start(l_my_extend3);
     bwt_2occ(bwt, ik->x[0] - 1, ik->x[0] - 1 + ik->x[2], c, &tk, &tl);
-    lwpf_stop(l_my_extend3);
 
-    lwpf_start(l_my_extend4);
     ok[c].x[0] = bwt->L2[c] + 1 + tk;
     ok[c].x[2] = tl - tk;
-    lwpf_stop(l_my_extend4);
 }
 
 void bwt_extend_backward_base(const bwt_t *bwt, const bwtintv_t *ik, bwtintv_t ok[4], ubyte_t c)
@@ -347,13 +334,10 @@ void bwt_extend_backward_base(const bwt_t *bwt, const bwtintv_t *ik, bwtintv_t o
 	bwtint_t tk[4], tl[4];
 	int i;
 
-    lwpf_start(l_my_extend5);
     for(i = 3; i >= c; i--) {
         bwt_2occ(bwt, ik->x[1] - 1, ik->x[1] - 1 + ik->x[2], i, &tk[i], &tl[i]);
     }
-    lwpf_stop(l_my_extend5);
 
-    lwpf_start(l_my_extend6);
 	for (i = 3; i >= c; i--) {
 		ok[i].x[1] = bwt->L2[i] + 1 + tk[i];
 		ok[i].x[2] = tl[i] - tk[i];
@@ -362,7 +346,6 @@ void bwt_extend_backward_base(const bwt_t *bwt, const bwtintv_t *ik, bwtintv_t o
     for(i = 2; i >= c; i--) {
         ok[i].x[0] = ok[i + 1].x[0] + ok[i + 1].x[2];
     }
-    lwpf_stop(l_my_extend6);
 }
 
 
@@ -371,11 +354,8 @@ void bwt_extend(const bwt_t *bwt, const bwtintv_t *ik, bwtintv_t ok[4], int is_b
 	bwtint_t tk[4], tl[4];
 	int i;
 
-    lwpf_start(l_my_extend1);
 	bwt_2occ4(bwt, ik->x[!is_back] - 1, ik->x[!is_back] - 1 + ik->x[2], tk, tl);
-    lwpf_stop(l_my_extend1);
 
-    lwpf_start(l_my_extend2);
 	for (i = 0; i != 4; ++i) {
 		ok[i].x[!is_back] = bwt->L2[i] + 1 + tk[i];
 		ok[i].x[2] = tl[i] - tk[i];
@@ -384,7 +364,6 @@ void bwt_extend(const bwt_t *bwt, const bwtintv_t *ik, bwtintv_t ok[4], int is_b
 	ok[2].x[is_back] = ok[3].x[is_back] + ok[3].x[2];
 	ok[1].x[is_back] = ok[2].x[is_back] + ok[2].x[2];
 	ok[0].x[is_back] = ok[1].x[is_back] + ok[1].x[2];
-    lwpf_stop(l_my_extend2);
 }
 
 static void bwt_reverse_intvs(bwtintv_v *p)
@@ -416,7 +395,6 @@ void bwt_smem1a_batch(int bs, const bwt_t *bwt, int len, const uint8_t *q, int *
     }
 
 
-    lwpf_start(l_forward_batch);
 
 	for(int id = 0; id < bs; id++) if (b_min_intv[id] < 1) b_min_intv[id] = 1; // the interval size should be at least 1
 
@@ -478,10 +456,8 @@ void bwt_smem1a_batch(int bs, const bwt_t *bwt, int len, const uint8_t *q, int *
         b_curr[id] = curr;
         b_swap[id] = swap;
     }
-    lwpf_stop(l_forward_batch);
 
     mem->n = 0;
-    lwpf_start(l_backward_batch);
     for(int id = 0; id < bs; id++) {
     //for(int id = bs - 1; id >= 0; id--) {
         int this_mem_n = 0;
@@ -524,7 +500,6 @@ void bwt_smem1a_batch(int bs, const bwt_t *bwt, int len, const uint8_t *q, int *
     }
     bwt_reverse_intvs(mem); // s.t. sorted by the start coordinate
 
-    lwpf_stop(l_backward_batch);
 }
 #endif
 
@@ -540,7 +515,6 @@ int bwt_smem1a(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv,
 	if (q[x] > 3) return x + 1;
 
 
-    lwpf_start(l_smem1a_for);
 
 	if (min_intv < 1) min_intv = 1; // the interval size should be at least 1
 	kv_init(a[0]); kv_init(a[1]);
@@ -580,14 +554,12 @@ int bwt_smem1a(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv,
 			break; // always terminate extension at an ambiguous base; in this case, i<len always stands
 		}
 	}
-    lwpf_stop(l_smem1a_for);
 
 	if (i == len) kv_push(bwtintv_t, *curr, ik); // push the last interval if we reach the end
 	bwt_reverse_intvs(curr); // s.t. smaller intervals (i.e. longer matches) visited first
 	ret = curr->a[0].info; // this will be the returned value
 	swap = curr; curr = prev; prev = swap;
 
-    lwpf_start(l_smem1a_back);
 	for (i = x - 1; i >= -1; --i) { // backward search for MEMs
 		c = i < 0? -1 : q[i] < 4? q[i] : -1; // c==-1 if i<0 or q[i] is an ambiguous base
 		for (j = 0, curr->n = 0; j < prev->n; ++j) {
@@ -623,7 +595,6 @@ int bwt_smem1a(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv,
 		if (curr->n == 0) break;
 		swap = curr; curr = prev; prev = swap;
 	}
-    lwpf_stop(l_smem1a_back);
 	bwt_reverse_intvs(mem); // s.t. sorted by the start coordinate
 
 	if (tmpvec == 0 || tmpvec[0] == 0) free(a[0].a);

@@ -8,6 +8,7 @@
 #include "swbwa_config.h"
 
 typedef struct {
+    int64_t chunk_id;
     int64_t start;
     int64_t end;
     int64_t file_size;
@@ -33,24 +34,23 @@ int swbwa_fastq_estimate_chunk_bytes(const char *read1_path,
                                      int64_t *file_size,
                                      int64_t *chunk_bytes);
 
-#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+#if SWBWA_USE_MPI && \
+    SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
                                    const char *read2_path,
                                    int64_t target_bases,
+                                   int debug_enabled,
                                    swbwa_fastq_range_t *assigned_range,
                                    int64_t *chunk_count);
 int64_t swbwa_mpi_fastq_scheduler_chunk_bytes(void);
 int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range);
-void swbwa_mpi_fastq_scheduler_add_records(int64_t records);
+void swbwa_mpi_fastq_scheduler_record_stage2(int64_t chunk_id,
+                                             int64_t records,
+                                             double seconds);
 void swbwa_mpi_fastq_scheduler_stats(int64_t *chunks, int64_t *records,
                                      int64_t *bytes);
 void swbwa_mpi_fastq_scheduler_close(void);
 #endif
-
-int swbwa_input_register_fd(int fd, int64_t start, int64_t end);
-int swbwa_input_set_range(int fd, int64_t start, int64_t end);
-void swbwa_input_unregister_fd(int fd);
-ssize_t swbwa_input_read(int fd, void *buffer, size_t bytes);
 
 void swbwa_mpi_call_lock(void);
 void swbwa_mpi_call_unlock(void);

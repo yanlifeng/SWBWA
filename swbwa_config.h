@@ -6,9 +6,9 @@
  *
  * Prefer the Makefile interface instead of defining these values directly:
  *
- *   make EXEC_MODE=single FORMAT_MODE=host CPE_ALLOCATOR=system
- *   make EXEC_MODE=cgs FORMAT_MODE=host CPE_ALLOCATOR=system
- *   make EXEC_MODE=cgs_cross FORMAT_MODE=cpe CPE_ALLOCATOR=pool
+ *   make EXEC_MODE=single CPE_ALLOCATOR=system
+ *   make EXEC_MODE=cgs CPE_ALLOCATOR=system
+ *   make EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool
  *   make USE_MPI=1 MPI_INPUT_MODE=dynamic OUTPUT_MODE=split
  *   make USE_MPI=1 MPI_INPUT_MODE=dynamic MPI_EXACT_READ_INDEX=1
  *   make HOST_MALLOC_WRAPPER=1 HOST_MALLOC_STATS=1
@@ -25,8 +25,9 @@
 #define SWBWA_MPI_INPUT_STATIC  1
 #define SWBWA_MPI_INPUT_DYNAMIC 2
 
+#if SWBWA_USE_MPI
 #ifndef SWBWA_MPI_INPUT_MODE
-#define SWBWA_MPI_INPUT_MODE SWBWA_MPI_INPUT_STATIC
+#define SWBWA_MPI_INPUT_MODE SWBWA_MPI_INPUT_DYNAMIC
 #endif
 
 #if SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_STATIC && \
@@ -34,30 +35,12 @@
 #error "invalid SWBWA_MPI_INPUT_MODE"
 #endif
 
-#if SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC && !SWBWA_USE_MPI
-#error "dynamic MPI input requires SWBWA_USE_MPI=1"
+#ifndef SWBWA_MPI_EXACT_READ_INDEX
+#define SWBWA_MPI_EXACT_READ_INDEX 0
 #endif
 
-/* CPE formatting uses local sequential chunks; only MPI dynamic input
- * needs a cross-rank FASTQ scheduler. */
-#if SWBWA_USE_MPI && \
-    SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
-#define SWBWA_ENABLE_MPI_FASTQ_SCHEDULER 1
-#else
-#define SWBWA_ENABLE_MPI_FASTQ_SCHEDULER 0
-#endif
-
-#ifndef SWBWA_ENABLE_MPI_EXACT_READ_INDEX
-#define SWBWA_ENABLE_MPI_EXACT_READ_INDEX 0
-#endif
-
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX != 0 && \
-    SWBWA_ENABLE_MPI_EXACT_READ_INDEX != 1
-#error "SWBWA_ENABLE_MPI_EXACT_READ_INDEX must be 0 or 1"
-#endif
-
-#if SWBWA_ENABLE_MPI_EXACT_READ_INDEX && !SWBWA_USE_MPI
-#error "exact MPI read indexes require SWBWA_USE_MPI=1"
+#if SWBWA_MPI_EXACT_READ_INDEX != 0 && SWBWA_MPI_EXACT_READ_INDEX != 1
+#error "SWBWA_MPI_EXACT_READ_INDEX must be 0 or 1"
 #endif
 
 #define SWBWA_OUTPUT_SPLIT             1
@@ -71,6 +54,7 @@
     SWBWA_OUTPUT_MODE != SWBWA_OUTPUT_SINGLE_UNORDERED
 #error "invalid SWBWA_OUTPUT_MODE"
 #endif
+#endif /* SWBWA_USE_MPI */
 
 #define SWBWA_EXEC_SINGLE_CG  1
 #define SWBWA_EXEC_CGS        2
@@ -100,24 +84,6 @@
 #define SWBWA_USE_CROSS_SEGMENT 1
 #else
 #define SWBWA_USE_CROSS_SEGMENT 0
-#endif
-
-#define SWBWA_FORMAT_HOST 1
-#define SWBWA_FORMAT_CPE  2
-
-#ifndef SWBWA_FORMAT_MODE
-#define SWBWA_FORMAT_MODE SWBWA_FORMAT_HOST
-#endif
-
-#if SWBWA_FORMAT_MODE != SWBWA_FORMAT_HOST && \
-    SWBWA_FORMAT_MODE != SWBWA_FORMAT_CPE
-#error "invalid SWBWA_FORMAT_MODE"
-#endif
-
-#if SWBWA_FORMAT_MODE == SWBWA_FORMAT_CPE
-#define SWBWA_ENABLE_CPE_FORMAT 1
-#else
-#define SWBWA_ENABLE_CPE_FORMAT 0
 #endif
 
 #define SWBWA_CPE_ALLOC_SYSTEM 1
@@ -157,10 +123,6 @@
 #endif
 #endif
 
-#ifndef SWBWA_ENABLE_LWPF
-#define SWBWA_ENABLE_LWPF 0
-#endif
-
 /* Internal CPE tuning. These are intentionally not Makefile-level modes. */
 #define SWBWA_ENABLE_DYNAMIC_SCHEDULING 1
 #define SWBWA_ENABLE_CPE_PREFETCH       1
@@ -177,7 +139,8 @@
 #define SWBWA_PIPELINE_QUEUE_CAPACITY    4
 #define SWBWA_PIPELINE_BUFFER_COUNT      (SWBWA_PIPELINE_QUEUE_CAPACITY + 1)
 
-#if SWBWA_ENABLE_MPI_FASTQ_SCHEDULER
+#if SWBWA_USE_MPI && \
+    SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 #define SWBWA_PIPELINE_INPUT_QUEUE_CAPACITY 1
 #else
 #define SWBWA_PIPELINE_INPUT_QUEUE_CAPACITY SWBWA_PIPELINE_QUEUE_CAPACITY
@@ -189,10 +152,6 @@
 
 #ifndef SWBWA_CPE_FORMAT_BUFFER_BYTES
 #define SWBWA_CPE_FORMAT_BUFFER_BYTES (512LL << 20)
-#endif
-
-#ifndef SWBWA_SAM_OUTPUT_BLOCK_BYTES
-#define SWBWA_SAM_OUTPUT_BLOCK_BYTES (64LL << 10)
 #endif
 
 #ifndef SWBWA_OUTPUT_BUFFER_BYTES

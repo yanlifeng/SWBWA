@@ -150,9 +150,9 @@ extern double t_step1_read;
 
 int my_align_read(int file, void *ptr, unsigned int len)
 {
-    double t0 = realtime();
-	int ret = (int)swbwa_input_read(file, ptr, len);
-    t_step1_read += realtime() - t0;
+	double t0 = realtime();
+	int ret = (int)read(file, ptr, len);
+	t_step1_read += realtime() - t0;
 
 	if (ret < 0)
 	{

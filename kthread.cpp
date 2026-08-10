@@ -145,6 +145,9 @@ using DataType = void*;
 
 const int read_queue_item_limit = SWBWA_PIPELINE_INPUT_QUEUE_CAPACITY;
 const int write_queue_item_limit = SWBWA_PIPELINE_QUEUE_CAPACITY;
+static_assert(SWBWA_PIPELINE_BUFFER_COUNT >=
+              SWBWA_PIPELINE_QUEUE_CAPACITY + 1,
+              "SAM buffer ring must cover the output queue and active batch");
 
 
 
@@ -198,13 +201,20 @@ void processor_thread(ktp_t* p, MyQueue& read_queue, MyQueue& write_queue, std::
         read_queue.q_num--;
         printf("step2 get %p\n", item);
 
+        /*
+         * Reserve room before stage 2 writes its ring-buffered SAM batch.
+         * q_num excludes the batch currently consumed by the writer, so
+         * delaying this check until after processing could leave one writer,
+         * a full queue, and a new batch sharing too few SAM buffers.
+         */
+        while (write_queue.q_num >= write_queue_item_limit) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
         DataType processed_data = item;
         processed_data = p->func(p->shared, 1, item);
         printf("step2 put %p\n", processed_data);
 
-        while (write_queue.q_num >= write_queue_item_limit) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
         write_queue.q_data[write_queue.q_p2++] = processed_data;
         write_queue.q_num++;
     }

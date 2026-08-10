@@ -1,0 +1,61 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=6 chunk_bytes=117964800 file_bytes=583901384
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is ../data/SRR2496709_1.fastq_1
+the input file is ../data/SRR2496709_2.fastq_1
+the output file is correctness_results/cgs_cross_pool/has1/SRR2496709_PE.sam
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+[M::mem_process_seqs_merge2] Processed 858032 reads in 0.660 CPU sec, 2.614 real sec
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+[M::mem_process_seqs_merge2] Processed 854810 reads in 0.080 CPU sec, 2.002 real sec
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+[M::mem_process_seqs_merge2] Processed 846702 reads in 0.080 CPU sec, 3.131 real sec
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+[M::mem_process_seqs_merge2] Processed 842600 reads in 0.080 CPU sec, 2.053 real sec
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 112045640 bytes)...
+[M::mem_process_seqs_merge2] Processed 800326 reads in 0.080 CPU sec, 3.102 real sec
+
+======================= SWBWA Timing Report =======================
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    52.346 s
+    stage 1 - allocate and read raw FASTQ blocks             13.598 s
+    stage 2 - align reads and generate SAM records           12.902 s
+    stage 3 - write SAM and release batch data               25.116 s
+      SAM output writes                                        23.620 s
+      batch cleanup and loop overhead (derived)                 1.497 s
+
+  Stage 1 input details
+    batches completed / stage calls                       5 / 6
+    input-buffer and batch allocations                        0.000 s  (16 calls, max 0.000 s)
+    aggregate requested allocation bytes           1167820304
+    FASTQ fseeko calls                                        0.000 s  (10 calls, max 0.000 s)
+    FASTQ fread calls                                        13.597 s  (10 calls, max 1.505 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (8 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.000 s
+    raw FASTQ bytes read                           1167809680  (1113.710 MiB)
+    effective fread bandwidth                         81.906 MiB/s
+    slowest allocation                                 0.000 s  (64 bytes)
+    slowest fread                                      1.505 s  (R1 offset=0, bytes=117964800)
+
+  Stage 2 worker details
+    total - active merge worker                              12.901 s
+      part 1 - prepare CPE task and reusable buffers            0.654 s
+      part 2 - CPE FASTQ formatting and input release           0.077 s
+      part 3 - CPE alignment and SAM length pass               11.770 s
+      part 4 - assign slices in the shared SAM buffer           0.320 s
+      part 5 - CPE SAM record generation                        0.080 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -v 3 -t 1 -1 -o correctness_results/cgs_cross_pool/has1/SRR2496709_PE.sam -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa ../data/SRR2496709_1.fastq_1 ../data/SRR2496709_2.fastq_1

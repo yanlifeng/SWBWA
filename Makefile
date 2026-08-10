@@ -23,7 +23,7 @@ USE_MPI              ?= 1
 ifeq ($(USE_MPI),1)
 MPI_INPUT_MODE       ?= dynamic
 OUTPUT_MODE          ?= single_unordered
-MPI_EXACT_READ_INDEX ?= 0
+MPI_EXACT_READ_INDEX ?= 1
 endif
 
 ifeq ($(USE_MPI),1)

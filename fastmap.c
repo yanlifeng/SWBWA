@@ -31,6 +31,7 @@
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <ctype.h>
 #include <math.h>
 #include <errno.h>
@@ -86,6 +87,32 @@ double t_work2_5 = 0;
 double t_extend = 0;
 double t_bwt_sa = 0;
 
+typedef struct {
+    uint64_t stage_calls;
+    uint64_t completed_batches;
+    uint64_t allocation_calls;
+    uint64_t allocation_bytes;
+    uint64_t seek_calls;
+    uint64_t read_calls;
+    uint64_t read_bytes;
+    uint64_t boundary_calls;
+    double allocation_seconds;
+    double allocation_max_seconds;
+    double seek_seconds;
+    double seek_max_seconds;
+    double read_seconds;
+    double read_max_seconds;
+    double boundary_seconds;
+    double boundary_max_seconds;
+    uint64_t slowest_allocation_bytes;
+    int slowest_read_input;
+    int64_t slowest_read_offset;
+    uint64_t slowest_read_bytes;
+} stage1_timing_t;
+
+/* Stage 1 has exactly one producer, even in the threaded pipeline. */
+static stage1_timing_t stage1_timing;
+
 long long s_reg_sum = 0;
 long long c_px2 = 0;
 long long s_px2 = 0;
@@ -95,10 +122,41 @@ static void print_timing_line(const char *label, double seconds, int indent)
     fprintf(stderr, "%*s%-52s %10.3f s\n", indent, "", label, seconds);
 }
 
+static void print_timing_stat(const char *label, double seconds,
+                              uint64_t calls, double max_seconds, int indent)
+{
+    fprintf(stderr,
+            "%*s%-52s %10.3f s  (%" PRIu64 " calls, max %.3f s)\n",
+            indent, "", label, seconds, calls, max_seconds);
+}
+
+static void record_stage1_allocation(uint64_t bytes, double seconds)
+{
+    ++stage1_timing.allocation_calls;
+    stage1_timing.allocation_bytes += bytes;
+    stage1_timing.allocation_seconds += seconds;
+    if (seconds > stage1_timing.allocation_max_seconds) {
+        stage1_timing.allocation_max_seconds = seconds;
+        stage1_timing.slowest_allocation_bytes = bytes;
+    }
+    if (bwa_verbose >= 4 && seconds >= 1.0)
+        fprintf(stderr,
+                "[DBG stage1] slow allocation: bytes=%" PRIu64
+                " elapsed=%.3f s\n",
+                bytes, seconds);
+}
+
 static void print_timing_report_body(void)
 {
+    double stage1_accounted = stage1_timing.allocation_seconds +
+                              stage1_timing.seek_seconds +
+                              stage1_timing.read_seconds +
+                              stage1_timing.boundary_seconds;
+    double stage1_other = t_step1 - stage1_accounted;
+    double stage1_read_mib = (double)stage1_timing.read_bytes / (1 << 20);
     double stage3_cleanup = t_step3 - t_step3_1;
 
+    if (stage1_other < 0.0) stage1_other = 0.0;
     if (stage3_cleanup < 0.0) stage3_cleanup = 0.0;
 
     fprintf(stderr,
@@ -119,6 +177,54 @@ static void print_timing_report_body(void)
     print_timing_line("stage 3 - write SAM and release batch data", t_step3, 4);
     print_timing_line("SAM output writes", t_step3_1, 6);
     print_timing_line("batch cleanup and loop overhead (derived)", stage3_cleanup, 6);
+
+    fprintf(stderr, "\n  Stage 1 input details\n");
+    fprintf(stderr,
+            "    batches completed / stage calls              %10" PRIu64
+            " / %" PRIu64 "\n",
+            stage1_timing.completed_batches, stage1_timing.stage_calls);
+    print_timing_stat("input-buffer and batch allocations",
+                      stage1_timing.allocation_seconds,
+                      stage1_timing.allocation_calls,
+                      stage1_timing.allocation_max_seconds, 4);
+    fprintf(stderr,
+            "    aggregate requested allocation bytes           %10" PRIu64
+            "\n",
+            stage1_timing.allocation_bytes);
+    print_timing_stat("FASTQ fseeko calls", stage1_timing.seek_seconds,
+                      stage1_timing.seek_calls,
+                      stage1_timing.seek_max_seconds, 4);
+    print_timing_stat("FASTQ fread calls", stage1_timing.read_seconds,
+                      stage1_timing.read_calls,
+                      stage1_timing.read_max_seconds, 4);
+    print_timing_stat("align chunk ends to FASTQ record boundaries",
+                      stage1_timing.boundary_seconds,
+                      stage1_timing.boundary_calls,
+                      stage1_timing.boundary_max_seconds, 4);
+    print_timing_line("scheduler, checks and bookkeeping (derived)",
+                      stage1_other, 4);
+    fprintf(stderr,
+            "    raw FASTQ bytes read                           %10" PRIu64
+            "  (%.3f MiB)\n",
+            stage1_timing.read_bytes, stage1_read_mib);
+    if (stage1_timing.read_seconds > 0.0)
+        fprintf(stderr,
+                "    effective fread bandwidth                     %10.3f MiB/s\n",
+                stage1_read_mib / stage1_timing.read_seconds);
+    if (stage1_timing.allocation_calls > 0)
+        fprintf(stderr,
+                "    slowest allocation                            %10.3f s"
+                "  (%" PRIu64 " bytes)\n",
+                stage1_timing.allocation_max_seconds,
+                stage1_timing.slowest_allocation_bytes);
+    if (stage1_timing.read_calls > 0)
+        fprintf(stderr,
+                "    slowest fread                                 %10.3f s"
+                "  (R%d offset=%" PRId64 ", bytes=%" PRIu64 ")\n",
+                stage1_timing.read_max_seconds,
+                stage1_timing.slowest_read_input,
+                stage1_timing.slowest_read_offset,
+                stage1_timing.slowest_read_bytes);
 
     fprintf(stderr, "\n  Stage 2 worker details\n");
     print_timing_line("total - active merge worker", t_work1, 4);
@@ -165,10 +271,10 @@ typedef struct {
 	mem_opt_t *opt;
 	mem_pestat_t *pes;
 	int64_t n_processed;
-	int actual_chunk_size;
+	int64_t fastq_bytes_per_cg;
 	int is_paired;
 	bwaidx_t *idx;
-	int64_t cpe_chunk_bytes;
+	int64_t fastq_chunk_bytes;
 	int64_t input_position[2];
 	int64_t input_end[2];
 } ktp_aux_t;
@@ -224,24 +330,72 @@ static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
                                 int64_t file_end, char *buffer,
                                 int64_t capacity)
 {
+    const int input_index = file == file2_ptr ? 2 : 1;
+    const int64_t read_offset = *file_offset;
     int64_t bytes_to_read;
     int64_t bytes_read;
     int64_t record_bytes;
+    int seek_result;
+    double start;
+    double elapsed;
 
     if (*file_offset >= file_end) return 0;
     bytes_to_read = capacity;
     if (file_end - *file_offset < bytes_to_read)
         bytes_to_read = file_end - *file_offset;
-    if (fseeko(file, (off_t)*file_offset, SEEK_SET) != 0)
+    start = GetTime();
+    seek_result = fseeko(file, (off_t)*file_offset, SEEK_SET);
+    elapsed = GetTime() - start;
+    ++stage1_timing.seek_calls;
+    stage1_timing.seek_seconds += elapsed;
+    if (elapsed > stage1_timing.seek_max_seconds)
+        stage1_timing.seek_max_seconds = elapsed;
+    if (bwa_verbose >= 4 && elapsed >= 1.0)
+        fprintf(stderr,
+                "[DBG stage1] slow fseeko: R%d offset=%" PRId64
+                " elapsed=%.3f s\n",
+                input_index, read_offset, elapsed);
+    if (seek_result != 0)
         err_fatal(__func__, "failed to seek FASTQ input: %s", strerror(errno));
 
+    start = GetTime();
     bytes_read = (int64_t)fread(buffer, 1, (size_t)bytes_to_read, file);
+    elapsed = GetTime() - start;
+    ++stage1_timing.read_calls;
+    stage1_timing.read_seconds += elapsed;
+    if (bytes_read > 0)
+        stage1_timing.read_bytes += (uint64_t)bytes_read;
+    if (elapsed > stage1_timing.read_max_seconds) {
+        stage1_timing.read_max_seconds = elapsed;
+        stage1_timing.slowest_read_input = input_index;
+        stage1_timing.slowest_read_offset = read_offset;
+        stage1_timing.slowest_read_bytes = bytes_read > 0
+                                         ? (uint64_t)bytes_read : 0;
+    }
+    if (bwa_verbose >= 4 && elapsed >= 1.0)
+        fprintf(stderr,
+                "[DBG stage1] slow fread: R%d offset=%" PRId64
+                " requested=%" PRId64 " read=%" PRId64
+                " elapsed=%.3f s\n",
+                input_index, read_offset, bytes_to_read, bytes_read, elapsed);
     if (ferror(file))
         err_fatal(__func__, "failed to read FASTQ input: %s", strerror(errno));
 
     record_bytes = bytes_read;
-    if (bytes_read == capacity && *file_offset + bytes_read < file_end)
+    if (bytes_read == capacity && *file_offset + bytes_read < file_end) {
+        start = GetTime();
         record_bytes = get_next_fastq(buffer, bytes_read - (1 << 10), bytes_read);
+        elapsed = GetTime() - start;
+        ++stage1_timing.boundary_calls;
+        stage1_timing.boundary_seconds += elapsed;
+        if (elapsed > stage1_timing.boundary_max_seconds)
+            stage1_timing.boundary_max_seconds = elapsed;
+        if (bwa_verbose >= 4 && elapsed >= 1.0)
+            fprintf(stderr,
+                    "[DBG stage1] slow FASTQ boundary alignment:"
+                    " R%d offset=%" PRId64 " elapsed=%.3f s\n",
+                    input_index, read_offset, elapsed);
+    }
     *file_offset += record_bytes;
     return record_bytes;
 }
@@ -254,9 +408,15 @@ static void *process(void *shared, int step, void *_data)
 	int i;
 	if (step == 0) {
 		double t0 = GetTime();
-		ktp_data_t *ret = calloc(1, sizeof(*ret));
+		double allocation_start;
+		ktp_data_t *ret;
 		long long block_capacity;
 
+		++stage1_timing.stage_calls;
+		allocation_start = GetTime();
+		ret = calloc(1, sizeof(*ret));
+		record_stage1_allocation(sizeof(*ret),
+		                         GetTime() - allocation_start);
 		if (ret == NULL)
 			err_fatal(__func__, "failed to allocate pipeline batch");
 
@@ -300,7 +460,7 @@ static void *process(void *shared, int step, void *_data)
 			t_step1 += GetTime() - t0;
 			return 0;
 		}
-		block_capacity = aux->cpe_chunk_bytes;
+		block_capacity = aux->fastq_chunk_bytes;
 		if (remaining_bytes < block_capacity)
 			block_capacity = remaining_bytes;
 #endif
@@ -314,16 +474,27 @@ static void *process(void *shared, int step, void *_data)
 		    (uint64_t)block_capacity > SIZE_MAX - 1024)
 			err_fatal(__func__, "FASTQ chunk is too large: %lld bytes",
 			          block_capacity);
+		allocation_start = GetTime();
 		block_buffer = malloc((size_t)block_capacity + 1024);
-		block_buffer2 = is_paired
-			? malloc((size_t)block_capacity + 1024) : NULL;
+		record_stage1_allocation((uint64_t)block_capacity + 1024,
+		                         GetTime() - allocation_start);
+		if (is_paired) {
+			allocation_start = GetTime();
+			block_buffer2 = malloc((size_t)block_capacity + 1024);
+			record_stage1_allocation((uint64_t)block_capacity + 1024,
+			                         GetTime() - allocation_start);
+		} else {
+			block_buffer2 = NULL;
+		}
 
 		if (block_buffer == NULL || (is_paired && block_buffer2 == NULL))
 			err_fatal(__func__, "failed to allocate FASTQ input buffers");
 		if (bwa_verbose >= 3)
 			fprintf(stderr,
-			        "[M::%s] read chunk (target %d bases, %lld bytes)...\n",
-			        __func__, aux->actual_chunk_size, block_capacity);
+			        "[M::%s] read chunk (%lld bytes/CG x %d CGs,"
+			        " %lld bytes)...\n",
+			        __func__, (long long)aux->fastq_bytes_per_cg,
+			        SWBWA_CG_COUNT, block_capacity);
 
 		real_size = read_fastq_block(file1_ptr, &aux->input_position[0],
 		                             aux->input_end[0], block_buffer,
@@ -355,7 +526,8 @@ static void *process(void *shared, int step, void *_data)
 		ret->fastq_buffer[1] = block_buffer2;
 		ret->fastq_size[0] = real_size;
 		ret->fastq_size[1] = real_size2;
-        t_step1 += GetTime() - t0;
+		++stage1_timing.completed_batches;
+		t_step1 += GetTime() - t0;
 		return ret;
 	} else if (step == 1) {
 	        double t0 = GetTime();
@@ -452,17 +624,17 @@ static int prepare_sequential_fastq_input(const char *read1_path,
                                           ktp_aux_t *aux,
                                           int64_t *file_size)
 {
-	if (swbwa_fastq_estimate_chunk_bytes(
-	        read1_path, read2_path, aux->actual_chunk_size,
-	        file_size, &aux->cpe_chunk_bytes) != 0)
+	if (swbwa_fastq_chunk_bytes(
+	        read1_path, read2_path, aux->fastq_bytes_per_cg,
+	        file_size, &aux->fastq_chunk_bytes) != 0)
 		return -1;
 
 	if (swbwa_mpi_is_root() && bwa_verbose >= 3)
 		fprintf(stderr,
-		        "[CPE input] target_bases=%d estimated_chunk_bytes=%lld"
-		        " file_bytes=%lld\n",
-		        aux->actual_chunk_size,
-		        (long long)aux->cpe_chunk_bytes,
+		        "[CPE input] bytes_per_cg=%lld cg_count=%d"
+		        " chunk_bytes=%lld file_bytes=%lld\n",
+		        (long long)aux->fastq_bytes_per_cg, SWBWA_CG_COUNT,
+		        (long long)aux->fastq_chunk_bytes,
 		        (long long)*file_size);
 	return 0;
 }
@@ -487,7 +659,7 @@ int main_mem(int argc, char *argv[])
 {
 	mem_opt_t *opt, opt0;
     int i, c, ignore_alt = 0, no_mt_io = 0;
-	int fixed_chunk_size = -1;
+	int64_t fastq_bytes_per_cg = SWBWA_DEFAULT_FASTQ_BYTES_PER_CG;
 	char *p, *rg_line = 0, *hdr_line = 0;
 	const char *mode = 0;
 	const char *output_path = 0;
@@ -537,11 +709,13 @@ int main_mem(int argc, char *argv[])
         else if (c == 'y') opt->max_mem_intv = atol(optarg), opt0.max_mem_intv = 1;
 		else if (c == 'K') {
 			char *end = NULL;
-			long value = strtol(optarg, &end, 10);
+			long long value;
 
-			if (end == optarg || *end != '\0' || value <= 0 || value > INT_MAX)
+			errno = 0;
+			value = strtoll(optarg, &end, 10);
+			if (errno == ERANGE || end == optarg || *end != '\0' || value <= 0)
 				err_fatal(__func__, "invalid -K value: '%s'", optarg);
-			fixed_chunk_size = (int)value;
+			fastq_bytes_per_cg = (int64_t)value;
 		}
 		else if (c == 'X') opt->mask_level = atof(optarg);
 		else if (c == 'F') bwa_dbg = atoi(optarg);
@@ -661,7 +835,10 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "       -j            treat ALT contigs as part of the primary assembly (i.e. ignore <idxbase>.alt file)\n");
 		fprintf(stderr, "       -5            for split alignment, take the alignment with the smallest query (not genomic) coordinate as primary\n");
 		fprintf(stderr, "       -q            don't modify mapQ of supplementary alignments\n");
-		fprintf(stderr, "       -K INT        approximate target input bases per complete-read chunk regardless of nThreads []\n");
+		fprintf(stderr,
+		        "       -K INT        target raw FASTQ bytes per CG and input file"
+		        " [%lld]\n",
+		        (long long)SWBWA_DEFAULT_FASTQ_BYTES_PER_CG);
 		fprintf(stderr, "\n");
 		fprintf(stderr, "       -v INT        verbosity level: 1=error, 2=warning, 3=message, 4+=debugging [%d]\n", bwa_verbose);
 		fprintf(stderr, "       -T INT        minimum score to output [%d]\n", opt->T);
@@ -718,8 +895,7 @@ int main_mem(int argc, char *argv[])
 		}
 	} else update_a(opt, &opt0);
 	bwa_fill_scmat(opt->a, opt->b, opt->mat);
-	aux.actual_chunk_size = fixed_chunk_size > 0
-		? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+	aux.fastq_bytes_per_cg = fastq_bytes_per_cg;
 	read2_path = (optind + 2 < argc && !(opt->flag & MEM_F_PE))
 		? argv[optind + 2] : NULL;
 
@@ -732,7 +908,7 @@ int main_mem(int argc, char *argv[])
 		int64_t chunk_count;
 
 		if (swbwa_mpi_fastq_scheduler_open(
-		        argv[optind + 1], read2_path, aux.actual_chunk_size,
+		        argv[optind + 1], read2_path, aux.fastq_bytes_per_cg,
 		        bwa_verbose >= 4,
 		        &assigned_range, &chunk_count) != 0)
 			return 1;
@@ -740,15 +916,16 @@ int main_mem(int argc, char *argv[])
 		aux.input_end[0] = aux.input_end[1] = assigned_range.end;
 		if (swbwa_mpi_is_root())
 			fprintf(stderr,
-			        "[MPI input] mode=dynamic chunks=%lld target_bases=%d"
-			        " estimated_chunk_bytes=%lld file_bytes=%lld"
+			        "[MPI input] mode=dynamic chunks=%lld bytes_per_cg=%lld"
+			        " cg_count=%d chunk_bytes=%lld file_bytes=%lld"
 			        " scheduler=distributed"
 #if SWBWA_MPI_EXACT_READ_INDEX
 			        " read_index=exact\n",
 #else
 			        " read_index=byte_offset\n",
 #endif
-			        (long long)chunk_count, aux.actual_chunk_size,
+			        (long long)chunk_count,
+			        (long long)aux.fastq_bytes_per_cg, SWBWA_CG_COUNT,
 			        (long long)swbwa_mpi_fastq_scheduler_chunk_bytes(),
 			        (long long)assigned_range.file_size);
 	}
@@ -822,7 +999,7 @@ int main_mem(int argc, char *argv[])
 	if (output_path == NULL || strcmp(output_path, "-") == 0)
 		err_fatal(__func__, "MPI output requires an explicit -o FILE path");
 #endif
-	if (swbwa_output_open(output_path) != 0)
+	if (swbwa_output_open(output_path, bwa_verbose >= 4) != 0)
 		err_fatal(__func__, "failed to open SAM output: %s", strerror(errno));
 	if (output_path != NULL || SWBWA_USE_MPI) {
 #if SWBWA_USE_MPI

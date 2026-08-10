@@ -28,17 +28,17 @@ void swbwa_mpi_abort(const char *message);
 int swbwa_mpi_fastq_range(const char *read1_path, const char *read2_path,
                           swbwa_fastq_range_t *range);
 
-int swbwa_fastq_estimate_chunk_bytes(const char *read1_path,
-                                     const char *read2_path,
-                                     int64_t target_bases,
-                                     int64_t *file_size,
-                                     int64_t *chunk_bytes);
+int swbwa_fastq_chunk_bytes(const char *read1_path,
+                            const char *read2_path,
+                            int64_t bytes_per_cg,
+                            int64_t *file_size,
+                            int64_t *chunk_bytes);
 
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
                                    const char *read2_path,
-                                   int64_t target_bases,
+                                   int64_t bytes_per_cg,
                                    int debug_enabled,
                                    swbwa_fastq_range_t *assigned_range,
                                    int64_t *chunk_count);

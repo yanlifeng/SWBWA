@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-int swbwa_output_open(const char *path);
+int swbwa_output_open(const char *path, int debug_enabled);
 int swbwa_output_write(const void *data, size_t length);
 int swbwa_output_flush(void);
 int swbwa_output_close(void);

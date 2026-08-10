@@ -1,0 +1,272 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[MPI input] mode=dynamic chunks=12 bytes_per_cg=19660800 cg_count=1 chunk_bytes=19660800 file_bytes=223555584 scheduler=distributed read_index=exact
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x50011e5708c0
+the input file is ../data/ERR1203383_1.fastq_1
+the input file is ../data/ERR1203383_2.fastq_1
+[MPI rank 000000/000006] output: correctness_results/mpi_dynamic_single/has1/ERR1203383_PE.sam
+[MPI rank 000001/000006] output: correctness_results/mpi_dynamic_single/has1/ERR1203383_PE.sam
+[MPI rank 000002/000006] output: correctness_results/mpi_dynamic_single/has1/ERR1203383_PE.sam
+[MPI rank 000003/000006] output: correctness_results/mpi_dynamic_single/has1/ERR1203383_PE.sam
+[MPI rank 000004/000006] output: correctness_results/mpi_dynamic_single/has1/ERR1203383_PE.sam
+[MPI rank 000005/000006] output: correctness_results/mpi_dynamic_single/has1/ERR1203383_PE.sam
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660976 bytes)...
+[M::mem_process_seqs_merge2] Processed 179140 reads in 2.180 CPU sec, 2.185 real sec
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660928 bytes)...
+[M::mem_process_seqs_merge2] Processed 175544 reads in 2.120 CPU sec, 2.191 real sec
+[MPI rank 000005/000006] input work: chunks=2 records=120301 bytes=26947428
+[MPI rank 000002/000006] input work: chunks=2 records=175543 bytes=39321632
+[MPI rank 000004/000006] input work: chunks=2 records=175543 bytes=39321632
+[MPI rank 000000/000006] input work: chunks=2 records=177342 bytes=39321904
+[MPI rank 000003/000006] input work: chunks=2 records=175543 bytes=39321632
+[MPI rank 000001/000006] input work: chunks=2 records=175728 bytes=39321356
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000000 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    15.298 s
+    stage 1 - allocate and read raw FASTQ blocks              7.978 s
+    stage 2 - align reads and generate SAM records            4.378 s
+    stage 3 - write SAM and release batch data                1.129 s
+      SAM output writes                                         1.004 s
+      batch cleanup and loop overhead (derived)                 0.126 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes             78648096
+    FASTQ fseeko calls                                        0.127 s  (4 calls, max 0.119 s)
+    FASTQ fread calls                                         2.272 s  (4 calls, max 0.615 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               5.579 s
+    raw FASTQ bytes read                             78643808  (75.001 MiB)
+    effective fread bandwidth                         33.015 MiB/s
+    slowest allocation                                 0.000 s  (19661952 bytes)
+    slowest fread                                      0.615 s  (R1 offset=0, bytes=19660976)
+
+  Stage 2 worker details
+    total - active merge worker                               4.377 s
+      part 1 - prepare CPE task and reusable buffers            0.555 s
+      part 2 - CPE FASTQ formatting and input release           0.019 s
+      part 3 - CPE alignment and SAM length pass                3.743 s
+      part 4 - assign slices in the shared SAM buffer           0.024 s
+      part 5 - CPE SAM record generation                        0.035 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000001 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    15.289 s
+    stage 1 - allocate and read raw FASTQ blocks              4.990 s
+    stage 2 - align reads and generate SAM records            4.293 s
+    stage 3 - write SAM and release batch data                5.193 s
+      SAM output writes                                         5.062 s
+      batch cleanup and loop overhead (derived)                 0.132 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes             78647000
+    FASTQ fseeko calls                                        0.297 s  (4 calls, max 0.174 s)
+    FASTQ fread calls                                         2.405 s  (4 calls, max 0.796 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               2.287 s
+    raw FASTQ bytes read                             78642712  (75.000 MiB)
+    effective fread bandwidth                         31.185 MiB/s
+    slowest allocation                                 0.000 s  (19661728 bytes)
+    slowest fread                                      0.796 s  (R1 offset=137625820, bytes=19660704)
+
+  Stage 2 worker details
+    total - active merge worker                               4.293 s
+      part 1 - prepare CPE task and reusable buffers            0.542 s
+      part 2 - CPE FASTQ formatting and input release           0.019 s
+      part 3 - CPE alignment and SAM length pass                3.668 s
+      part 4 - assign slices in the shared SAM buffer           0.027 s
+      part 5 - CPE SAM record generation                        0.036 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000002 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    15.289 s
+    stage 1 - allocate and read raw FASTQ blocks              4.165 s
+    stage 2 - align reads and generate SAM records            4.598 s
+    stage 3 - write SAM and release batch data                3.793 s
+      SAM output writes                                         3.674 s
+      batch cleanup and loop overhead (derived)                 0.119 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes             78647552
+    FASTQ fseeko calls                                        0.233 s  (4 calls, max 0.163 s)
+    FASTQ fread calls                                         2.493 s  (4 calls, max 0.791 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               1.439 s
+    raw FASTQ bytes read                             78643264  (75.000 MiB)
+    effective fread bandwidth                         30.088 MiB/s
+    slowest allocation                                 0.000 s  (19661728 bytes)
+    slowest fread                                      0.791 s  (R1 offset=157286524, bytes=19660704)
+
+  Stage 2 worker details
+    total - active merge worker                               4.598 s
+      part 1 - prepare CPE task and reusable buffers            0.557 s
+      part 2 - CPE FASTQ formatting and input release           0.019 s
+      part 3 - CPE alignment and SAM length pass                3.961 s
+      part 4 - assign slices in the shared SAM buffer           0.024 s
+      part 5 - CPE SAM record generation                        0.036 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000003 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    15.298 s
+    stage 1 - allocate and read raw FASTQ blocks              7.011 s
+    stage 2 - align reads and generate SAM records            4.438 s
+    stage 3 - write SAM and release batch data                2.409 s
+      SAM output writes                                         2.284 s
+      batch cleanup and loop overhead (derived)                 0.125 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes             78647552
+    FASTQ fseeko calls                                        0.212 s  (4 calls, max 0.186 s)
+    FASTQ fread calls                                         2.081 s  (4 calls, max 0.627 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               4.718 s
+    raw FASTQ bytes read                             78643264  (75.000 MiB)
+    effective fread bandwidth                         36.043 MiB/s
+    slowest allocation                                 0.000 s  (19661728 bytes)
+    slowest fread                                      0.627 s  (R2 offset=176947228, bytes=19660928)
+
+  Stage 2 worker details
+    total - active merge worker                               4.437 s
+      part 1 - prepare CPE task and reusable buffers            0.616 s
+      part 2 - CPE FASTQ formatting and input release           0.025 s
+      part 3 - CPE alignment and SAM length pass                3.737 s
+      part 4 - assign slices in the shared SAM buffer           0.024 s
+      part 5 - CPE SAM record generation                        0.035 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000004 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    15.289 s
+    stage 1 - allocate and read raw FASTQ blocks              5.327 s
+    stage 2 - align reads and generate SAM records            3.894 s
+    stage 3 - write SAM and release batch data                3.335 s
+      SAM output writes                                         3.205 s
+      batch cleanup and loop overhead (derived)                 0.130 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes             78647552
+    FASTQ fseeko calls                                        0.344 s  (4 calls, max 0.206 s)
+    FASTQ fread calls                                         2.410 s  (4 calls, max 0.729 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               2.572 s
+    raw FASTQ bytes read                             78643264  (75.000 MiB)
+    effective fread bandwidth                         31.120 MiB/s
+    slowest allocation                                 0.000 s  (19661952 bytes)
+    slowest fread                                      0.729 s  (R1 offset=196608156, bytes=19660704)
+
+  Stage 2 worker details
+    total - active merge worker                               3.894 s
+      part 1 - prepare CPE task and reusable buffers            0.529 s
+      part 2 - CPE FASTQ formatting and input release           0.019 s
+      part 3 - CPE alignment and SAM length pass                3.287 s
+      part 4 - assign slices in the shared SAM buffer           0.024 s
+      part 5 - CPE SAM record generation                        0.035 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000005 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    15.298 s
+    stage 1 - allocate and read raw FASTQ blocks              8.162 s
+    stage 2 - align reads and generate SAM records            3.053 s
+    stage 3 - write SAM and release batch data                0.242 s
+      SAM output writes                                         0.155 s
+      batch cleanup and loop overhead (derived)                 0.087 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes             53899144
+    FASTQ fseeko calls                                        0.310 s  (4 calls, max 0.230 s)
+    FASTQ fread calls                                         1.740 s  (4 calls, max 0.689 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               6.112 s
+    raw FASTQ bytes read                             53894856  (51.398 MiB)
+    effective fread bandwidth                         29.545 MiB/s
+    slowest allocation                                 0.000 s  (19661728 bytes)
+    slowest fread                                      0.689 s  (R2 offset=98304188, bytes=19660704)
+
+  Stage 2 worker details
+    total - active merge worker                               3.053 s
+      part 1 - prepare CPE task and reusable buffers            0.533 s
+      part 2 - CPE FASTQ formatting and input release           0.013 s
+      part 3 - CPE alignment and SAM length pass                2.466 s
+      part 4 - assign slices in the shared SAM buffer           0.016 s
+      part 5 - CPE SAM record generation                        0.024 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -v 3 -t 1 -1 -o correctness_results/mpi_dynamic_single/has1/ERR1203383_PE.sam -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa ../data/ERR1203383_1.fastq_1 ../data/ERR1203383_2.fastq_1

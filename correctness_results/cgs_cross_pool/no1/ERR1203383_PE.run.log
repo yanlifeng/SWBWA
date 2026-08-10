@@ -1,0 +1,63 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=6 chunk_bytes=117964800 file_bytes=223555584
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is ../data/ERR1203383_1.fastq_1
+the input file is ../data/ERR1203383_2.fastq_1
+the output file is correctness_results/cgs_cross_pool/no1/ERR1203383_PE.sam
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+step1 0x5800000048f0
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 105591588 bytes)...
+step2 get 0x5800000048f0
+step1 0x580000004a30
+[M::mem_process_seqs_merge2] Processed 1057218 reads in 1.420 CPU sec, 2.990 real sec
+step2 put 0x5800000048f0
+step2 get 0x580000004a30
+step3 0x5800000048f0
+[M::mem_process_seqs_merge2] Processed 942782 reads in 1.060 CPU sec, 2.060 real sec
+step2 put 0x580000004a30
+step3 0x580000004a30
+
+======================= SWBWA Timing Report =======================
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    14.542 s
+    stage 1 - allocate and read raw FASTQ blocks              3.688 s
+    stage 2 - align reads and generate SAM records            5.051 s
+    stage 3 - write SAM and release batch data                9.268 s
+      SAM output writes                                         8.548 s
+      batch cleanup and loop overhead (derived)                 0.720 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes            447117064
+    FASTQ fseeko calls                                        0.000 s  (4 calls, max 0.000 s)
+    FASTQ fread calls                                         3.687 s  (4 calls, max 1.368 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (2 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.000 s
+    raw FASTQ bytes read                            447112776  (426.400 MiB)
+    effective fread bandwidth                        115.635 MiB/s
+    slowest allocation                                 0.000 s  (64 bytes)
+    slowest fread                                      1.368 s  (R2 offset=117963996, bytes=105591588)
+
+  Stage 2 worker details
+    total - active merge worker                               5.050 s
+      part 1 - prepare CPE task and reusable buffers            0.898 s
+      part 2 - CPE FASTQ formatting and input release           0.032 s
+      part 3 - CPE alignment and SAM length pass                3.920 s
+      part 4 - assign slices in the shared SAM buffer           0.166 s
+      part 5 - CPE SAM record generation                        0.034 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -v 3 -t 1 -o correctness_results/cgs_cross_pool/no1/ERR1203383_PE.sam -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa ../data/ERR1203383_1.fastq_1 ../data/ERR1203383_2.fastq_1

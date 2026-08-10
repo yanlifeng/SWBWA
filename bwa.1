@@ -314,14 +314,12 @@ as well. This option may help some Hi-C pipelines. By default, BWA-MEM marks
 highest scoring segment as primary.
 .TP
 .B -K \ INT
-Process
+Target
 .I INT
-input bases in each batch regardless of the number of threads in use
-.RI [10000000* nThreads ].
-By default, the batch size is proportional to the number of threads in use.
-Because the inferred insert size distribution slightly depends on the batch
-size, using different number of threads may produce different output.
-Specifying this option helps reproducibility.
+raw FASTQ bytes per CG and per input file in each CPE formatting batch
+.RI [19660800].
+Multi-CG execution multiplies this value by the number of CGs. For paired-end
+input, the limit is applied independently to each mate file.
 .TP
 .BI -T \ INT
 Don't output alignment with score lower than
@@ -868,4 +866,3 @@ in 2012. I first implemented the basic SMEM algorithm in the
 .B fastmap
 command for an experiment and then extended the basic algorithm and added the
 extension part in Feburary 2013 to make BWA-MEM a fully featured mapper.
-

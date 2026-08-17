@@ -25,7 +25,7 @@ typedef struct {
     const mem_pestat_t *pes;
     int *sequence_ids;
 
-    int *completion_flags;
+    volatile int *completion_flags;
     void *relocated_gp;
     unsigned long segment_offset;
     void *private_segment_copies;

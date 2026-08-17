@@ -142,6 +142,8 @@ extern "C" {
 
 	mem_opt_t *mem_opt_init(void);
 	void mem_fill_scmat(int a, int b, int8_t mat[25]);
+	void swbwa_cpe_progress_debug_enable(int enabled);
+	void swbwa_cpe_progress_debug_report(void);
 
 	/**
 	 * Align a batch of sequences and generate the alignments in the SAM format

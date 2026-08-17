@@ -45,6 +45,24 @@ static inline void swbwa_finish_cross_task(void)
     while (1) { }
 }
 
+static inline void swbwa_finish_standard_task(swbwa_cpe_task_t *task)
+{
+#if SWBWA_USE_MPI
+#if SWBWA_USE_CGS
+    athread_ssync_node();
+#else
+    athread_ssync_array();
+#endif
+    if (_MYID == 0) {
+        asm volatile("memb\n\t" ::: "memory");
+        task->completion_flags[0] = 1;
+        flush_slave_cache();
+    }
+#else
+    (void)task;
+#endif
+}
+
 void state_init(swbwa_cpe_pool_params_t *para) {
     set_big_buffer(para->buffer, para->bytes_per_cpe);
 }
@@ -458,6 +476,7 @@ void cpe_format_pre(swbwa_cpe_task_t *para)
 {
     para->formatted_read_counts[_MYID] =
         format_fastq_partition(para);
+    swbwa_finish_standard_task(para);
 }
 
 
@@ -484,6 +503,7 @@ void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
     if(r_pos > para->work_item_count) r_pos = para->work_item_count;
     worker12_pre_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->pes, para->sequence_ids);
 #endif
+    swbwa_finish_standard_task(para);
 }
 
 
@@ -502,4 +522,5 @@ void worker12_s_fast(swbwa_cpe_task_t *para) {
     if(r_pos > para->work_item_count) r_pos = para->work_item_count;
     worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
 #endif
+    swbwa_finish_standard_task(para);
 }

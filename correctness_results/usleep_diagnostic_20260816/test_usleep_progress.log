@@ -1,0 +1,131 @@
+Job <7794714> has been submitted to queue <q_share>
+waiting for dispatch ...
+============================================================
+SWBWA usleep/MPI/CPE diagnostic
+  MPI ranks             : 6
+  MPI thread level      : 3 (MULTIPLE=3)
+  fixed sleep iterations: 500
+  CPE loop iterations   : 500000000 per CPE
+============================================================
+
+[fixed loop, sleep only]
+  method                     : usleep(1000), no retry
+  wall time across ranks     : 4.992520 - 5.000591 s
+  logical sleeps per rank    : 500 - 500
+  MPI_Iprobe calls per rank  : 0 - 0
+  logical/library calls      : 3000 / 3000
+  completed/EINTR/errors     : 3000 / 0 / 0
+  measured sleep avg/min/max : 9990.629 / 2484.461 / 11246.649 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[fixed loop, sleep only]
+  method                     : nanosleep(1 ms), retry remaining time
+  wall time across ranks     : 4.995003 - 5.000733 s
+  logical sleeps per rank    : 500 - 500
+  MPI_Iprobe calls per rank  : 0 - 0
+  logical/library calls      : 3000 / 3000
+  completed/EINTR/errors     : 3000 / 0 / 0
+  measured sleep avg/min/max : 9994.709 / 4962.572 / 11246.249 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[fixed loop, sleep only]
+  method                     : clock_nanosleep(absolute +1 ms), retry EINTR
+  wall time across ranks     : 4.991114 - 5.000418 s
+  logical sleeps per rank    : 500 - 500
+  MPI_Iprobe calls per rank  : 0 - 0
+  logical/library calls      : 3000 / 3000
+  completed/EINTR/errors     : 3000 / 0 / 0
+  measured sleep avg/min/max : 9990.052 / 1067.954 / 11217.999 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[fixed loop, MPI_Iprobe then sleep]
+  method                     : usleep(1000), no retry
+  wall time across ranks     : 4.993962 - 4.999692 s
+  logical sleeps per rank    : 500 - 500
+  MPI_Iprobe calls per rank  : 500 - 500
+  logical/library calls      : 3000 / 3000
+  completed/EINTR/errors     : 3000 / 0 / 0
+  measured sleep avg/min/max : 9990.973 / 3907.367 / 11217.949 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[fixed loop, MPI_Iprobe then sleep]
+  method                     : nanosleep(1 ms), retry remaining time
+  wall time across ranks     : 4.991103 - 5.000411 s
+  logical sleeps per rank    : 500 - 500
+  MPI_Iprobe calls per rank  : 500 - 500
+  logical/library calls      : 3000 / 3000
+  completed/EINTR/errors     : 3000 / 0 / 0
+  measured sleep avg/min/max : 9988.325 / 1050.704 / 11238.749 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[fixed loop, MPI_Iprobe then sleep]
+  method                     : clock_nanosleep(absolute +1 ms), retry EINTR
+  wall time across ranks     : 4.993956 - 4.999684 s
+  logical sleeps per rank    : 500 - 500
+  MPI_Iprobe calls per rank  : 500 - 500
+  logical/library calls      : 3000 / 3000
+  completed/EINTR/errors     : 3000 / 0 / 0
+  measured sleep avg/min/max : 9990.980 / 3904.968 / 11245.899 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[asynchronous CPE, sleep only]
+  method                     : usleep(1000), no retry
+  wall time across ranks     : 2.445035 - 2.453951 s
+  logical sleeps per rank    : 245 - 246
+  MPI_Iprobe calls per rank  : 0 - 0
+  logical/library calls      : 1473 / 1473
+  completed/EINTR/errors     : 1473 / 0 / 0
+  measured sleep avg/min/max : 9979.918 / 1029.505 / 10412.846 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[asynchronous CPE, sleep only]
+  method                     : nanosleep(1 ms), retry remaining time
+  wall time across ranks     : 2.445021 - 2.452518 s
+  logical sleeps per rank    : 245 - 246
+  MPI_Iprobe calls per rank  : 0 - 0
+  logical/library calls      : 1473 / 1473
+  completed/EINTR/errors     : 1473 / 0 / 0
+  measured sleep avg/min/max : 9977.503 / 1422.806 / 11253.300 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[asynchronous CPE, sleep only]
+  method                     : clock_nanosleep(absolute +1 ms), retry EINTR
+  wall time across ranks     : 2.444683 - 2.454000 s
+  logical sleeps per rank    : 245 - 246
+  MPI_Iprobe calls per rank  : 0 - 0
+  logical/library calls      : 1472 / 1472
+  completed/EINTR/errors     : 1472 / 0 / 0
+  measured sleep avg/min/max : 9981.015 / 2856.363 / 11246.249 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[asynchronous CPE, MPI_Iprobe then sleep]
+  method                     : usleep(1000), no retry
+  wall time across ranks     : 2.444998 - 2.453910 s
+  logical sleeps per rank    : 245 - 246
+  MPI_Iprobe calls per rank  : 245 - 246
+  logical/library calls      : 1471 / 1471
+  completed/EINTR/errors     : 1471 / 0 / 0
+  measured sleep avg/min/max : 9983.423 / 3858.917 / 11249.549 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[asynchronous CPE, MPI_Iprobe then sleep]
+  method                     : nanosleep(1 ms), retry remaining time
+  wall time across ranks     : 2.448734 - 2.454462 s
+  logical sleeps per rank    : 245 - 246
+  MPI_Iprobe calls per rank  : 245 - 246
+  logical/library calls      : 1472 / 1472
+  completed/EINTR/errors     : 1472 / 0 / 0
+  measured sleep avg/min/max : 9989.421 / 3325.765 / 11243.949 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+
+[asynchronous CPE, MPI_Iprobe then sleep]
+  method                     : clock_nanosleep(absolute +1 ms), retry EINTR
+  wall time across ranks     : 2.445175 - 2.454071 s
+  logical sleeps per rank    : 245 - 246
+  MPI_Iprobe calls per rank  : 245 - 246
+  logical/library calls      : 1471 / 1471
+  completed/EINTR/errors     : 1471 / 0 / 0
+  measured sleep avg/min/max : 9984.023 / 4017.367 / 11260.399 us
+  elapsed <500us / <900us    : 0 / 0 (0.00% / 0.00%)
+dispatching ...
+Job 7794714 has been finished.

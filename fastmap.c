@@ -1019,6 +1019,7 @@ int main_mem(int argc, char *argv[])
 		err_fatal(__func__, "failed to synchronize dynamic MPI workers");
 #endif
 
+	swbwa_cpe_progress_debug_enable(bwa_verbose >= 4);
 	double t0 = GetTime();
 	if (no_mt_io) kt_pipeline_single(1, process, &aux, 3);
 	else kt_pipeline_queue(3, process, &aux, 3);
@@ -1043,6 +1044,7 @@ int main_mem(int argc, char *argv[])
     t_tot += GetTime() - t0;
 
 
+	swbwa_cpe_progress_debug_report();
     print_timing_report();
 
 

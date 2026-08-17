@@ -36,11 +36,9 @@ typedef struct {
     uint64_t file_write_bytes;
     double buffered_flush_seconds;
     double posix_write_seconds;
-    double reservation_mutex_wait_seconds;
     double fetch_and_op_seconds;
     double win_flush_seconds;
     double reservation_total_seconds;
-    double file_mutex_wait_seconds;
     double file_write_at_seconds;
     double get_count_seconds;
     double file_write_total_seconds;
@@ -146,11 +144,7 @@ static int write_single_unordered(const unsigned char *data, size_t length)
     }
     reservation_start = output_debug_now();
     if (output_state.debug_enabled) ++output_state.reservation_calls;
-    swbwa_mpi_call_lock();
     operation_start = output_debug_now();
-    if (output_state.debug_enabled)
-        output_state.reservation_mutex_wait_seconds +=
-            operation_start - reservation_start;
 
     result = MPI_Fetch_and_op(&increment, &offset, MPI_UINT64_T, 0, 0,
                               MPI_SUM, output_state.offset_window);
@@ -166,7 +160,6 @@ static int write_single_unordered(const unsigned char *data, size_t length)
             output_state.win_flush_seconds +=
                 output_debug_now() - operation_start;
     }
-    swbwa_mpi_call_unlock();
     if (output_state.debug_enabled)
         output_state.reservation_total_seconds +=
             output_debug_now() - reservation_start;
@@ -186,11 +179,7 @@ static int write_single_unordered(const unsigned char *data, size_t length)
         double file_start = output_debug_now();
 
         if (output_state.debug_enabled) ++output_state.file_write_calls;
-        swbwa_mpi_call_lock();
         operation_start = output_debug_now();
-        if (output_state.debug_enabled)
-            output_state.file_mutex_wait_seconds +=
-                operation_start - file_start;
 
         result = MPI_File_write_at(output_state.file,
                                    (MPI_Offset)(offset + position),
@@ -208,7 +197,6 @@ static int write_single_unordered(const unsigned char *data, size_t length)
                 output_state.get_count_seconds +=
                     output_debug_now() - operation_start;
         }
-        swbwa_mpi_call_unlock();
         if (output_state.debug_enabled)
             output_state.file_write_total_seconds +=
                 output_debug_now() - file_start;
@@ -430,12 +418,10 @@ static void print_output_debug_report_body(void)
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
     double reservation_overhead =
         output_state.reservation_total_seconds -
-        output_state.reservation_mutex_wait_seconds -
         output_state.fetch_and_op_seconds -
         output_state.win_flush_seconds;
     double file_overhead =
         output_state.file_write_total_seconds -
-        output_state.file_mutex_wait_seconds -
         output_state.file_write_at_seconds -
         output_state.get_count_seconds;
 
@@ -489,10 +475,6 @@ static void print_output_debug_report_body(void)
         output_state.reservation_total_seconds,
         output_state.reservation_calls, 4);
     print_output_debug_time(
-        "wait for process-local MPI mutex",
-        output_state.reservation_mutex_wait_seconds,
-        output_state.reservation_calls, 6);
-    print_output_debug_time(
         "MPI_Fetch_and_op",
         output_state.fetch_and_op_seconds,
         output_state.reservation_calls, 6);
@@ -501,7 +483,7 @@ static void print_output_debug_report_body(void)
         output_state.win_flush_seconds,
         output_state.reservation_calls, 6);
     print_output_debug_time(
-        "reservation call/unlock overhead (derived)",
+        "reservation call overhead (derived)",
         reservation_overhead,
         output_state.reservation_calls, 6);
 
@@ -517,10 +499,6 @@ static void print_output_debug_report_body(void)
         output_state.file_write_total_seconds,
         output_state.file_write_calls, 4);
     print_output_debug_time(
-        "wait for process-local MPI mutex",
-        output_state.file_mutex_wait_seconds,
-        output_state.file_write_calls, 6);
-    print_output_debug_time(
         "MPI_File_write_at",
         output_state.file_write_at_seconds,
         output_state.file_write_calls, 6);
@@ -529,7 +507,7 @@ static void print_output_debug_report_body(void)
         output_state.get_count_seconds,
         output_state.file_write_calls, 6);
     print_output_debug_time(
-        "file-write call/unlock overhead (derived)",
+        "file-write call overhead (derived)",
         file_overhead,
         output_state.file_write_calls, 6);
     print_output_debug_rate(

@@ -22,6 +22,7 @@ int swbwa_mpi_rank(void);
 int swbwa_mpi_size(void);
 int swbwa_mpi_is_root(void);
 int swbwa_mpi_barrier(void);
+int swbwa_mpi_progress(void);
 void swbwa_mpi_print_rank_ordered(void (*printer)(void));
 void swbwa_mpi_abort(const char *message);
 
@@ -51,8 +52,5 @@ void swbwa_mpi_fastq_scheduler_stats(int64_t *chunks, int64_t *records,
                                      int64_t *bytes);
 void swbwa_mpi_fastq_scheduler_close(void);
 #endif
-
-void swbwa_mpi_call_lock(void);
-void swbwa_mpi_call_unlock(void);
 
 #endif /* SWBWA_MPI_H */

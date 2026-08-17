@@ -28,9 +28,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
+#include <time.h>
 #include <unistd.h>
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
@@ -46,6 +49,7 @@
 #include "swbwa_config.h"
 #include "swbwa_cpe.h"
 #include "swbwa_cpe_layout.h"
+#include "swbwa_mpi.h"
 #include "swbwa_runtime.h"
 
 #if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
@@ -1304,7 +1308,221 @@ unsigned long swbwa_cpe_text_size = SWBWA_CPE_TEXT_SEGMENT_BYTES;
 unsigned long swbwa_cpe_data_start = SWBWA_CPE_DATA_START_ADDRESS;
 unsigned long swbwa_cpe_data_size = SWBWA_CPE_DATA_SEGMENT_BYTES;
 
-__uncached int swbwa_cpe_completion_flags[SWBWA_CPE_COUNT];
+__uncached volatile int swbwa_cpe_completion_flags[SWBWA_CPE_COUNT];
+
+enum swbwa_cpe_progress_phase {
+    SWBWA_CPE_PROGRESS_FORMAT,
+    SWBWA_CPE_PROGRESS_ALIGN,
+    SWBWA_CPE_PROGRESS_SAM,
+    SWBWA_CPE_PROGRESS_PHASE_COUNT
+};
+
+typedef struct {
+    uint64_t runs;
+    uint64_t probe_calls;
+    uint64_t completion_probe_runs;
+    uint64_t probes_over_1ms;
+    uint64_t probes_over_10ms;
+    uint64_t probes_over_100ms;
+    uint64_t probes_over_1s;
+    double probe_seconds;
+    double probe_max_seconds;
+    double completion_probe_seconds;
+    double completion_probe_max_seconds;
+} swbwa_cpe_progress_phase_stats_t;
+
+typedef struct {
+    int enabled;
+    swbwa_cpe_progress_phase_stats_t phase[SWBWA_CPE_PROGRESS_PHASE_COUNT];
+} swbwa_cpe_progress_debug_t;
+
+static swbwa_cpe_progress_debug_t swbwa_cpe_progress_debug;
+
+static double swbwa_cpe_progress_now(void)
+{
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0.0;
+    return (double)now.tv_sec + (double)now.tv_nsec * 1.0e-9;
+}
+
+#if SWBWA_USE_MPI
+static void swbwa_cpe_progress_pause(void)
+{
+    struct timespec deadline;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) return;
+    deadline.tv_nsec += 1000000;
+    if (deadline.tv_nsec >= 1000000000) {
+        ++deadline.tv_sec;
+        deadline.tv_nsec -= 1000000000;
+    }
+
+    while (swbwa_cpe_completion_flags[0] == 0) {
+        int result = clock_nanosleep(
+            CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
+
+        if (result != EINTR) return;
+    }
+}
+#endif
+
+static void swbwa_cpe_progress_add(
+    swbwa_cpe_progress_phase_stats_t *total,
+    const swbwa_cpe_progress_phase_stats_t *part)
+{
+    total->runs += part->runs;
+    total->probe_calls += part->probe_calls;
+    total->completion_probe_runs += part->completion_probe_runs;
+    total->probes_over_1ms += part->probes_over_1ms;
+    total->probes_over_10ms += part->probes_over_10ms;
+    total->probes_over_100ms += part->probes_over_100ms;
+    total->probes_over_1s += part->probes_over_1s;
+    total->probe_seconds += part->probe_seconds;
+    total->completion_probe_seconds += part->completion_probe_seconds;
+    if (part->probe_max_seconds > total->probe_max_seconds)
+        total->probe_max_seconds = part->probe_max_seconds;
+    if (part->completion_probe_max_seconds >
+        total->completion_probe_max_seconds)
+        total->completion_probe_max_seconds =
+            part->completion_probe_max_seconds;
+}
+
+void swbwa_cpe_progress_debug_enable(int enabled)
+{
+    memset(&swbwa_cpe_progress_debug, 0,
+           sizeof(swbwa_cpe_progress_debug));
+#if SWBWA_USE_MPI
+    swbwa_cpe_progress_debug.enabled = enabled != 0;
+#else
+    (void)enabled;
+#endif
+}
+
+static void swbwa_cpe_progress_print_row(
+    const char *label, const swbwa_cpe_progress_phase_stats_t *stats)
+{
+    double average_us = stats->probe_calls > 0
+                      ? stats->probe_seconds * 1.0e6 / stats->probe_calls
+                      : 0.0;
+
+    fprintf(stderr,
+            "    %-25s %6" PRIu64 " %10" PRIu64
+            " %10.3f %10.3f %9.3f"
+            " %7" PRIu64 " %8" PRIu64 " %9" PRIu64 " %7" PRIu64
+            " %10" PRIu64 "\n",
+            label, stats->runs, stats->probe_calls,
+            stats->probe_seconds, average_us,
+            stats->probe_max_seconds,
+            stats->probes_over_1ms,
+            stats->probes_over_10ms,
+            stats->probes_over_100ms,
+            stats->probes_over_1s,
+            stats->completion_probe_runs);
+}
+
+static void swbwa_cpe_progress_debug_report_body(void)
+{
+    static const char *phase_names[SWBWA_CPE_PROGRESS_PHASE_COUNT] = {
+        "FASTQ formatting",
+        "alignment and SAM length",
+        "SAM record generation"
+    };
+    swbwa_cpe_progress_phase_stats_t total;
+    int phase;
+
+    memset(&total, 0, sizeof(total));
+    for (phase = 0; phase < SWBWA_CPE_PROGRESS_PHASE_COUNT; ++phase)
+        swbwa_cpe_progress_add(&total,
+                               &swbwa_cpe_progress_debug.phase[phase]);
+
+    fprintf(stderr,
+            "\n"
+            "================ SWBWA CPE/MPI Progress Debug ================\n"
+            "  MPI rank: %06d / %06d\n"
+            "\n"
+            "    phase                      waits     probes"
+            "   total(s)    avg(us)    max(s)"
+            "   >=1ms   >=10ms   >=100ms    >=1s  completed\n",
+            swbwa_mpi_rank(), swbwa_mpi_size());
+    for (phase = 0; phase < SWBWA_CPE_PROGRESS_PHASE_COUNT; ++phase) {
+        const swbwa_cpe_progress_phase_stats_t *stats =
+            &swbwa_cpe_progress_debug.phase[phase];
+
+        swbwa_cpe_progress_print_row(phase_names[phase], stats);
+    }
+    swbwa_cpe_progress_print_row("all CPE phases", &total);
+    fprintf(stderr,
+            "\n"
+            "  Probes marked 'completed' returned with the CPE completion\n"
+            "  flag set. Their full call duration bounds the possible delay.\n"
+            "    completion-observing probe total             %10.6f s\n"
+            "    slowest completion-observing probe           %10.6f s\n",
+            total.completion_probe_seconds,
+            total.completion_probe_max_seconds);
+    fprintf(stderr,
+            "==============================================================\n"
+            "\n");
+}
+
+void swbwa_cpe_progress_debug_report(void)
+{
+#if SWBWA_USE_MPI
+    if (!swbwa_cpe_progress_debug.enabled) return;
+    swbwa_mpi_print_rank_ordered(
+        swbwa_cpe_progress_debug_report_body);
+#endif
+}
+
+static void swbwa_cpe_run_with_mpi_progress(void *entry,
+                                             swbwa_cpe_task_t *params,
+                                             enum swbwa_cpe_progress_phase phase)
+{
+#if SWBWA_USE_MPI
+    swbwa_cpe_progress_phase_stats_t *stats = NULL;
+
+    if (swbwa_cpe_progress_debug.enabled)
+        stats = &swbwa_cpe_progress_debug.phase[phase];
+    swbwa_cpe_completion_flags[0] = 0;
+    params->completion_flags = swbwa_cpe_completion_flags;
+    asm volatile("memb\n\t" ::: "memory");
+
+    swbwa_cpe_spawn(entry, params);
+    while (swbwa_cpe_completion_flags[0] == 0) {
+        double probe_start = 0.0;
+        double probe_seconds = 0.0;
+
+        if (stats != NULL) probe_start = swbwa_cpe_progress_now();
+        if (swbwa_mpi_progress() != 0)
+            swbwa_mpi_abort("MPI_Iprobe failed while a CPE kernel was running");
+        if (stats != NULL) {
+            probe_seconds = swbwa_cpe_progress_now() - probe_start;
+            ++stats->probe_calls;
+            stats->probe_seconds += probe_seconds;
+            if (probe_seconds > stats->probe_max_seconds)
+                stats->probe_max_seconds = probe_seconds;
+            if (probe_seconds >= 0.001) ++stats->probes_over_1ms;
+            if (probe_seconds >= 0.010) ++stats->probes_over_10ms;
+            if (probe_seconds >= 0.100) ++stats->probes_over_100ms;
+            if (probe_seconds >= 1.000) ++stats->probes_over_1s;
+            if (swbwa_cpe_completion_flags[0] != 0) {
+                ++stats->completion_probe_runs;
+                stats->completion_probe_seconds += probe_seconds;
+                if (probe_seconds > stats->completion_probe_max_seconds)
+                    stats->completion_probe_max_seconds = probe_seconds;
+            }
+        }
+        /* Reuse one absolute deadline across EINTR retries. */
+        if (swbwa_cpe_completion_flags[0] == 0)
+            swbwa_cpe_progress_pause();
+    }
+    swbwa_cpe_join();
+    if (stats != NULL) ++stats->runs;
+#else
+    (void)phase;
+    swbwa_cpe_run(entry, params);
+#endif
+}
 
 static void *checked_malloc_array(size_t count, size_t size, const char *name)
 {
@@ -1620,7 +1838,8 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 #if SWBWA_USE_CROSS_SEGMENT
     swbwa_cross_run(format_entry);
 #else
-    swbwa_cpe_run((void*)slave_cpe_format_pre, para);
+    swbwa_cpe_run_with_mpi_progress(
+        (void*)slave_cpe_format_pre, para, SWBWA_CPE_PROGRESS_FORMAT);
 #endif
 
     if (bwa_verbose >= 4) fprintf(stderr, "[M::%s] CPE FASTQ formatting done\n", __func__);
@@ -1637,7 +1856,8 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 #if SWBWA_USE_CROSS_SEGMENT
     swbwa_cross_run(pre_entry);
 #else
-    swbwa_cpe_run((void*)slave_worker12_s_pre_fast, para);
+    swbwa_cpe_run_with_mpi_progress(
+        (void*)slave_worker12_s_pre_fast, para, SWBWA_CPE_PROGRESS_ALIGN);
 #endif
     if (bwa_verbose >= 4) fprintf(stderr, "slave pre done\n");
     t_work1_3 += GetTime() - tt0;
@@ -1663,7 +1883,8 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 #if SWBWA_USE_CROSS_SEGMENT
     swbwa_cross_run(write_entry);
 #else
-    swbwa_cpe_run((void*)slave_worker12_s_fast, para);
+    swbwa_cpe_run_with_mpi_progress(
+        (void*)slave_worker12_s_fast, para, SWBWA_CPE_PROGRESS_SAM);
 #endif
     t_work1_5 += GetTime() - tt0;
 

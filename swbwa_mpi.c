@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,9 +20,6 @@
 static int mpi_rank;
 static int mpi_size = 1;
 static int mpi_initialized;
-#if SWBWA_USE_MPI
-static pthread_mutex_t mpi_call_mutex = PTHREAD_MUTEX_INITIALIZER;
-#endif
 
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
@@ -58,7 +54,6 @@ typedef struct {
     double setup_barrier_seconds;
     double next_seconds;
     double rma_seconds;
-    double mpi_lock_wait_seconds;
     double win_lock_seconds;
     double fetch_and_op_seconds;
     double win_unlock_seconds;
@@ -395,15 +390,18 @@ int swbwa_mpi_init(int *argc, char ***argv)
 {
 #if SWBWA_USE_MPI
     int provided;
-    int rc = MPI_Init_thread(argc, argv, MPI_THREAD_SERIALIZED, &provided);
+    int rc = MPI_Init_thread(argc, argv, MPI_THREAD_MULTIPLE, &provided);
 
     if (rc != MPI_SUCCESS) return -1;
     mpi_initialized = 1;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
-    if (provided < MPI_THREAD_SERIALIZED) {
+    if (provided < MPI_THREAD_MULTIPLE) {
         if (mpi_rank == 0)
-            fprintf(stderr, "[E::MPI] MPI_THREAD_SERIALIZED is not available\n");
+            fprintf(stderr,
+                    "[E::MPI] MPI_THREAD_MULTIPLE is required,"
+                    " but MPI provided thread level %d\n",
+                    provided);
         MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
         return -1;
     }
@@ -438,28 +436,29 @@ int swbwa_mpi_is_root(void)
     return mpi_rank == 0;
 }
 
-void swbwa_mpi_call_lock(void)
-{
-#if SWBWA_USE_MPI
-    pthread_mutex_lock(&mpi_call_mutex);
-#endif
-}
-
-void swbwa_mpi_call_unlock(void)
-{
-#if SWBWA_USE_MPI
-    pthread_mutex_unlock(&mpi_call_mutex);
-#endif
-}
-
 int swbwa_mpi_barrier(void)
 {
 #if SWBWA_USE_MPI
     int result;
 
-    swbwa_mpi_call_lock();
     result = MPI_Barrier(MPI_COMM_WORLD);
-    swbwa_mpi_call_unlock();
+    if (result != MPI_SUCCESS) {
+        errno = EIO;
+        return -1;
+    }
+#endif
+    return 0;
+}
+
+int swbwa_mpi_progress(void)
+{
+#if SWBWA_USE_MPI
+    int flag;
+    int result;
+    MPI_Status status;
+
+    result = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD,
+                        &flag, &status);
     if (result != MPI_SUCCESS) {
         errno = EIO;
         return -1;
@@ -911,12 +910,7 @@ int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
                 ++chunk_scheduler.rma_attempts;
                 if (queue != mpi_rank) ++chunk_scheduler.remote_attempts;
             }
-            swbwa_mpi_call_lock();
             operation_start = scheduler_debug_now();
-            if (chunk_scheduler.debug_enabled)
-                chunk_scheduler.mpi_lock_wait_seconds +=
-                    operation_start - rma_start;
-
             result = MPI_Win_lock(MPI_LOCK_SHARED, queue, 0,
                                   chunk_scheduler.ticket_window);
             lock_succeeded = result == MPI_SUCCESS;
@@ -944,7 +938,6 @@ int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
                         scheduler_debug_now() - operation_start;
                 if (result == MPI_SUCCESS) result = unlock_result;
             }
-            swbwa_mpi_call_unlock();
             if (chunk_scheduler.debug_enabled)
                 chunk_scheduler.rma_seconds +=
                     scheduler_debug_now() - rma_start;
@@ -1055,7 +1048,6 @@ static void print_scheduler_debug_report_body(void)
         chunk_scheduler.boundary_seconds;
     double other_rma_seconds =
         chunk_scheduler.rma_seconds -
-        chunk_scheduler.mpi_lock_wait_seconds -
         chunk_scheduler.win_lock_seconds -
         chunk_scheduler.fetch_and_op_seconds -
         chunk_scheduler.win_unlock_seconds;
@@ -1127,10 +1119,6 @@ static void print_scheduler_debug_report_body(void)
         "RMA ticket path total",
         chunk_scheduler.rma_seconds, chunk_scheduler.rma_attempts, 6);
     print_scheduler_debug_time(
-        "wait for process-local MPI mutex",
-        chunk_scheduler.mpi_lock_wait_seconds,
-        chunk_scheduler.rma_attempts, 8);
-    print_scheduler_debug_time(
         "MPI_Win_lock",
         chunk_scheduler.win_lock_seconds,
         chunk_scheduler.rma_attempts, 8);
@@ -1143,7 +1131,7 @@ static void print_scheduler_debug_report_body(void)
         chunk_scheduler.win_unlock_seconds,
         chunk_scheduler.rma_attempts, 8);
     print_scheduler_debug_time(
-        "RMA call/unlock overhead (derived)",
+        "RMA call overhead (derived)",
         other_rma_seconds, chunk_scheduler.rma_attempts, 8);
     print_scheduler_debug_time(
         "align nominal offsets to FASTQ records",

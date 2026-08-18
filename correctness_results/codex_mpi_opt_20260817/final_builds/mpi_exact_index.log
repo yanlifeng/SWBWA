@@ -1,0 +1,9 @@
+mpicc -mhost -fPIC -mieee -mftz -faddress_align=32 -c -Wall -Wno-unused-function -g -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DHAVE_PTHREAD  -include swbwa_config.h -DSWBWA_EXEC_MODE=SWBWA_EXEC_SINGLE_CG -DSWBWA_CPE_ALLOC_MODE=SWBWA_CPE_ALLOC_SYSTEM -DSWBWA_ENABLE_HOST_MALLOC_WRAPPER=1 -DSWBWA_ENABLE_HOST_MALLOC_STATS=0 -DSWBWA_ENABLE_CPE_MALLOC_WRAPPER=0 -DSWBWA_USE_MPI=1 -DSWBWA_MPI_INPUT_MODE=SWBWA_MPI_INPUT_DYNAMIC -DSWBWA_MPI_EXACT_READ_INDEX=1 -DSWBWA_OUTPUT_MODE=SWBWA_OUTPUT_SINGLE_UNORDERED swbwa_mpi.c -o swbwa_mpi.o
+LINK SWBWA (MPI multi_static)
+swg++ -mhybrid -mhybrid -Wall -Wno-unused-function -g -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o SWBWA -Wl,-q bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o swbwa_mpi.o swbwa_output.o main.o slave/bntseq.o slave/bwamem_extra.o slave/bwamem.o slave/malloc_wrap.o slave/bwtindex.o slave/rle.o slave/slave.o slave/bwamem_pair.o slave/bwt.o slave/rope.o slave/bwa.o slave/kthread.o slave/kstring.o slave/example.o slave/main.o slave/ksw.o slave/is.o slave/QSufSort.o slave/bwt_gen.o slave/utils.o -L. -lbwa -lm -lz -lpthread -lm_slave -lrt -L/usr/sw/mpi/mpi_20220608_SEA/lib/multi_static -lmpicxx -Wl,-rpath -Wl,/usr/sw/mpi/mpi_20220608_SEA/lib/multi_static -Wl,--enable-new-dtags -lathread -lmpi -lpthread -L/usr/sw/lib -lswverbs_ft_perf -lswutils -L/usr/sw/lib -lswtm -lm -Wl,-zmuldefs -ldl -lrt -lpthread
+printf "\x02" | dd  of=SWBWA conv=notrunc bs=1 count=1 seek=9
+kopen.o: In function `kclose':
+/home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/SWBWA/kopen.c:51: warning: Using 'getaddrinfo' in statically linked applications requires at runtime the shared libraries from the glibc version used for linking
+1+0 records in
+1+0 records out
+1 byte (1 B) copied, 0.00430923 s, 0.2 kB/s

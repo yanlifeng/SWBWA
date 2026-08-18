@@ -627,15 +627,20 @@ int bwt_seed_strategy1(const bwt_t *bwt, int len, const uint8_t *q, int x, int m
 			c = 3 - q[i]; // complement of q[i]
 			bwt_extend(bwt, &ik, ok, 0);
 			//bwt_extend_backward_base(bwt, &ik, ok, c);
-            if (ok[c].x[2] < max_intv && i - x >= min_len) {
+			if (ok[c].x[2] < max_intv && i - x >= min_len) {
 				*mem = ok[c];
 				mem->info = (uint64_t)x<<32 | (i + 1);
 				return i + 1;
 			}
-            if (ok[c].x[2] == 0) {
-                return min_len + x + 1 < len ? min_len + x + 1 : len;
-            }
-			
+			if (ok[c].x[2] == 0) {
+				int j, stop = x + min_len;
+
+				/* Preserve restarts after ambiguous bases while skipping
+				 * redundant extensions of an empty FM-index interval. */
+				for (j = i + 1; j < len && j < stop; ++j)
+					if (q[j] > 3) return j + 1;
+				return stop < len? stop + 1 : len;
+			}
 //            bwtint_t k1 = ok[c].x[0] - 1;
 //            if(k1 != -1) __builtin_prefetch(bwt_occ_intv(bwt, k1 - (k1 >= bwt->primary)), 0, 3);
 //            bwtint_t l1 = ok[c].x[0] - 1 + ok[c].x[2];

@@ -1,0 +1,1457 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[MPI input] mode=dynamic chunks=49 bytes_per_cg=19660800 cg_count=1 chunk_bytes=19660800 file_bytes=945555584 scheduler=distributed read_index=exact
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+the input file is ../data/SRR7963242_1.fastq_1
+the input file is ../data/SRR7963242_2.fastq_1
+[MPI rank 000000/000006] output: correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+[MPI rank 000001/000006] output: correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+[MPI rank 000002/000006] output: correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+[MPI rank 000003/000006] output: correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+[MPI rank 000004/000006] output: correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+[MPI rank 000005/000006] output: correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19661040 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19661160 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660556 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19661040 bytes)...
+[DBG stage1] slow fread: R1 offset=0 requested=19661160 read=19661160 elapsed=1.067 s
+[DBG stage1] slow fread: R1 offset=98304084 requested=19661040 read=19661040 elapsed=1.001 s
+[DBG stage1] slow fread: R2 offset=58982756 requested=19660664 read=19660664 elapsed=1.032 s
+step1 0x50000201d930
+step2 get 0x50000201d930
+[DBG stage1] slow fread: R2 offset=0 requested=19661160 read=19661160 elapsed=1.033 s
+step1 0x50000201d930
+step2 get 0x50000201d930
+[DBG stage1] slow fread: R2 offset=19661160 requested=19660556 read=19660556 elapsed=1.102 s
+step1 0x50000201d930
+step2 get 0x50000201d930
+[DBG stage1] slow fread: R2 offset=78643420 requested=19660664 read=19660664 elapsed=1.074 s
+step1 0x50000201d930
+step2 get 0x50000201d930
+[DBG stage1] slow fread: R2 offset=39321716 requested=19661040 read=19661040 elapsed=1.178 s
+step1 0x50000201d930
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19661040 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[DBG stage1] slow fread: R2 offset=98304084 requested=19661040 read=19661040 elapsed=1.113 s
+step1 0x50000201d930
+step2 get 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19661040 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R1 offset=137625788 requested=19660664 read=19660664 elapsed=1.290 s
+[DBG stage1] slow fread: R1 offset=196608156 requested=19660664 read=19660664 elapsed=1.289 s
+[DBG stage1] slow fread: R1 offset=157286452 requested=19661040 read=19661040 elapsed=1.300 s
+[DBG stage1] slow fread: R1 offset=216268820 requested=19661040 read=19661040 elapsed=1.154 s
+step1 0x50000201ece0
+step1 0x50000201ece0
+step1 0x50000201ece0
+step1 0x50000201ece0
+step1 0x50000201ece0
+step1 0x50000201ece0
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.470 CPU sec, 8.831 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.800 CPU sec, 8.953 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+slave pre done
+now n is 105578
+step3 0x50000201d930
+step1 0x50000201ed30
+slave pre done
+now n is 104580
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+processed 105578
+[M::mem_process_seqs_merge2] Processed 105578 reads in 3.660 CPU sec, 9.011 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+processed 104580
+[M::mem_process_seqs_merge2] Processed 104580 reads in 3.550 CPU sec, 8.770 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19661040 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19661040 bytes)...
+slave pre done
+now n is 104580
+processed 104580
+[M::mem_process_seqs_merge2] Processed 104580 reads in 3.700 CPU sec, 9.591 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+step1 0x50000201ed30
+step1 0x50000201ed30
+step1 0x50000201ed30
+step1 0x50000201ed30
+slave pre done
+now n is 105944
+processed 105944
+[M::mem_process_seqs_merge2] Processed 105944 reads in 3.760 CPU sec, 11.091 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ed30
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.450 CPU sec, 7.529 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 104580
+processed 104580
+[M::mem_process_seqs_merge2] Processed 104580 reads in 3.410 CPU sec, 7.561 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+slave pre done
+now n is 104578
+step3 0x50000201ece0
+slave pre done
+now n is 104578
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 104580
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.240 CPU sec, 7.678 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.350 CPU sec, 7.640 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+processed 104580
+[M::mem_process_seqs_merge2] Processed 104580 reads in 3.100 CPU sec, 7.061 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660824 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201d930
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.130 CPU sec, 7.320 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660664 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201d930
+step1 0x50000201d930
+step1 0x50000201d930
+step1 0x50000201d930
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.670 CPU sec, 8.149 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.950 CPU sec, 8.229 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.900 CPU sec, 8.240 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 104580
+processed 104580
+[M::mem_process_seqs_merge2] Processed 104580 reads in 4.100 CPU sec, 8.351 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201ece0
+step1 0x50000201ece0
+step1 0x50000201ece0
+slave pre done
+now n is 104580
+processed 104580
+[M::mem_process_seqs_merge2] Processed 104580 reads in 4.270 CPU sec, 9.951 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step3 0x50000201ed30
+step1 0x50000201ed80
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 3.360 CPU sec, 9.901 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ed30
+step1 0x50000276e3c0
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.230 CPU sec, 7.327 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201ed30
+slave pre done
+now n is 103478
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.260 CPU sec, 7.538 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.190 CPU sec, 7.460 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.800 CPU sec, 7.799 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660440 bytes)...
+step1 0x50000201ed30
+step1 0x50000201ed30
+step1 0x50000201ed30
+slave pre done
+now n is 103590
+processed 103590
+[M::mem_process_seqs_merge2] Processed 103590 reads in 3.480 CPU sec, 7.761 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ed80
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 104578
+processed 104578
+[M::mem_process_seqs_merge2] Processed 104578 reads in 2.990 CPU sec, 7.720 real sec
+step2 put 0x50000201d930
+step2 get 0x50000276e3c0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.860 CPU sec, 8.361 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.740 CPU sec, 7.650 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 4.140 CPU sec, 7.531 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201d930
+step1 0x50000201d930
+step1 0x50000201d930
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.500 CPU sec, 8.041 real sec
+step2 put 0x50000201ed80
+step2 get 0x50000201ed30
+step3 0x50000201ed80
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201d930
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.470 CPU sec, 11.331 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.080 CPU sec, 8.220 real sec
+step2 put 0x50000276e3c0
+step3 0x50000276e3c0
+step1 0x50000201d930
+step1 0x50000201ed30
+step2 get 0x50000201ed30
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 6.010 CPU sec, 8.500 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 6.260 CPU sec, 9.361 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201ece0
+slave pre done
+now n is 103476
+processed 103476
+[M::mem_process_seqs_merge2] Processed 103476 reads in 6.100 CPU sec, 9.040 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201ece0
+step1 0x50000201ece0
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 4.430 CPU sec, 8.751 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201ed80
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.390 CPU sec, 8.210 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000276e3c0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+step1 0x50000201d930
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.340 CPU sec, 7.710 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.530 CPU sec, 7.481 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.490 CPU sec, 8.159 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ece0
+step3 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660820 bytes)...
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.330 CPU sec, 7.239 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ed80
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ed30
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.400 CPU sec, 7.321 real sec
+step2 put 0x50000201d930
+step2 get 0x50000276e3c0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 1836920 bytes)...
+step1 0x50000201ed30
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 2.910 CPU sec, 15.351 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201d930
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.630 CPU sec, 7.369 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 4.040 CPU sec, 8.118 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 9668
+processed 9668
+[M::mem_process_seqs_merge2] Processed 9668 reads in 0.730 CPU sec, 1.590 real sec
+step2 put 0x50000201ed30
+step3 0x50000201ed30
+slave pre done
+now n is 103478
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.620 CPU sec, 7.539 real sec
+step2 put 0x50000276e3c0
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 4.630 CPU sec, 8.370 real sec
+step2 put 0x50000201ed80
+step3 0x50000201ed80
+step3 0x50000276e3c0
+[MPI rank 000004/000006] input work: chunks=9 records=420396 bytes=159123008
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 5.200 CPU sec, 8.161 real sec
+step2 put 0x50000201d930
+step3 0x50000201d930
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 5.690 CPU sec, 11.639 real sec
+step2 put 0x50000201ece0
+step3 0x50000201ece0
+[MPI rank 000005/000006] input work: chunks=8 records=415564 bytes=157286844
+slave pre done
+now n is 103478
+processed 103478
+[M::mem_process_seqs_merge2] Processed 103478 reads in 3.330 CPU sec, 6.879 real sec
+step2 put 0x50000201ed30
+step3 0x50000201ed30
+[MPI rank 000000/000006] input work: chunks=7 records=365056 bytes=137625612
+[MPI rank 000002/000006] input work: chunks=9 records=467303 bytes=176947664
+[MPI rank 000001/000006] input work: chunks=8 records=416119 bytes=157286364
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000000 / 000006
+
+  Work summary
+    claimed chunks                                          7
+    claimed from this rank's queue                          7
+    claimed from another rank's queue                       0
+    completed FASTQ records                            365056
+    claimed input bytes                             137625612
+
+  Scheduler counters
+    scheduler_next calls                                    8
+    RMA ticket attempts                                    13
+    attempts against another rank's queue                   5
+    tickets beyond the final chunk                          6
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000173 s  (1 calls,   172.602 us/call)
+    MPI_Barrier after setup                      0.000011 s  (1 calls,    11.250 us/call)
+    scheduler_next total                        20.349831 s  (8 calls, 2543728.817 us/call)
+      RMA ticket path total                       19.665937 s  (13 calls, 1512764.409 us/call)
+        MPI_Win_lock                                16.304100 s  (13 calls, 1254161.536 us/call)
+        MPI_Fetch_and_op                             0.000113 s  (13 calls,     8.662 us/call)
+        MPI_Win_unlock                               3.361705 s  (13 calls, 258592.696 us/call)
+        RMA call overhead (derived)                  0.000020 s  (13 calls,     1.515 us/call)
+      align nominal offsets to FASTQ records       0.683851 s  (7 calls, 97692.946 us/call)
+      scheduler loop/bookkeeping (derived)         0.000043 s  (8 calls,     5.325 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           2.311000 s  (1 calls, 2311000.206 us/call)
+    MPI_Win_free                                 0.000071 s  (1 calls,    71.001 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                        7
+    accumulated stage 2                             67.765026 s
+    average stage 2 per chunk                        9.680718 s
+    slowest chunk                                          30
+    slowest chunk stage 2                           15.351265 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       0      0  [           0,     19661160)     19661160        52972   11.090562
+        1       6      0  [   117965124,    137625788)     19660664        52289    7.320431
+        2      12      0  [   235929860,    255590524)     19660664        52289    9.900602
+        3      18      0  [   353894596,    373555260)     19660664        52289    7.720365
+        4      24      0  [   471859364,    491520184)     19660820        51739    8.220466
+        5      30      0  [   589824284,    609485104)     19660820        51739   15.351265
+        6      36      0  [   707788824,    727449644)     19660820        51739    8.161335
+==============================================================
+
+[MPI rank 000003/000006] input work: chunks=8 records=415562 bytes=157286092
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000003 / 000006
+
+  Work summary
+    claimed chunks                                          8
+    claimed from this rank's queue                          8
+    claimed from another rank's queue                       0
+    completed FASTQ records                            415562
+    claimed input bytes                             157286092
+
+  Scheduler counters
+    scheduler_next calls                                    9
+    RMA ticket attempts                                    14
+    attempts against another rank's queue                   5
+    tickets beyond the final chunk                          6
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000177 s  (1 calls,   176.802 us/call)
+    MPI_Barrier after setup                      0.000008 s  (1 calls,     7.650 us/call)
+    scheduler_next total                         8.003880 s  (9 calls, 889319.963 us/call)
+      RMA ticket path total                        6.350091 s  (14 calls, 453577.897 us/call)
+        MPI_Win_lock                                 0.001885 s  (14 calls,   134.608 us/call)
+        MPI_Fetch_and_op                             0.000376 s  (14 calls,    26.886 us/call)
+        MPI_Win_unlock                               6.347808 s  (14 calls, 453414.842 us/call)
+        RMA call overhead (derived)                  0.000022 s  (14 calls,     1.561 us/call)
+      align nominal offsets to FASTQ records       1.653746 s  (8 calls, 206718.245 us/call)
+      scheduler loop/bookkeeping (derived)         0.000043 s  (9 calls,     4.794 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           0.000033 s  (1 calls,    32.600 us/call)
+    MPI_Win_free                                 0.000061 s  (1 calls,    61.401 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                        8
+    accumulated stage 2                             69.359253 s
+    average stage 2 per chunk                        8.669907 s
+    slowest chunk                                          45
+    slowest chunk stage 2                           11.638793 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       3      3  [    58982756,     78643420)     19660664        52289    8.831632
+        1       9      3  [   176947492,    196608156)     19660664        52289    7.529362
+        2      15      3  [   294912228,    314572892)     19660664        52289    8.150060
+        3      21      3  [   412876904,    432537724)     19660820        51739    7.327439
+        4      27      3  [   530841824,    550502644)     19660820        51739    8.360593
+        5      33      3  [   648806744,    668467564)     19660820        51739    9.361319
+        6      39      3  [   766771284,    786432104)     19660820        51739    8.160055
+        7      45      3  [   884736204,    904397024)     19660820        51739   11.638793
+==============================================================
+
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000004 / 000006
+
+  Work summary
+    claimed chunks                                          9
+    claimed from this rank's queue                          8
+    claimed from another rank's queue                       1
+    completed FASTQ records                            420396
+    claimed input bytes                             159123008
+
+  Scheduler counters
+    scheduler_next calls                                   10
+    RMA ticket attempts                                    17
+    attempts against another rank's queue                   7
+    tickets beyond the final chunk                          8
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000172 s  (1 calls,   172.002 us/call)
+    MPI_Barrier after setup                      0.000010 s  (1 calls,    10.000 us/call)
+    scheduler_next total                         5.370684 s  (10 calls, 537068.391 us/call)
+      RMA ticket path total                        4.029782 s  (17 calls, 237045.986 us/call)
+        MPI_Win_lock                                 0.002286 s  (17 calls,   134.460 us/call)
+        MPI_Fetch_and_op                             0.000309 s  (17 calls,    18.147 us/call)
+        MPI_Win_unlock                               4.027154 s  (17 calls, 236891.411 us/call)
+        RMA call overhead (derived)                  0.000033 s  (17 calls,     1.968 us/call)
+      align nominal offsets to FASTQ records       1.340853 s  (9 calls, 148983.695 us/call)
+      scheduler loop/bookkeeping (derived)         0.000049 s  (10 calls,     4.890 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           6.358662 s  (1 calls, 6358662.152 us/call)
+    MPI_Win_free                                 0.000082 s  (1 calls,    81.951 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                        9
+    accumulated stage 2                             66.543408 s
+    average stage 2 per chunk                        7.393712 s
+    slowest chunk                                          34
+    slowest chunk stage 2                            9.040451 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       4      4  [    78643420,     98304084)     19660664        52289    8.953133
+        1      10      4  [   196608156,    216268820)     19660664        52289    7.678105
+        2      16      4  [   314572892,    334233932)     19661040        52290    8.351450
+        3      22      4  [   432537724,    452198544)     19660820        51739    7.799490
+        4      28      4  [   550502644,    570163464)     19660820        51739    7.530573
+        5      34      4  [   668467564,    688128004)     19660440        51738    9.040451
+        6      40      4  [   786432104,    806092924)     19660820        51739    7.481560
+        7      46      4  [   904397024,    924057844)     19660820        51739    8.118445
+        8      48      0  [   943718664,    945555584)      1836920         4834    1.590201
+==============================================================
+
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000001 / 000006
+
+  Work summary
+    claimed chunks                                          8
+    claimed from this rank's queue                          8
+    claimed from another rank's queue                       0
+    completed FASTQ records                            416119
+    claimed input bytes                             157286364
+
+  Scheduler counters
+    scheduler_next calls                                    9
+    RMA ticket attempts                                    14
+    attempts against another rank's queue                   5
+    tickets beyond the final chunk                          6
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000177 s  (1 calls,   177.052 us/call)
+    MPI_Barrier after setup                      0.000009 s  (1 calls,     8.800 us/call)
+    scheduler_next total                         6.869712 s  (9 calls, 763301.288 us/call)
+      RMA ticket path total                        5.246358 s  (14 calls, 374739.822 us/call)
+        MPI_Win_lock                                 0.001404 s  (14 calls,   100.273 us/call)
+        MPI_Fetch_and_op                             0.000403 s  (14 calls,    28.765 us/call)
+        MPI_Win_unlock                               5.244427 s  (14 calls, 374601.927 us/call)
+        RMA call overhead (derived)                  0.000124 s  (14 calls,     8.857 us/call)
+      align nominal offsets to FASTQ records       1.623311 s  (8 calls, 202913.849 us/call)
+      scheduler loop/bookkeeping (derived)         0.000043 s  (9 calls,     4.811 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           0.235782 s  (1 calls, 235781.940 us/call)
+    MPI_Win_free                                 0.000078 s  (1 calls,    77.601 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                        8
+    accumulated stage 2                             66.762827 s
+    average stage 2 per chunk                        8.345353 s
+    slowest chunk                                          13
+    slowest chunk stage 2                            9.950649 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       1      1  [    19661160,     39321716)     19660556        52789    9.010584
+        1       7      1  [   137625788,    157286452)     19660664        52289    7.640302
+        2      13      1  [   255590524,    275251564)     19661040        52290    9.950649
+        3      19      1  [   373555260,    393216084)     19660824        51795    7.760537
+        4      25      1  [   491520184,    511181004)     19660820        51739    8.040677
+        5      31      1  [   609485104,    629145924)     19660820        51739    8.751173
+        6      37      1  [   727449644,    747110464)     19660820        51739    7.238679
+        7      43      1  [   845414564,    865075384)     19660820        51739    8.370226
+==============================================================
+
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000002 / 000006
+
+  Work summary
+    claimed chunks                                          9
+    claimed from this rank's queue                          8
+    claimed from another rank's queue                       1
+    completed FASTQ records                            467303
+    claimed input bytes                             176947664
+
+  Scheduler counters
+    scheduler_next calls                                   10
+    RMA ticket attempts                                    19
+    attempts against another rank's queue                   9
+    tickets beyond the final chunk                         10
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000173 s  (1 calls,   173.402 us/call)
+    MPI_Barrier after setup                      0.000010 s  (1 calls,    10.000 us/call)
+    scheduler_next total                         4.948286 s  (10 calls, 494828.625 us/call)
+      RMA ticket path total                        3.340363 s  (19 calls, 175808.588 us/call)
+        MPI_Win_lock                                 0.000209 s  (19 calls,    10.982 us/call)
+        MPI_Fetch_and_op                             0.000522 s  (19 calls,    27.448 us/call)
+        MPI_Win_unlock                               3.339598 s  (19 calls, 175768.306 us/call)
+        RMA call overhead (derived)                  0.000035 s  (19 calls,     1.853 us/call)
+      align nominal offsets to FASTQ records       1.607867 s  (9 calls, 178651.936 us/call)
+      scheduler loop/bookkeeping (derived)         0.000056 s  (10 calls,     5.565 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           0.493738 s  (1 calls, 493737.614 us/call)
+    MPI_Win_free                                 0.000080 s  (1 calls,    80.051 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                        9
+    accumulated stage 2                             70.461799 s
+    average stage 2 per chunk                        7.829089 s
+    slowest chunk                                           2
+    slowest chunk stage 2                            9.590551 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       2      2  [    39321716,     58982756)     19661040        52290    9.590551
+        1       8      2  [   157286452,    176947492)     19661040        52290    7.060897
+        2      14      2  [   275251564,    294912228)     19660664        52289    8.240867
+        3      20      2  [   393216084,    412876904)     19660820        51739    7.459696
+        4      26      2  [   511181004,    530841824)     19660820        51739    7.650337
+        5      32      2  [   629145924,    648806744)     19660820        51739    8.500677
+        6      38      2  [   747110464,    766771284)     19660820        51739    7.710341
+        7      44      2  [   865075384,    884736204)     19660820        51739    7.369259
+        8      42      0  [   825753744,    845414564)     19660820        51739    6.879174
+==============================================================
+
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000005 / 000006
+
+  Work summary
+    claimed chunks                                          8
+    claimed from this rank's queue                          8
+    claimed from another rank's queue                       0
+    completed FASTQ records                            415564
+    claimed input bytes                             157286844
+
+  Scheduler counters
+    scheduler_next calls                                    9
+    RMA ticket attempts                                    14
+    attempts against another rank's queue                   5
+    tickets beyond the final chunk                          6
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000176 s  (1 calls,   176.402 us/call)
+    MPI_Barrier after setup                      0.000008 s  (1 calls,     7.650 us/call)
+    scheduler_next total                         6.880803 s  (9 calls, 764533.674 us/call)
+      RMA ticket path total                        4.383213 s  (14 calls, 313086.642 us/call)
+        MPI_Win_lock                                 0.001884 s  (14 calls,   134.562 us/call)
+        MPI_Fetch_and_op                             0.000089 s  (14 calls,     6.343 us/call)
+        MPI_Win_unlock                               4.381216 s  (14 calls, 312943.991 us/call)
+        RMA call overhead (derived)                  0.000024 s  (14 calls,     1.746 us/call)
+      align nominal offsets to FASTQ records       2.497548 s  (8 calls, 312193.509 us/call)
+      scheduler loop/bookkeeping (derived)         0.000042 s  (9 calls,     4.667 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           3.828992 s  (1 calls, 3828991.537 us/call)
+    MPI_Win_free                                 0.000074 s  (1 calls,    74.051 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                        8
+    accumulated stage 2                             66.501281 s
+    average stage 2 per chunk                        8.312660 s
+    slowest chunk                                          29
+    slowest chunk stage 2                           11.330671 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       5      5  [    98304084,    117965124)     19661040        52290    8.770491
+        1      11      5  [   216268820,    235929860)     19661040        52290    7.561335
+        2      17      5  [   334233932,    353894596)     19660664        52289    8.229477
+        3      23      5  [   452198544,    471859364)     19660820        51739    7.538213
+        4      29      5  [   570163464,    589824284)     19660820        51739   11.330671
+        5      35      5  [   688128004,    707788824)     19660820        51739    8.210348
+        6      41      5  [   806092924,    825753744)     19660820        51739    7.321455
+        7      47      5  [   924057844,    943718664)     19660820        51739    7.539291
+==============================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000000 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                          730112
+    submitted SAM bytes                            307885866
+    buffered flushes                                       5
+    buffered flush bytes                           307885866
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                        29.118516 s  (5 calls, 5823703.205 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                 local
+    reservations                                            5
+    reservation total                            0.000174 s  (5 calls,    34.720 us/call)
+      MPI_Fetch_and_op                             0.000032 s  (5 calls,     6.490 us/call)
+      MPI_Win_flush(target rank 0)                 0.000136 s  (5 calls,    27.100 us/call)
+      reservation call overhead (derived)          0.000006 s  (5 calls,     1.130 us/call)
+
+  MPI file writes
+    MPI_File_write_at calls                                 5
+    MPI_File_write_at bytes                         307885866
+    MPI file-write path total                   29.118322 s  (5 calls, 5823664.485 us/call)
+      MPI_File_write_at                           29.118304 s  (5 calls, 5823660.875 us/call)
+      MPI_Get_count                                0.000014 s  (5 calls,     2.730 us/call)
+      file-write call overhead (derived)           0.000004 s  (5 calls,     0.880 us/call)
+    MPI_File_write_at effective bandwidth          10.084 MiB/s
+
+  Output close timing
+    MPI_File_sync                                0.017229 s  (1 calls, 17228.532 us/call)
+    MPI_Win_unlock_all                           0.000017 s  (1 calls,    17.401 us/call)
+    MPI_Win_free                                 0.000063 s  (1 calls,    62.600 us/call)
+    MPI_File_close                               0.000654 s  (1 calls,   654.007 us/call)
+================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000000 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               7         10      8.537 853669.515     8.518       2        2         1       1          3
+    alignment and SAM length       7       1944     17.649   9078.731     9.731       9        6         2       2          1
+    SAM record generation          7         20      0.001     47.208     0.000       0        0         0       0          0
+    all CPE phases                21       1974     26.187  13265.801     9.731      11        8         3       3          4
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total              18.266979 s
+    slowest completion-observing probe             9.730551 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000000 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    75.801 s
+    stage 1 - allocate and read raw FASTQ blocks             28.047 s
+    stage 2 - align reads and generate SAM records           67.765 s
+    stage 3 - write SAM and release batch data               30.351 s
+      SAM output writes                                        29.668 s
+      batch cleanup and loop overhead (derived)                 0.683 s
+
+  Stage 1 input details
+    batches completed / stage calls                       7 / 8
+    input-buffer and batch allocations                        0.000 s  (22 calls, max 0.000 s)
+    aggregate requested allocation bytes            275266072
+    FASTQ fseeko calls                                        0.491 s  (14 calls, max 0.125 s)
+    FASTQ fread calls                                         7.183 s  (14 calls, max 1.067 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)              20.373 s
+    raw FASTQ bytes read                            275251224  (262.500 MiB)
+    effective fread bandwidth                         36.546 MiB/s
+    slowest allocation                                 0.000 s  (19661844 bytes)
+    slowest fread                                      1.067 s  (R1 offset=0, bytes=19661160)
+
+  Stage 2 worker details
+    total - active merge worker                              67.764 s
+      part 1 - prepare CPE task and reusable buffers            0.772 s
+      part 2 - CPE FAS
+====================== SWBWA Output Debug =====================
+  MPI rank: 000001 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                          832238
+    submitted SAM bytes                            350907535
+    buffered flushes                                       6
+    buffered flush bytes                           350907535
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                        34.526819 s  (6 calls, 5754469.906 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                            6
+    reservation total                            3.672565 s  (6 calls, 612094.122 us/call)
+      MPI_Fetch_and_op                             0.009475 s  (6 calls,  1579.150 us/call)
+      MPI_Win_flush(target rank 0)                 3.663080 s  (6 calls, 610513.380 us/call)
+      reservation call overhead (derived)          0.000010 s  (6 calls,     1.592 us/call)
+
+  MPI file writes
+    MPI_File_write_at calls                                 6
+    MPI_File_write_at bytes                         350907535
+    MPI file-write path total                   30.854227 s  (6 calls, 5142371.243 us/call)
+      MPI_File_write_at                           30.854196 s  (6 calls, 5142366.060 us/call)
+      MPI_Get_count                                0.000026 s  (6 calls,     4.350 us/call)
+      file-write call overhead (derived)           0.000005 s  (6 calls,     0.833 us/call)
+    MPI_File_write_at effective bandwidth          10.846 MiB/s
+
+  Output close timing
+    MPI_File_sync                                0.010075 s  (1 calls, 10075.106 us/call)
+    MPI_Win_unlock_all                           0.000017 s  (1 calls,    16.750 us/call)
+    MPI_Win_free                                 0.008424 s  (1 calls,  8424.389 us/call)
+    MPI_File_close                               0.000581 s  (1 calls,   581.456 us/call)
+================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000001 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               8         10      0.000     23.250     0.000       0        0         0       0          0
+    alignment and SAM length       8       2003     26.578  13269.325     9.260      16        6         4       4          1
+    SAM record generation          8         22      0.001     63.194     0.000       0        0         0       0          0
+    all CPE phases                24       2035     26.580  13061.465     9.260      16        6         4       4          1
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               9.259553 s
+    slowest completion-observing probe             9.259553 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000001 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    75.801 s
+    stage 1 - allocate and read raw FASTQ blocks             17.128 s
+    stage 2 - align reads and generate SAM records           66.763 s
+    stage 3 - write SAM and release batch data               32.554 s
+      SAM output writes                                        31.868 s
+      batch cleanup and loop overhead (
+====================== SWBWA Output Debug =====================
+  MPI rank: 000002 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                          934606
+    submitted SAM bytes                            394055574
+    buffered flushes                                       6
+    buffered flush bytes                           394055574
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                        23.729863 s  (6 calls, 3954977.237 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                            6
+    reservation total                            4.512002 s  (6 calls, 752000.258 us/call)
+      MPI_Fetch_and_op                             0.003220 s  (6 calls,   536.747 us/call)
+      MPI_Win_flush(target rank 0)                 4.508769 s  (6 calls, 751461.494 us/call)
+      reservation call overhead (derived)          0.000012 s  (6 calls,     2.017 us/call)
+
+  MPI file writes
+    MPI_File_write_at calls                                 6
+    MPI_File_write_at bytes                         394055574
+    MPI file-write path total                   19.217834 s  (6 calls, 3202972.255 us/call)
+      MPI_File_write_at                           19.217807 s  (6 calls, 3202967.805 us/call)
+      MPI_Get_count                                0.000020 s  (6 calls,     3.258 us/call)
+      file-write call overhead (derived)           0.000007 s  (6 calls,     1.192 us/call)
+    MPI_File_write_at effective bandwidth          19.555 MiB/s
+
+  Output close timing
+    MPI_File_sync                                0.009524 s  (1 calls,  9524.401 us/call)
+    MPI_Win_unlock_all                           0.000018 s  (1 calls,    18.400 us/call)
+    MPI_Win_free                                 0.009121 s  (1 calls,  9121.146 us/call)
+    MPI_File_close                               0.001232 s  (1 calls,  1231.763 us/call)
+================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000002 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               9         11      0.025   2299.761     0.016       2        1         0       0          2
+    alignment and SAM length       9       2538     17.664   6959.730     6.731      19       13         5       5          0
+    SAM record generation          9         27      0.001     37.345     0.000       0        0         0       0          0
+    all CPE phases                27       2576     17.690   6867.275     6.731      21       14         5       5          2
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.025084 s
+    slowest completion-observing probe             0.015685 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000002 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    75.801 s
+    stage 1 - allocate and read raw FASTQ blocks             17.570 s
+    stage 2 - align reads and generate SAM records           70.462 s
+    stage 3 - write SAM and release batch data               23.630 s
+      SAM output writes                                        22.807 s
+      batch cleanup and loop overhead (TQ formatting and input release           8.602 s
+      part 3 - CPE alignment and SAM length pass               58.179 s
+      part 4 - assign slices in the shared SAM buffer           0.051 s
+      part 5 - CPE SAM record generation                        0.158 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+derived)                 0.686 s
+
+  Stage 1 input details
+    batches completed / stage calls                       8 / 9
+    input-buffer and batch allocations                        0.000 s  (25 calls, max 0.000 s)
+    aggregate requested allocation bytes            314589688
+    FASTQ fseeko calls                                        1.291 s  (16 calls, max 0.273 s)
+    FASTQ fread calls                                         8.964 s  (16 calls, max 1.290 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               6.873 s
+    raw FASTQ bytes read                            314572728  (300.000 MiB)
+    effective fread bandwidth                         33.467 MiB/s
+    slowest allocation                                 0.000 s  (19661844 bytes)
+    slowest fread                                      1.290 s  (R1 offset=137625788, bytes=19660664)
+
+  Stage 2 worker details
+    total - active merge worker                              66.762 s
+      part 1 - prepare CPE task and reusable buffers            0.736 s
+      part 2 - CPE FASTQ formatting and input release           0.143 s
+      part 3 - CPE alignment and SAM length pass               65.647 s
+      part 4 - assign slices in the shared SAM buffer           0.058 s
+      part 5 - CPE SAM record generation                        0.176 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+derived)                 0.823 s
+
+  Stage 1 input details
+    batches completed / stage calls                       9 / 10
+    input-buffer and batch allocations                        0.000 s  (28 calls, max 0.000 s)
+    aggregate requested allocation bytes            353914400
+    FASTQ fseeko calls                                        1.546 s  (18 calls, max 0.274 s)
+    FASTQ fread calls                                        11.072 s  (18 calls, max 1.300 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               4.952 s
+    raw FASTQ bytes read                            353895328  (337.501 MiB)
+    effective fread bandwidth                         30.483 MiB/s
+    slowest allocation                                 0.000 s  (19662064 bytes)
+    slowest fread                                      1.300 s  (R1 offset=157286452, bytes=19661040)
+
+  Stage 2 worker details
+    total - active merge worker                              70.458 s
+      part 1 - prepare CPE task and reusable buffers            0.746 s
+      part 2 - CPE FASTQ formatting and input release           0.170 s
+      part 3 - CPE alignment and SAM length pass               69.270 s
+      part 4 - assign slices in the shared SAM buffer           0.067 s
+      part 5 - CPE SAM record generation                        0.199 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000003 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                          831124
+    submitted SAM bytes                            350241952
+    buffered flushes                                       6
+    buffered flush bytes                           350241952
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                        19.926138 s  (6 calls, 3321022.994 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                            6
+    reservation total                            5.413017 s  (6 calls, 902169.468 us/call)
+      MPI_Fetch_and_op                             0.004881 s  (6 calls,   813.525 us/call)
+      MPI_Win_flush(target rank 0)                 5.408124 s  (6 calls, 901353.935 us/call)
+      reservation call overhead (derived)          0.000012 s  (6 calls,     2.008 us/call)
+
+  MPI file writes
+    MPI_File_write_at calls                                 6
+    MPI_File_write_at bytes                         350241952
+    MPI file-write path total                   14.513095 s  (6 calls, 2418849.159 us/call)
+      MPI_File_write_at                           14.513069 s  (6 calls, 2418844.784 us/call)
+      MPI_Get_count                                0.000021 s  (6 calls,     3.525 us/call)
+      file-write call overhead (derived)           0.000005 s  (6 calls,     0.850 us/call)
+    MPI_File_write_at effective bandwidth          23.015 MiB/s
+
+  Output close timing
+    MPI_File_sync                                0.011214 s  (1 calls, 11214.469 us/call)
+    MPI_Win_unlock_all                           0.000027 s  (1 calls,    27.450 us/call)
+    MPI_Win_free                                 0.007125 s  (1 calls,  7124.575 us/call)
+    MPI_File_close                               0.000855 s  (1 calls,   855.209 us/call)
+================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000003 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               8         13      3.377 259753.462     3.376       1        1         1       1          1
+    alignment and SAM length       8       2765      8.378   3030.166     3.511      11        3         3       3          0
+    SAM record generation          8         22      0.003    126.224     0.002       1        0         0       0          0
+    all CPE phases                24       2800     11.758   4199.279     3.511      13        4         4       4          1
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               3.376283 s
+    slowest completion-observing probe             3.376283 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000003 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    75.801 s
+    stage 1 - allocate and read raw FASTQ blocks             17.249 s
+    stage 2 - align reads and generate SAM records           69.359 s
+    stage 3 - write SAM and release batch data               20.241 s
+      SAM output writes                                        19.658 s
+      batch cleanup and loop overhead (derived)                 0.583 s
+
+  Stage 1 input details
+    batches completed / stage calls                       8 / 9
+    input-buffer and batch allocations                        0.000 s  (25 calls, max 0.000 s)
+    aggregate requested allocation bytes            314589144
+    FASTQ fseeko calls                                        0.798 s  (16 calls, max 0.262 s)
+    FASTQ fread calls                                         8.436 s  (16 calls, max 1.032 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               8.015 s
+    raw FASTQ bytes read                            314572184  (299.999 MiB)
+    effective fread bandwidth                         35.563 MiB/s
+    slowest allocation                                 0.000 s  (19661688 bytes)
+    slowest fread                                      1.032 s  (R2 offset=58982756, bytes=19660664)
+
+  Stage 2 worker details
+    total - active merge worker                              69.356 s
+      part 1 - prepare CPE task and reusable buffers            0.749 s
+      part 2 - CPE FASTQ formatting and input release           3.523 s
+      part 3 - CPE alignment and SAM length pass               64.845 s
+      part 4 - assign slices in the shared SAM buffer           0.065 s
+      part 5 - CPE SAM record generation                        0.171 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000004 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                          840792
+    submitted SAM bytes                            354320037
+    buffered flushes                                       6
+    buffered flush bytes                           354320037
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                        23.422608 s  (6 calls, 3903768.022 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                            6
+    reservation total                            3.987745 s  (6 calls, 664624.218 us/call)
+      MPI_Fetch_and_op                             0.002640 s  (6 calls,   439.930 us/call)
+      MPI_Win_flush(target rank 0)                 3.985093 s  (6 calls, 664182.246 us/call)
+      reservation call overhead (derived)          0.000012 s  (6 calls,     2.042 us/call)
+
+  MPI file writes
+    MPI_File_write_at calls                                 6
+    MPI_File_write_at bytes                         354320037
+    MPI file-write path total                   19.434114 s  (6 calls, 3239018.952 us/call)
+      MPI_File_write_at                           19.434092 s  (6 calls, 3239015.253 us/call)
+      MPI_Get_count                                0.000017 s  (6 calls,     2.900 us/call)
+      file-write call overhead (derived)           0.000005 s  (6 calls,     0.800 us/call)
+    MPI_File_write_at effective bandwidth          17.387 MiB/s
+
+  Output close timing
+    MPI_File_sync                                0.011522 s  (1 calls, 11522.322 us/call)
+    MPI_Win_unlock_all                           0.000033 s  (1 calls,    33.350 us/call)
+    MPI_Win_free                                 0.006456 s  (1 calls,  6455.918 us/call)
+    MPI_File_close                               0.002024 s  (1 calls,  2023.622 us/call)
+================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000004 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               9         12      0.033   2785.379     0.017       2        2         0       0          2
+    alignment and SAM length       9       2191     19.270   8794.851     5.834      22        9         5       5          1
+    SAM record generation          9         21      0.002     77.499     0.000       0        0         0       0          0
+    all CPE phases                27       2224     19.305   8680.113     5.834      24       11         5       5          3
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               1.261966 s
+    slowest completion-observing probe             1.228818 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000004 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    75.801 s
+    stage 1 - allocate and read raw FASTQ blocks             17.099 s
+    stage 2 - align reads and generate SAM records           66.543 s
+    stage 3 - write SAM and release batch data               24.997 s
+      SAM output writes                                        24.278 s
+      batch cleanup and loop overhead (
+====================== SWBWA Output Debug =====================
+  MPI rank: 000005 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                          831128
+    submitted SAM bytes                            350244769
+    buffered flushes                                       6
+    buffered flush bytes                           350244769
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                        22.627975 s  (6 calls, 3771329.174 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                            6
+    reservation total                            0.597849 s  (6 calls, 99641.494 us/call)
+      MPI_Fetch_and_op                             0.013714 s  (6 calls,  2285.599 us/call)
+      MPI_Win_flush(target rank 0)                 0.584124 s  (6 calls, 97354.053 us/call)
+      reservation call overhead (derived)          0.000011 s  (6 calls,     1.842 us/call)
+
+  MPI file writes
+    MPI_File_write_at calls                                 6
+    MPI_File_write_at bytes                         350244769
+    MPI file-write path total                   22.029919 s  (6 calls, 3671653.188 us/call)
+      MPI_File_write_at                           22.029893 s  (6 calls, 3671648.821 us/call)
+      MPI_Get_count                                0.000020 s  (6 calls,     3.384 us/call)
+      file-write call overhead (derived)           0.000006 s  (6 calls,     0.983 us/call)
+    MPI_File_write_at effective bandwidth          15.162 MiB/s
+
+  Output close timing
+    MPI_File_sync                                0.010673 s  (1 calls, 10672.863 us/call)
+    MPI_Win_unlock_all                           0.000017 s  (1 calls,    16.700 us/call)
+    MPI_Win_free                                 0.007792 s  (1 calls,  7791.732 us/call)
+    MPI_File_close                               0.000867 s  (1 calls,   867.109 us/call)
+================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000005 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               8         11      3.356 305113.017     3.340       2        2         1       1          2
+    alignment and SAM length       8       2229     16.257   7293.598     7.961      13        5         3       3          1
+    SAM record generation          8         20      0.001     55.471     0.000       0        0         0       0          0
+    all CPE phases                24       2260     19.615   8679.107     7.961      15        7         4       4          3
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total              11.316909 s
+    slowest completion-observing probe             7.961083 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000005 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    75.801 s
+    stage 1 - allocate and read raw FASTQ blocks             18.357 s
+    stage 2 - align reads and generate SAM records           66.501 s
+    stage 3 - write SAM and release batch data               23.001 s
+      SAM output writes                                        22.419 s
+      batch cleanup and loop overhead (dederived)                 0.720 s
+
+  Stage 1 input details
+    batches completed / stage calls                       9 / 10
+    input-buffer and batch allocations                        0.000 s  (28 calls, max 0.000 s)
+    aggregate requested allocation bytes            318265088
+    FASTQ fseeko calls                                        0.954 s  (18 calls, max 0.266 s)
+    FASTQ fread calls                                        10.758 s  (18 calls, max 1.289 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               5.386 s
+    raw FASTQ bytes read                            318246016  (303.503 MiB)
+    effective fread bandwidth                         28.211 MiB/s
+    slowest allocation                                 0.000 s  (19661688 bytes)
+    slowest fread                                      1.289 s  (R1 offset=196608156, bytes=19660664)
+
+  Stage 2 worker details
+    total - active merge worker                              66.542 s
+      part 1 - prepare CPE task and reusable buffers            0.892 s
+      part 2 - CPE FASTQ formatting and input release           0.148 s
+      part 3 - CPE alignment and SAM length pass               65.252 s
+      part 4 - assign slices in the shared SAM buffer           0.064 s
+      part 5 - CPE SAM record generation                        0.183 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+rived)                 0.583 s
+
+  Stage 1 input details
+    batches completed / stage calls                       8 / 9
+    input-buffer and batch allocations                        0.000 s  (25 calls, max 0.000 s)
+    aggregate requested allocation bytes            314590648
+    FASTQ fseeko calls                                        1.252 s  (16 calls, max 0.276 s)
+    FASTQ fread calls                                        10.222 s  (16 calls, max 1.154 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               6.883 s
+    raw FASTQ bytes read                            314573688  (300.001 MiB)
+    effective fread bandwidth                         29.348 MiB/s
+    slowest allocation                                 0.000 s  (19661844 bytes)
+    slowest fread                                      1.154 s  (R1 offset=216268820, bytes=19661040)
+
+  Stage 2 worker details
+    total - active merge worker                              66.499 s
+      part 1 - prepare CPE task and reusable buffers            0.858 s
+      part 2 - CPE FASTQ formatting and input release           3.457 s
+      part 3 - CPE alignment and SAM length pass               61.944 s
+      part 4 - assign slices in the shared SAM buffer           0.061 s
+      part 5 - CPE SAM record generation                        0.176 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -v 4 -t 1 -o correctness_results/codex_mpi_opt_20260817/baseline_single_no1/SRR7963242_PE.sam -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa ../data/SRR7963242_1.fastq_1 ../data/SRR7963242_2.fastq_1

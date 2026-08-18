@@ -23,6 +23,10 @@ int swbwa_mpi_size(void);
 int swbwa_mpi_is_root(void);
 int swbwa_mpi_barrier(void);
 int swbwa_mpi_progress(void);
+int swbwa_mpi_progress_thread_start(int debug_enabled);
+int swbwa_mpi_progress_thread_active(void);
+int swbwa_mpi_progress_thread_stop(void);
+void swbwa_mpi_progress_thread_report(void);
 void swbwa_mpi_print_rank_ordered(void (*printer)(void));
 void swbwa_mpi_abort(const char *message);
 

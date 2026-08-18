@@ -1480,6 +1480,7 @@ static void swbwa_cpe_run_with_mpi_progress(void *entry,
 {
 #if SWBWA_USE_MPI
     swbwa_cpe_progress_phase_stats_t *stats = NULL;
+    int use_progress_thread = swbwa_mpi_progress_thread_active();
 
     if (swbwa_cpe_progress_debug.enabled)
         stats = &swbwa_cpe_progress_debug.phase[phase];
@@ -1492,6 +1493,10 @@ static void swbwa_cpe_run_with_mpi_progress(void *entry,
         double probe_start = 0.0;
         double probe_seconds = 0.0;
 
+        if (use_progress_thread) {
+            swbwa_cpe_progress_pause();
+            continue;
+        }
         if (stats != NULL) probe_start = swbwa_cpe_progress_now();
         if (swbwa_mpi_progress() != 0)
             swbwa_mpi_abort("MPI_Iprobe failed while a CPE kernel was running");

@@ -1020,6 +1020,13 @@ int main_mem(int argc, char *argv[])
 #endif
 
 	swbwa_cpe_progress_debug_enable(bwa_verbose >= 4);
+#if SWBWA_USE_MPI && \
+    (SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC || \
+     SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED)
+	if (swbwa_mpi_progress_thread_start(bwa_verbose >= 4) != 0)
+		err_fatal(__func__, "failed to start MPI progress thread: %s",
+		          strerror(errno));
+#endif
 	double t0 = GetTime();
 	if (no_mt_io) kt_pipeline_single(1, process, &aux, 3);
 	else kt_pipeline_queue(3, process, &aux, 3);
@@ -1040,10 +1047,17 @@ int main_mem(int argc, char *argv[])
 #endif
 	if (swbwa_output_close() != 0)
 		err_fatal(__func__, "failed to close SAM output: %s", strerror(errno));
+#if SWBWA_USE_MPI && \
+    (SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC || \
+     SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED)
+	if (swbwa_mpi_progress_thread_stop() != 0)
+		err_fatal(__func__, "MPI progress thread failed: %s", strerror(errno));
+#endif
 
     t_tot += GetTime() - t0;
 
 
+	swbwa_mpi_progress_thread_report();
 	swbwa_cpe_progress_debug_report();
     print_timing_report();
 

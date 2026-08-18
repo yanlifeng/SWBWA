@@ -32,17 +32,14 @@ typedef struct {
     uint64_t posix_write_calls;
     uint64_t posix_write_bytes;
     uint64_t reservation_calls;
-    uint64_t file_write_calls;
-    uint64_t file_write_bytes;
+    uint64_t pwrite_calls;
+    uint64_t pwrite_bytes;
     double buffered_flush_seconds;
     double posix_write_seconds;
     double fetch_and_op_seconds;
     double win_flush_seconds;
     double reservation_total_seconds;
-    double file_write_at_seconds;
-    double get_count_seconds;
-    double file_write_total_seconds;
-    double file_sync_seconds;
+    double pwrite_seconds;
     double win_unlock_all_seconds;
     double win_free_seconds;
     double file_close_seconds;
@@ -52,7 +49,6 @@ typedef struct {
     int owns_fd;
     char *name;
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
-    MPI_File file;
     MPI_Win offset_window;
     uint64_t *offset_base;
 #endif
@@ -114,6 +110,35 @@ static int write_all(int fd, const unsigned char *data, size_t length)
 }
 
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+static int pwrite_all(int fd, const unsigned char *data, size_t length,
+                      uint64_t offset)
+{
+    while (length > 0) {
+        size_t chunk = length > (size_t)INT_MAX ? (size_t)INT_MAX : length;
+        double start = output_debug_now();
+        ssize_t written = pwrite(fd, data, chunk, (off_t)offset);
+
+        if (output_state.debug_enabled) {
+            ++output_state.pwrite_calls;
+            output_state.pwrite_seconds += output_debug_now() - start;
+        }
+        if (written < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (written == 0) {
+            errno = EIO;
+            return -1;
+        }
+        if (output_state.debug_enabled)
+            output_state.pwrite_bytes += (uint64_t)written;
+        data += written;
+        length -= (size_t)written;
+        offset += (uint64_t)written;
+    }
+    return 0;
+}
+
 static int mpi_check(int result, const char *operation)
 {
     char error[MPI_MAX_ERROR_STRING];
@@ -131,7 +156,6 @@ static int write_single_unordered(const unsigned char *data, size_t length)
 {
     uint64_t increment;
     uint64_t offset;
-    size_t position = 0;
     int result;
     double reservation_start;
     double operation_start;
@@ -171,47 +195,11 @@ static int write_single_unordered(const unsigned char *data, size_t length)
         return -1;
     }
 
-    while (position < length) {
-        size_t remaining = length - position;
-        int chunk = remaining > INT_MAX ? INT_MAX : (int)remaining;
-        MPI_Status status;
-        int count;
-        double file_start = output_debug_now();
-
-        if (output_state.debug_enabled) ++output_state.file_write_calls;
-        operation_start = output_debug_now();
-
-        result = MPI_File_write_at(output_state.file,
-                                   (MPI_Offset)(offset + position),
-                                   data + position, chunk, MPI_BYTE, &status);
-        if (output_state.debug_enabled) {
-            double operation_end = output_debug_now();
-
-            output_state.file_write_at_seconds +=
-                operation_end - operation_start;
-            operation_start = operation_end;
-        }
-        if (result == MPI_SUCCESS) {
-            result = MPI_Get_count(&status, MPI_BYTE, &count);
-            if (output_state.debug_enabled)
-                output_state.get_count_seconds +=
-                    output_debug_now() - operation_start;
-        }
-        if (output_state.debug_enabled)
-            output_state.file_write_total_seconds +=
-                output_debug_now() - file_start;
-
-        if (mpi_check(result, "MPI_File_write_at/MPI_Get_count") != 0)
-            return -1;
-        if (count != chunk) {
-            errno = EIO;
-            return -1;
-        }
-        if (output_state.debug_enabled)
-            output_state.file_write_bytes += (uint64_t)chunk;
-        position += (size_t)chunk;
-    }
-    return 0;
+    /*
+     * RMA gives every rank a disjoint file extent.  POSIX pwrite keeps those
+     * writes parallel without routing bulk I/O through Sunway MPI progress.
+     */
+    return pwrite_all(output_state.fd, data, length, offset);
 }
 
 static int flush_single_unordered(void)
@@ -254,29 +242,40 @@ int swbwa_output_open(const char *path, int debug_enabled)
     if (output_state.fd < 0) goto fail;
     output_state.owns_fd = 1;
 #elif SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
-    if (sizeof(MPI_Offset) < sizeof(int64_t)) {
+    int local_open_failed;
+    int local_open_errno;
+    int any_open_failed;
+    int open_flags = O_CREAT | O_WRONLY;
+
+    if (sizeof(off_t) < sizeof(int64_t)) {
         errno = EOVERFLOW;
         goto fail;
     }
     output_state.name = strdup(path);
     if (output_state.name == NULL) goto fail;
-    if (mpi_check(MPI_File_open(MPI_COMM_WORLD, output_state.name,
-                                MPI_MODE_CREATE | MPI_MODE_WRONLY,
-                                MPI_INFO_NULL, &output_state.file),
-                  "MPI_File_open") != 0)
+    if (swbwa_mpi_rank() == 0) open_flags |= O_TRUNC;
+    output_state.fd = open(output_state.name, open_flags, 0666);
+    output_state.owns_fd = output_state.fd >= 0;
+    local_open_failed = output_state.fd < 0;
+    local_open_errno = local_open_failed ? errno : 0;
+    if (mpi_check(MPI_Allreduce(&local_open_failed, &any_open_failed, 1,
+                                MPI_INT, MPI_MAX, MPI_COMM_WORLD),
+                  "MPI_Allreduce after output open") != 0)
         goto fail;
-    /* MPI_File_set_size is collective; rank 0 coordinates the truncation. */
-    if (mpi_check(MPI_File_set_size(output_state.file, 0),
-                  "MPI_File_set_size") != 0)
-        goto fail_file;
-    if (mpi_check(MPI_Barrier(MPI_COMM_WORLD), "MPI_Barrier") != 0)
-        goto fail_file;
+    if (any_open_failed) {
+        if (local_open_failed)
+            fprintf(stderr, "[E::output rank %d] failed to open %s: %s\n",
+                    swbwa_mpi_rank(), output_state.name,
+                    strerror(local_open_errno));
+        errno = EIO;
+        goto fail;
+    }
     if (mpi_check(MPI_Win_allocate(swbwa_mpi_rank() == 0 ? sizeof(uint64_t) : 0,
                                    sizeof(uint64_t), MPI_INFO_NULL, MPI_COMM_WORLD,
                                    &output_state.offset_base,
                                    &output_state.offset_window),
                   "MPI_Win_allocate") != 0)
-        goto fail_file;
+        goto fail;
     if (mpi_check(MPI_Win_lock_all(0, output_state.offset_window),
                   "MPI_Win_lock_all") != 0)
         goto fail_window;
@@ -308,8 +307,6 @@ fail_locked_window:
     MPI_Win_unlock_all(output_state.offset_window);
 fail_window:
     MPI_Win_free(&output_state.offset_window);
-fail_file:
-    MPI_File_close(&output_state.file);
 #endif
 fail:
     if (output_state.owns_fd && output_state.fd >= 0) close(output_state.fd);
@@ -420,13 +417,8 @@ static void print_output_debug_report_body(void)
         output_state.reservation_total_seconds -
         output_state.fetch_and_op_seconds -
         output_state.win_flush_seconds;
-    double file_overhead =
-        output_state.file_write_total_seconds -
-        output_state.file_write_at_seconds -
-        output_state.get_count_seconds;
 
     if (reservation_overhead < 0.0) reservation_overhead = 0.0;
-    if (file_overhead < 0.0) file_overhead = 0.0;
 #endif
 
     fprintf(stderr,
@@ -489,31 +481,19 @@ static void print_output_debug_report_body(void)
 
     fprintf(stderr,
             "\n"
-            "  MPI file writes\n"
-            "    MPI_File_write_at calls                      %12" PRIu64 "\n"
-            "    MPI_File_write_at bytes                      %12" PRIu64 "\n",
-            output_state.file_write_calls,
-            output_state.file_write_bytes);
+            "  POSIX positioned writes\n"
+            "    pwrite system calls                          %12" PRIu64 "\n"
+            "    pwrite system-call bytes                     %12" PRIu64 "\n",
+            output_state.pwrite_calls,
+            output_state.pwrite_bytes);
     print_output_debug_time(
-        "MPI file-write path total",
-        output_state.file_write_total_seconds,
-        output_state.file_write_calls, 4);
-    print_output_debug_time(
-        "MPI_File_write_at",
-        output_state.file_write_at_seconds,
-        output_state.file_write_calls, 6);
-    print_output_debug_time(
-        "MPI_Get_count",
-        output_state.get_count_seconds,
-        output_state.file_write_calls, 6);
-    print_output_debug_time(
-        "file-write call overhead (derived)",
-        file_overhead,
-        output_state.file_write_calls, 6);
+        "POSIX pwrite system calls",
+        output_state.pwrite_seconds,
+        output_state.pwrite_calls, 4);
     print_output_debug_rate(
-        "MPI_File_write_at effective bandwidth",
-        output_state.file_write_bytes,
-        output_state.file_write_at_seconds, 4);
+        "POSIX pwrite effective bandwidth",
+        output_state.pwrite_bytes,
+        output_state.pwrite_seconds, 4);
 #else
     fprintf(stderr,
             "\n"
@@ -535,13 +515,11 @@ static void print_output_debug_report_body(void)
     fprintf(stderr, "\n  Output close timing\n");
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
     print_output_debug_time(
-        "MPI_File_sync", output_state.file_sync_seconds, 1, 4);
-    print_output_debug_time(
         "MPI_Win_unlock_all", output_state.win_unlock_all_seconds, 1, 4);
     print_output_debug_time(
         "MPI_Win_free", output_state.win_free_seconds, 1, 4);
     print_output_debug_time(
-        "MPI_File_close", output_state.file_close_seconds, 1, 4);
+        "POSIX close", output_state.file_close_seconds, 1, 4);
 #else
     print_output_debug_time(
         "POSIX close", output_state.file_close_seconds,
@@ -569,13 +547,6 @@ int swbwa_output_close(void)
 
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
     start = output_debug_now();
-    result = MPI_File_sync(output_state.file);
-    if (output_state.debug_enabled)
-        output_state.file_sync_seconds += output_debug_now() - start;
-    if (mpi_check(result, "MPI_File_sync") != 0)
-        status = -1;
-
-    start = output_debug_now();
     result = MPI_Win_unlock_all(output_state.offset_window);
     if (output_state.debug_enabled)
         output_state.win_unlock_all_seconds += output_debug_now() - start;
@@ -590,11 +561,10 @@ int swbwa_output_close(void)
         status = -1;
 
     start = output_debug_now();
-    result = MPI_File_close(&output_state.file);
+    result = close(output_state.fd);
     if (output_state.debug_enabled)
         output_state.file_close_seconds += output_debug_now() - start;
-    if (mpi_check(result, "MPI_File_close") != 0)
-        status = -1;
+    if (result != 0) status = -1;
 #else
     if (output_state.owns_fd) {
         start = output_debug_now();

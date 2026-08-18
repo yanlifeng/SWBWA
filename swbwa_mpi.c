@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +22,128 @@ static int mpi_rank;
 static int mpi_size = 1;
 static int mpi_initialized;
 
+#if SWBWA_USE_MPI
+typedef struct {
+    pthread_t thread;
+    pthread_mutex_t mutex;
+    uint64_t progress_calls;
+    uint64_t calls_over_1ms;
+    uint64_t calls_over_10ms;
+    uint64_t calls_over_100ms;
+    uint64_t calls_over_1s;
+    double progress_seconds;
+    double progress_max_seconds;
+    double lifetime_seconds;
+    int debug_enabled;
+    int stop_requested;
+    int failed;
+    int started;
+} swbwa_mpi_progress_thread_t;
+
+static swbwa_mpi_progress_thread_t progress_thread = {
+    .mutex = PTHREAD_MUTEX_INITIALIZER
+};
+
+static double mpi_progress_now(void)
+{
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0.0;
+    return (double)now.tv_sec + (double)now.tv_nsec * 1.0e-9;
+}
+
+static void mpi_progress_pause(void)
+{
+    struct timespec deadline;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) return;
+    deadline.tv_nsec += 1000000;
+    if (deadline.tv_nsec >= 1000000000) {
+        ++deadline.tv_sec;
+        deadline.tv_nsec -= 1000000000;
+    }
+    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
+                           &deadline, NULL) == EINTR) {
+    }
+}
+
+static int mpi_progress_stop_requested(void)
+{
+    int stop_requested;
+
+    pthread_mutex_lock(&progress_thread.mutex);
+    stop_requested = progress_thread.stop_requested;
+    pthread_mutex_unlock(&progress_thread.mutex);
+    return stop_requested;
+}
+
+static void *mpi_progress_thread_main(void *unused)
+{
+    double lifetime_start = mpi_progress_now();
+
+    (void)unused;
+    while (!mpi_progress_stop_requested()) {
+        double start = mpi_progress_now();
+        double seconds;
+
+        if (swbwa_mpi_progress() != 0) {
+            pthread_mutex_lock(&progress_thread.mutex);
+            progress_thread.failed = 1;
+            pthread_mutex_unlock(&progress_thread.mutex);
+            break;
+        }
+        seconds = mpi_progress_now() - start;
+        if (progress_thread.debug_enabled) {
+            ++progress_thread.progress_calls;
+            progress_thread.progress_seconds += seconds;
+            if (seconds > progress_thread.progress_max_seconds)
+                progress_thread.progress_max_seconds = seconds;
+            if (seconds >= 0.001) ++progress_thread.calls_over_1ms;
+            if (seconds >= 0.010) ++progress_thread.calls_over_10ms;
+            if (seconds >= 0.100) ++progress_thread.calls_over_100ms;
+            if (seconds >= 1.000) ++progress_thread.calls_over_1s;
+        }
+        mpi_progress_pause();
+    }
+    progress_thread.lifetime_seconds = mpi_progress_now() - lifetime_start;
+    return NULL;
+}
+
+static void mpi_progress_thread_report_body(void)
+{
+    double average_us = progress_thread.progress_calls > 0
+                      ? progress_thread.progress_seconds * 1.0e6 /
+                        (double)progress_thread.progress_calls
+                      : 0.0;
+
+    fprintf(stderr,
+            "\n"
+            "================ MPI Progress Thread Debug =================\n"
+            "  MPI rank: %06d / %06d\n"
+            "  lifetime                                      %10.6f s\n"
+            "  MPI_Iprobe calls                              %10" PRIu64 "\n"
+            "  MPI_Iprobe total                              %10.6f s\n"
+            "  MPI_Iprobe average                            %10.3f us\n"
+            "  MPI_Iprobe maximum                            %10.6f s\n"
+            "  calls >= 1 ms                                 %10" PRIu64 "\n"
+            "  calls >= 10 ms                                %10" PRIu64 "\n"
+            "  calls >= 100 ms                               %10" PRIu64 "\n"
+            "  calls >= 1 s                                  %10" PRIu64 "\n"
+            "============================================================\n"
+            "\n",
+            mpi_rank, mpi_size,
+            progress_thread.lifetime_seconds,
+            progress_thread.progress_calls,
+            progress_thread.progress_seconds,
+            average_us,
+            progress_thread.progress_max_seconds,
+            progress_thread.calls_over_1ms,
+            progress_thread.calls_over_10ms,
+            progress_thread.calls_over_100ms,
+            progress_thread.calls_over_1s);
+}
+#endif
+
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 typedef struct {
@@ -35,6 +158,7 @@ typedef struct {
 typedef struct {
     FILE *boundary_file;
     const char *read1_path;
+    int64_t *chunk_boundaries;
     int64_t *record_offsets;
     int64_t *claimed_chunk_ids;
     swbwa_chunk_debug_t *chunk_debug;
@@ -416,6 +540,7 @@ int swbwa_mpi_init(int *argc, char ***argv)
 void swbwa_mpi_finalize(void)
 {
 #if SWBWA_USE_MPI
+    if (progress_thread.started) swbwa_mpi_progress_thread_stop();
     if (mpi_initialized) MPI_Finalize();
 #endif
     mpi_initialized = 0;
@@ -465,6 +590,100 @@ int swbwa_mpi_progress(void)
     }
 #endif
     return 0;
+}
+
+int swbwa_mpi_progress_thread_start(int debug_enabled)
+{
+#if SWBWA_USE_MPI
+    int result;
+
+    pthread_mutex_lock(&progress_thread.mutex);
+    if (progress_thread.started) {
+        pthread_mutex_unlock(&progress_thread.mutex);
+        errno = EALREADY;
+        return -1;
+    }
+    progress_thread.progress_calls = 0;
+    progress_thread.calls_over_1ms = 0;
+    progress_thread.calls_over_10ms = 0;
+    progress_thread.calls_over_100ms = 0;
+    progress_thread.calls_over_1s = 0;
+    progress_thread.progress_seconds = 0.0;
+    progress_thread.progress_max_seconds = 0.0;
+    progress_thread.lifetime_seconds = 0.0;
+    progress_thread.debug_enabled = debug_enabled != 0;
+    progress_thread.stop_requested = 0;
+    progress_thread.failed = 0;
+    progress_thread.started = 1;
+    pthread_mutex_unlock(&progress_thread.mutex);
+
+    result = pthread_create(&progress_thread.thread, NULL,
+                            mpi_progress_thread_main, NULL);
+    if (result != 0) {
+        pthread_mutex_lock(&progress_thread.mutex);
+        progress_thread.started = 0;
+        pthread_mutex_unlock(&progress_thread.mutex);
+        errno = result;
+        return -1;
+    }
+#else
+    (void)debug_enabled;
+#endif
+    return 0;
+}
+
+int swbwa_mpi_progress_thread_active(void)
+{
+#if SWBWA_USE_MPI
+    int active;
+
+    pthread_mutex_lock(&progress_thread.mutex);
+    active = progress_thread.started && !progress_thread.stop_requested &&
+             !progress_thread.failed;
+    pthread_mutex_unlock(&progress_thread.mutex);
+    return active;
+#else
+    return 0;
+#endif
+}
+
+int swbwa_mpi_progress_thread_stop(void)
+{
+#if SWBWA_USE_MPI
+    int failed;
+    int result;
+
+    pthread_mutex_lock(&progress_thread.mutex);
+    if (!progress_thread.started) {
+        pthread_mutex_unlock(&progress_thread.mutex);
+        return 0;
+    }
+    progress_thread.stop_requested = 1;
+    pthread_mutex_unlock(&progress_thread.mutex);
+
+    result = pthread_join(progress_thread.thread, NULL);
+    if (result != 0) {
+        errno = result;
+        return -1;
+    }
+    pthread_mutex_lock(&progress_thread.mutex);
+    failed = progress_thread.failed;
+    progress_thread.started = 0;
+    pthread_mutex_unlock(&progress_thread.mutex);
+    if (failed) {
+        errno = EIO;
+        return -1;
+    }
+#endif
+    return 0;
+}
+
+void swbwa_mpi_progress_thread_report(void)
+{
+#if SWBWA_USE_MPI
+    if (!progress_thread.debug_enabled) return;
+    swbwa_mpi_print_rank_ordered(mpi_progress_thread_report_body);
+#endif
 }
 
 void swbwa_mpi_print_rank_ordered(void (*printer)(void))
@@ -653,12 +872,20 @@ static int scheduler_chunk_range(int64_t index, swbwa_fastq_range_t *range)
     nominal_end = chunk_nominal_offset(index + 1);
 
     memset(range, 0, sizeof(*range));
-    range->start = find_fastq_boundary(chunk_scheduler.boundary_file,
-                                       nominal_start,
-                                       chunk_scheduler.file_size);
-    range->end = find_fastq_boundary(chunk_scheduler.boundary_file,
-                                     nominal_end,
-                                     chunk_scheduler.file_size);
+#if SWBWA_MPI_EXACT_READ_INDEX
+    if (chunk_scheduler.chunk_boundaries != NULL) {
+        range->start = chunk_scheduler.chunk_boundaries[index];
+        range->end = chunk_scheduler.chunk_boundaries[index + 1];
+    } else
+#endif
+    {
+        range->start = find_fastq_boundary(chunk_scheduler.boundary_file,
+                                           nominal_start,
+                                           chunk_scheduler.file_size);
+        range->end = find_fastq_boundary(chunk_scheduler.boundary_file,
+                                         nominal_end,
+                                         chunk_scheduler.file_size);
+    }
     if (range->start < 0 || range->end < range->start) {
         fprintf(stderr,
                 "[E::MPI input rank %d] cannot align FASTQ chunk %" PRId64
@@ -679,9 +906,8 @@ static int scheduler_chunk_range(int64_t index, swbwa_fastq_range_t *range)
 }
 
 #if SWBWA_MPI_EXACT_READ_INDEX
-static int build_exact_record_offsets(void)
+static int build_exact_chunk_index(void)
 {
-    int64_t *boundaries = NULL;
     int value_count;
     int local_status;
     int global_status = 0;
@@ -692,42 +918,44 @@ static int build_exact_record_offsets(void)
         return -1;
     }
     value_count = (int)chunk_scheduler.chunk_count + 1;
+    chunk_scheduler.chunk_boundaries = calloc(
+        (size_t)value_count,
+        sizeof(*chunk_scheduler.chunk_boundaries));
     chunk_scheduler.record_offsets = calloc(
         (size_t)value_count,
         sizeof(*chunk_scheduler.record_offsets));
-    local_status = chunk_scheduler.record_offsets == NULL;
+    local_status = chunk_scheduler.chunk_boundaries == NULL ||
+                   chunk_scheduler.record_offsets == NULL;
     if (MPI_Allreduce(&local_status, &global_status, 1, MPI_INT, MPI_MAX,
                       MPI_COMM_WORLD) != MPI_SUCCESS || global_status != 0)
         return -1;
 
     if (mpi_rank == 0 && chunk_scheduler.chunk_count > 0) {
-        boundaries = malloc((size_t)value_count * sizeof(*boundaries));
-        if (boundaries == NULL) {
-            root_status = -1;
-        } else {
-            for (int index = 0; index < value_count; ++index) {
-                boundaries[index] = find_fastq_boundary(
-                    chunk_scheduler.boundary_file,
-                    chunk_nominal_offset(index),
-                    chunk_scheduler.file_size);
-                if (boundaries[index] < 0 ||
-                    (index > 0 &&
-                     boundaries[index] < boundaries[index - 1])) {
-                    root_status = -1;
-                    break;
-                }
+        for (int index = 0; index < value_count; ++index) {
+            chunk_scheduler.chunk_boundaries[index] = find_fastq_boundary(
+                chunk_scheduler.boundary_file,
+                chunk_nominal_offset(index),
+                chunk_scheduler.file_size);
+            if (chunk_scheduler.chunk_boundaries[index] < 0 ||
+                (index > 0 &&
+                 chunk_scheduler.chunk_boundaries[index] <
+                     chunk_scheduler.chunk_boundaries[index - 1])) {
+                root_status = -1;
+                break;
             }
         }
         if (root_status == 0 &&
             scan_fastq_record_offsets(
                 chunk_scheduler.boundary_file, chunk_scheduler.read1_path,
-                boundaries, value_count,
+                chunk_scheduler.chunk_boundaries, value_count,
                 chunk_scheduler.record_offsets) != 0)
             root_status = -1;
     }
-    free(boundaries);
     if (MPI_Bcast(&root_status, 1, MPI_INT, 0, MPI_COMM_WORLD) != MPI_SUCCESS ||
         root_status != 0)
+        return -1;
+    if (MPI_Bcast(chunk_scheduler.chunk_boundaries, value_count, MPI_INT64_T,
+                  0, MPI_COMM_WORLD) != MPI_SUCCESS)
         return -1;
     return MPI_Bcast(chunk_scheduler.record_offsets, value_count, MPI_INT64_T,
                      0, MPI_COMM_WORLD) == MPI_SUCCESS ? 0 : -1;
@@ -819,7 +1047,11 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
     }
 
 #if SWBWA_MPI_EXACT_READ_INDEX
-    if (build_exact_record_offsets() != 0) goto fail;
+    if (build_exact_chunk_index() != 0) goto fail;
+    if (chunk_scheduler.boundary_file != NULL) {
+        fclose(chunk_scheduler.boundary_file);
+        chunk_scheduler.boundary_file = NULL;
+    }
 #endif
 
     chunk_scheduler.local_ticket = 0;
@@ -866,6 +1098,7 @@ fail_window:
 fail:
     if (chunk_scheduler.boundary_file != NULL)
         fclose(chunk_scheduler.boundary_file);
+    free(chunk_scheduler.chunk_boundaries);
     free(chunk_scheduler.record_offsets);
     free(chunk_scheduler.claimed_chunk_ids);
     free(chunk_scheduler.chunk_debug);
@@ -1214,6 +1447,7 @@ void swbwa_mpi_fastq_scheduler_close(void)
     scheduler_debug_report();
     if (chunk_scheduler.boundary_file != NULL)
         fclose(chunk_scheduler.boundary_file);
+    free(chunk_scheduler.chunk_boundaries);
     free(chunk_scheduler.record_offsets);
     free(chunk_scheduler.claimed_chunk_ids);
     free(chunk_scheduler.chunk_debug);

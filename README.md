@@ -48,13 +48,19 @@ The supported build variables are:
 | `USE_MPI` | `0`, `1` | `1` |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
 | `OUTPUT_MODE` | `split`, `single_unordered` | `single_unordered` |
-| `MPI_EXACT_READ_INDEX` | `0`, `1` | `0` |
+| `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
 
 The three `MPI_*`/`OUTPUT_MODE` options are only defined and validated when
 `USE_MPI=1`; they have no effect in a non-MPI build.
 
 `MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the
 complete FASTQ once before alignment to build exact record prefixes.
+
+Dynamic MPI input keeps the configured large chunks for the first part of the
+FASTQ. In the final 10% of the input it switches to chunks one quarter that
+size, reducing end-of-run load imbalance while retaining coarse scheduling for
+most of the file. Set `SWBWA_MPI_TAIL_PERCENT=0` at runtime to disable this
+tail refinement for profiling; values from 0 through 100 are accepted.
 
 For example:
 

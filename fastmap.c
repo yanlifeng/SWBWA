@@ -918,8 +918,8 @@ int main_mem(int argc, char *argv[])
 		if (swbwa_mpi_is_root())
 			fprintf(stderr,
 			        "[MPI input] mode=dynamic chunks=%lld bytes_per_cg=%lld"
-			        " cg_count=%d chunk_bytes=%lld file_bytes=%lld"
-			        " scheduler=distributed"
+			        " cg_count=%d chunk_bytes=%lld micro_chunk_bytes=%lld"
+			        " tail_percent=%d file_bytes=%lld scheduler=distributed"
 #if SWBWA_MPI_EXACT_READ_INDEX
 			        " read_index=exact\n",
 #else
@@ -928,6 +928,8 @@ int main_mem(int argc, char *argv[])
 			        (long long)chunk_count,
 			        (long long)aux.fastq_bytes_per_cg, SWBWA_CG_COUNT,
 			        (long long)swbwa_mpi_fastq_scheduler_chunk_bytes(),
+			        (long long)swbwa_mpi_fastq_scheduler_micro_chunk_bytes(),
+			        swbwa_mpi_fastq_scheduler_tail_percent(),
 			        (long long)assigned_range.file_size);
 	}
 #else

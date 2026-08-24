@@ -162,8 +162,12 @@ typedef struct {
     int64_t *record_offsets;
     int64_t *claimed_chunk_ids;
     swbwa_chunk_debug_t *chunk_debug;
+    int64_t body_chunk_count;
     int64_t chunk_count;
     int64_t chunk_bytes;
+    int64_t micro_chunk_bytes;
+    int64_t tail_start;
+    int64_t tail_bytes;
     int64_t file_size;
     int64_t local_chunks;
     int64_t local_records;
@@ -187,6 +191,7 @@ typedef struct {
     int debug_enabled;
     int opened;
     int next_queue;
+    int tail_percent;
     unsigned long long local_ticket;
     MPI_Win ticket_window;
 } swbwa_fastq_scheduler_t;
@@ -206,6 +211,11 @@ typedef struct {
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 static swbwa_fastq_scheduler_t chunk_scheduler;
+
+enum {
+    SWBWA_MPI_DEFAULT_TAIL_PERCENT = 10,
+    SWBWA_MPI_MICRO_CHUNK_DIVISOR = 4
+};
 
 static double scheduler_debug_now(void)
 {
@@ -852,11 +862,41 @@ int swbwa_mpi_fastq_range(const char *read1_path, const char *read2_path,
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 static int64_t chunk_nominal_offset(int64_t index)
 {
+    int64_t tail_index;
+
     if (index <= 0) return 0;
-    if (index >= chunk_scheduler.chunk_count ||
-        index > chunk_scheduler.file_size / chunk_scheduler.chunk_bytes)
+    if (index >= chunk_scheduler.chunk_count)
         return chunk_scheduler.file_size;
-    return index * chunk_scheduler.chunk_bytes;
+
+    if (index <= chunk_scheduler.body_chunk_count)
+        return index * chunk_scheduler.chunk_bytes;
+
+    tail_index = index - chunk_scheduler.body_chunk_count;
+    return chunk_scheduler.tail_start +
+           tail_index * chunk_scheduler.micro_chunk_bytes;
+}
+
+static int parse_scheduler_tail_percent(void)
+{
+    const char *value = getenv("SWBWA_MPI_TAIL_PERCENT");
+    char *end = NULL;
+    long percent;
+
+    if (value == NULL || *value == '\0')
+        return SWBWA_MPI_DEFAULT_TAIL_PERCENT;
+
+    errno = 0;
+    percent = strtol(value, &end, 10);
+    if (errno == ERANGE || end == value || *end != '\0' ||
+        percent < 0 || percent > 100) {
+        if (mpi_rank == 0)
+            fprintf(stderr,
+                    "[E::MPI input] invalid SWBWA_MPI_TAIL_PERCENT='%s'\n",
+                    value);
+        errno = EINVAL;
+        return -1;
+    }
+    return (int)percent;
 }
 
 static int scheduler_chunk_range(int64_t index, swbwa_fastq_range_t *range)
@@ -970,6 +1010,7 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
                                    int64_t *chunk_count)
 {
     int local_status;
+    int requested_tail_percent;
 
     if (chunk_scheduler.opened || assigned_range == NULL ||
         chunk_count == NULL || bytes_per_cg <= 0) {
@@ -982,37 +1023,85 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
     local_status = swbwa_fastq_chunk_bytes(
         read1_path, read2_path, bytes_per_cg, &chunk_scheduler.file_size,
         &chunk_scheduler.chunk_bytes) != 0;
+    requested_tail_percent = parse_scheduler_tail_percent();
+    if (requested_tail_percent < 0) local_status = 1;
 
     {
         int global_status = 0;
-        int64_t local_values[2];
-        int64_t min_values[2];
-        int64_t max_values[2];
+        int64_t local_values[3];
+        int64_t min_values[3];
+        int64_t max_values[3];
 
         if (MPI_Allreduce(&local_status, &global_status, 1, MPI_INT, MPI_MAX,
                           MPI_COMM_WORLD) != MPI_SUCCESS || global_status != 0)
             goto fail;
         local_values[0] = chunk_scheduler.file_size;
         local_values[1] = chunk_scheduler.chunk_bytes;
-        if (MPI_Allreduce(local_values, min_values, 2, MPI_INT64_T, MPI_MIN,
+        local_values[2] = requested_tail_percent;
+        if (MPI_Allreduce(local_values, min_values, 3, MPI_INT64_T, MPI_MIN,
                           MPI_COMM_WORLD) != MPI_SUCCESS ||
-            MPI_Allreduce(local_values, max_values, 2, MPI_INT64_T, MPI_MAX,
+            MPI_Allreduce(local_values, max_values, 3, MPI_INT64_T, MPI_MAX,
                           MPI_COMM_WORLD) != MPI_SUCCESS)
             goto fail;
         if (min_values[0] != max_values[0] ||
-            min_values[1] != max_values[1]) {
+            min_values[1] != max_values[1] ||
+            min_values[2] != max_values[2]) {
             if (mpi_rank == 0)
                 fprintf(stderr,
-                        "[E::MPI input] ranks disagree on FASTQ or chunk size\n");
+                        "[E::MPI input] ranks disagree on FASTQ size, chunk"
+                        " size, or tail percentage\n");
             errno = EINVAL;
             goto fail;
         }
     }
 
     if (chunk_scheduler.file_size != 0) {
-        chunk_scheduler.chunk_count =
-            chunk_scheduler.file_size / chunk_scheduler.chunk_bytes +
-            (chunk_scheduler.file_size % chunk_scheduler.chunk_bytes != 0);
+        chunk_scheduler.tail_percent = requested_tail_percent;
+
+        if (chunk_scheduler.tail_percent == 0) {
+            chunk_scheduler.body_chunk_count =
+                chunk_scheduler.file_size / chunk_scheduler.chunk_bytes +
+                (chunk_scheduler.file_size % chunk_scheduler.chunk_bytes != 0);
+            chunk_scheduler.tail_start = chunk_scheduler.file_size;
+            chunk_scheduler.tail_bytes = 0;
+            chunk_scheduler.micro_chunk_bytes = 0;
+            chunk_scheduler.chunk_count =
+                chunk_scheduler.body_chunk_count;
+        } else {
+            int64_t tail_target =
+                chunk_scheduler.file_size / 100 *
+                    chunk_scheduler.tail_percent +
+                chunk_scheduler.file_size % 100 *
+                    chunk_scheduler.tail_percent / 100;
+            int64_t tail_chunk_count;
+
+            if (tail_target == 0) tail_target = 1;
+            chunk_scheduler.micro_chunk_bytes =
+                chunk_scheduler.chunk_bytes /
+                SWBWA_MPI_MICRO_CHUNK_DIVISOR;
+            if (chunk_scheduler.micro_chunk_bytes == 0)
+                chunk_scheduler.micro_chunk_bytes = 1;
+            chunk_scheduler.body_chunk_count =
+                (chunk_scheduler.file_size - tail_target) /
+                chunk_scheduler.chunk_bytes;
+            chunk_scheduler.tail_start =
+                chunk_scheduler.body_chunk_count *
+                chunk_scheduler.chunk_bytes;
+            chunk_scheduler.tail_bytes =
+                chunk_scheduler.file_size - chunk_scheduler.tail_start;
+            tail_chunk_count =
+                chunk_scheduler.tail_bytes /
+                    chunk_scheduler.micro_chunk_bytes +
+                (chunk_scheduler.tail_bytes %
+                    chunk_scheduler.micro_chunk_bytes != 0);
+            if (chunk_scheduler.body_chunk_count >
+                INT64_MAX - tail_chunk_count) {
+                errno = EOVERFLOW;
+                goto fail;
+            }
+            chunk_scheduler.chunk_count =
+                chunk_scheduler.body_chunk_count + tail_chunk_count;
+        }
         chunk_scheduler.boundary_file = fopen(read1_path, "rb");
         local_status = chunk_scheduler.boundary_file == NULL;
     } else {
@@ -1109,6 +1198,16 @@ fail:
 int64_t swbwa_mpi_fastq_scheduler_chunk_bytes(void)
 {
     return chunk_scheduler.chunk_bytes;
+}
+
+int swbwa_mpi_fastq_scheduler_tail_percent(void)
+{
+    return chunk_scheduler.tail_percent;
+}
+
+int64_t swbwa_mpi_fastq_scheduler_micro_chunk_bytes(void)
+{
+    return chunk_scheduler.micro_chunk_bytes;
 }
 
 int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)

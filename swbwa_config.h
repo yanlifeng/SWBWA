@@ -12,6 +12,7 @@
  *   make USE_MPI=1 MPI_INPUT_MODE=dynamic OUTPUT_MODE=split
  *   make USE_MPI=1 MPI_INPUT_MODE=dynamic MPI_EXACT_READ_INDEX=1
  *   make HOST_MALLOC_WRAPPER=1 HOST_MALLOC_STATS=1
+ *   make CPE_PROFILE=1 CPE_PROFILE_CG=5
  */
 
 #ifndef SWBWA_USE_MPI
@@ -113,6 +114,22 @@
 
 #if SWBWA_ENABLE_HOST_MALLOC_STATS && !SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 #error "host malloc statistics require the host malloc wrapper"
+#endif
+
+#ifndef SWBWA_ENABLE_CPE_PROFILE
+#define SWBWA_ENABLE_CPE_PROFILE 0
+#endif
+
+#if SWBWA_ENABLE_CPE_PROFILE != 0 && SWBWA_ENABLE_CPE_PROFILE != 1
+#error "SWBWA_ENABLE_CPE_PROFILE must be 0 or 1"
+#endif
+
+#ifndef SWBWA_CPE_PROFILE_CG
+#define SWBWA_CPE_PROFILE_CG 0
+#endif
+
+#if SWBWA_CPE_PROFILE_CG < 0 || SWBWA_CPE_PROFILE_CG >= 6
+#error "SWBWA_CPE_PROFILE_CG must be between 0 and 5"
 #endif
 
 #ifndef SWBWA_ENABLE_CPE_MALLOC_WRAPPER

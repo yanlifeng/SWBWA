@@ -1,0 +1,21 @@
+bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+scripts/sorted_sam_md5: line 19: 19475 Segmentation fault      (core dumped) "$sorter" --stream "$@"
+     19476 Done                    | md5sum
+     19477 Done                    | awk 'NR == 1 { print $1 }' > "$temporary"
+[7873545 ## 2026-08-23/22:31:45] warning: cpu [21621]: user's mpe task: tid= 0, pid= 19449, exit_code= 1
+Reserved space for 33554432 SAM records
+Loaded 1000000 SAM records
+Loaded 2000000 SAM records
+Loaded 3000000 SAM records
+Loaded 4000000 SAM records
+Loaded 5000000 SAM records
+Loaded 6000000 SAM records
+Loaded 7000000 SAM records
+Loaded 8000000 SAM records
+Loaded 9000000 SAM records
+Loaded 10000000 SAM records
+Finished loading 10057343 SAM records
+Sorting records by ID...
+Sorting finished
+Hashing sorted SAM stream...
+Hashed 10057343 sorted SAM records

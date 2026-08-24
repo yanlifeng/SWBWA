@@ -9,6 +9,8 @@ AR  = ar
 # CPE_ALLOCATOR: system | pool
 # HOST_MALLOC_WRAPPER: 0 | 1
 # HOST_MALLOC_STATS:   0 | 1 (requires HOST_MALLOC_WRAPPER=1)
+# CPE_PROFILE:         0 | 1
+# CPE_PROFILE_CG:      CG sampled by LWPF when CPE_PROFILE=1 (0..5)
 # USE_MPI:       0 | 1
 # MPI-only options:
 #   MPI_INPUT_MODE: static | dynamic
@@ -18,6 +20,9 @@ EXEC_MODE           ?= single
 CPE_ALLOCATOR       ?= system
 HOST_MALLOC_WRAPPER ?= 1
 HOST_MALLOC_STATS   ?= 0
+CPE_PROFILE         ?= 0
+CPE_PROFILE_CG      ?= $(if $(filter single,$(EXEC_MODE)),0,5)
+LWPF3_DIR            ?= /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/lwpf3
 
 USE_MPI              ?= 1
 ifeq ($(USE_MPI),1)
@@ -49,6 +54,19 @@ $(error HOST_MALLOC_WRAPPER must be 0 or 1)
 endif
 ifeq ($(filter $(HOST_MALLOC_STATS),$(VALID_BOOLEAN_VALUES)),)
 $(error HOST_MALLOC_STATS must be 0 or 1)
+endif
+ifeq ($(filter $(CPE_PROFILE),$(VALID_BOOLEAN_VALUES)),)
+$(error CPE_PROFILE must be 0 or 1)
+endif
+ifeq ($(CPE_PROFILE),1)
+ifeq ($(filter $(CPE_PROFILE_CG),0 1 2 3 4 5),)
+$(error CPE_PROFILE_CG must be between 0 and 5)
+endif
+ifeq ($(EXEC_MODE),single)
+ifneq ($(CPE_PROFILE_CG),0)
+$(error EXEC_MODE=single requires CPE_PROFILE_CG=0)
+endif
+endif
 endif
 ifeq ($(HOST_MALLOC_STATS),1)
 ifneq ($(HOST_MALLOC_WRAPPER),1)
@@ -88,6 +106,8 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_ENABLE_HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER) \
 	-DSWBWA_ENABLE_HOST_MALLOC_STATS=$(HOST_MALLOC_STATS) \
 	-DSWBWA_ENABLE_CPE_MALLOC_WRAPPER=$(CPE_MALLOC_WRAPPER_$(CPE_ALLOCATOR)) \
+	-DSWBWA_ENABLE_CPE_PROFILE=$(CPE_PROFILE) \
+	-DSWBWA_CPE_PROFILE_CG=$(CPE_PROFILE_CG) \
 	-DSWBWA_USE_MPI=$(USE_MPI)
 
 ifeq ($(USE_MPI),1)
@@ -104,6 +124,9 @@ DBGFLAGS  ?= -g
 
 CPPFLAGS += -include swbwa_config.h $(SWBWA_CPPFLAGS)
 DFLAGS   += -DHAVE_PTHREAD
+ifeq ($(CPE_PROFILE),1)
+INCLUDES += -I$(LWPF3_DIR)
+endif
 CFLAGS   += $(WARNFLAGS) $(DBGFLAGS) $(OPTFLAGS) -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
 CXXFLAGS += -std=c++11
 LDFLAGS  +=
@@ -129,7 +152,7 @@ APP_OBJS := \
 	bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o \
 	kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o \
 	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o swbwa_mpi.o \
-	swbwa_output.o
+	swbwa_output.o swbwa_cpe_profile.o
 
 SLAVE_DIR     := slave
 SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
@@ -145,6 +168,11 @@ print-config:
 	@echo "CPE_ALLOCATOR=$(CPE_ALLOCATOR)"
 	@echo "HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER)"
 	@echo "HOST_MALLOC_STATS=$(HOST_MALLOC_STATS)"
+	@echo "CPE_PROFILE=$(CPE_PROFILE)"
+ifeq ($(CPE_PROFILE),1)
+	@echo "CPE_PROFILE_CG=$(CPE_PROFILE_CG)"
+	@echo "LWPF3_DIR=$(LWPF3_DIR)"
+endif
 	@echo "USE_MPI=$(USE_MPI)"
 ifeq ($(USE_MPI),1)
 	@echo "MPI_INPUT_MODE=$(MPI_INPUT_MODE)"

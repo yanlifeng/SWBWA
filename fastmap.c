@@ -46,6 +46,7 @@
 #include "swbwa_runtime.h"
 #include "swbwa_mpi.h"
 #include "swbwa_output.h"
+#include "swbwa_cpe_profile.h"
 
 #include <athread.h>
 //KSEQ_DECLARE(gzFile)
@@ -1011,6 +1012,7 @@ int main_mem(int argc, char *argv[])
 	}
 
 	init_cpe_allocator();
+	swbwa_cpe_profile_init();
 
 
 #if SWBWA_USE_MPI && \
@@ -1059,6 +1061,7 @@ int main_mem(int argc, char *argv[])
 
 	swbwa_mpi_progress_thread_report();
 	swbwa_cpe_progress_debug_report();
+	swbwa_cpe_profile_report(stderr);
     print_timing_report();
 
 

@@ -1,0 +1,1521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Swbwa Bigdata Performance</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="Swbwa Bigdata Performance" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;Swbwa Bigdata Performance&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: var(--border-radius-lg, 12.5px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed=&quot;true&quot;],
+  [aria-selected=&quot;true&quot;],
+  .is-selected
+) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: 16px !important;
+  height: 16px !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;swbwa-bigdata-performance&quot;&gt;
+  &lt;style&gt;
+    #swbwa-bigdata-performance {
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      width: 100%;
+      max-width: 1024px;
+      margin: 0 auto;
+    }
+    #swbwa-bigdata-performance h2,
+    #swbwa-bigdata-performance h3 {
+      margin: 0;
+      color: var(--foreground);
+      letter-spacing: 0;
+    }
+    #swbwa-bigdata-performance h2 { font-size: 20px; }
+    #swbwa-bigdata-performance h3 { font-size: 16px; margin-top: 28px; }
+    #swbwa-bigdata-performance .status {
+      margin: 6px 0 14px;
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+    #swbwa-bigdata-performance .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin: 10px 0 14px;
+      font-size: 12px;
+    }
+    #swbwa-bigdata-performance .legend button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--foreground);
+      cursor: pointer;
+      font: inherit;
+    }
+    #swbwa-bigdata-performance .legend button[aria-pressed=&quot;false&quot;] { opacity: 0.35; }
+    #swbwa-bigdata-performance .swatch { width: 14px; height: 4px; }
+    #swbwa-bigdata-performance .s1 { background: var(--viz-series-1); }
+    #swbwa-bigdata-performance .s2 { background: var(--viz-series-2); }
+    #swbwa-bigdata-performance .s3 { background: var(--viz-series-3); }
+    #swbwa-bigdata-performance .total-key {
+      width: 8px;
+      height: 8px;
+      border: 1px solid var(--foreground);
+      transform: rotate(45deg);
+    }
+    #swbwa-bigdata-performance .facet-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px 22px;
+      margin-top: 10px;
+    }
+    #swbwa-bigdata-performance .facet { min-width: 0; }
+    #swbwa-bigdata-performance .facet-title {
+      font-size: 13px;
+      font-weight: 650;
+      margin: 0 0 3px;
+    }
+    #swbwa-bigdata-performance svg { display: block; width: 100%; overflow: visible; }
+    #swbwa-bigdata-performance svg text {
+      fill: var(--foreground);
+      font-size: 12px;
+      letter-spacing: 0;
+    }
+    #swbwa-bigdata-performance svg .axis text { fill: var(--muted-foreground); }
+    #swbwa-bigdata-performance svg .axis path,
+    #swbwa-bigdata-performance svg .axis line { stroke: var(--border); }
+    #swbwa-bigdata-performance svg rect[data-chart-frame] {
+      fill: transparent;
+      stroke: var(--border);
+    }
+    #swbwa-bigdata-performance .note {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin: 4px 0 10px;
+    }
+    #swbwa-bigdata-performance .tooltip {
+      position: absolute;
+      pointer-events: none;
+      z-index: 20;
+      display: none;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      background: var(--popover);
+      color: var(--popover-foreground);
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: nowrap;
+    }
+    @media (min-width: 850px) {
+      #swbwa-bigdata-performance .facet-grid { grid-template-columns: 1fr 1fr; }
+    }
+  &lt;/style&gt;
+
+  &lt;h2&gt;SWBWA 大数据正确性与阶段耗时&lt;/h2&gt;
+  &lt;div class=&quot;status&quot;&gt;60 / 60 个配置-数据-读模式组合通过标准 MD5；单位均为 wall-clock 秒。&lt;/div&gt;
+  &lt;div class=&quot;legend&quot; aria-label=&quot;阶段图例&quot;&gt;
+    &lt;button type=&quot;button&quot; data-stage=&quot;stage1_s&quot; aria-pressed=&quot;true&quot;&gt;&lt;span class=&quot;swatch s1&quot;&gt;&lt;/span&gt;Stage 1 读 FASTQ&lt;/button&gt;
+    &lt;button type=&quot;button&quot; data-stage=&quot;stage2_s&quot; aria-pressed=&quot;true&quot;&gt;&lt;span class=&quot;swatch s2&quot;&gt;&lt;/span&gt;Stage 2 比对与 SAM 生成&lt;/button&gt;
+    &lt;button type=&quot;button&quot; data-stage=&quot;stage3_s&quot; aria-pressed=&quot;true&quot;&gt;&lt;span class=&quot;swatch s3&quot;&gt;&lt;/span&gt;Stage 3 写出与清理&lt;/button&gt;
+    &lt;span style=&quot;display:inline-flex;align-items:center;gap:7px&quot;&gt;&lt;span class=&quot;total-key&quot;&gt;&lt;/span&gt;Pipeline total&lt;/span&gt;
+  &lt;/div&gt;
+
+  &lt;h3&gt;has1：三阶段串行分解&lt;/h3&gt;
+  &lt;div class=&quot;note&quot;&gt;每条堆叠柱直接显示 Stage 1 / 2 / 3；柱尾为 pipeline total。&lt;/div&gt;
+  &lt;div id=&quot;swbwa-has1-stacked&quot; class=&quot;facet-grid&quot;&gt;&lt;/div&gt;
+
+  &lt;h3&gt;has1：仅 Stage 2&lt;/h3&gt;
+  &lt;div class=&quot;note&quot;&gt;独立比较纯比对阶段，排除 FASTQ 读取和 SAM 写出影响。&lt;/div&gt;
+  &lt;div id=&quot;swbwa-has1-stage2&quot; class=&quot;facet-grid&quot;&gt;&lt;/div&gt;
+
+  &lt;h3&gt;no1：并行流水线中的阶段累计时间&lt;/h3&gt;
+  &lt;div class=&quot;note&quot;&gt;Stage 1/2/3 会重叠，不能相加；菱形为 pipeline total，每行粗体标注累计时间最长的阶段。&lt;/div&gt;
+  &lt;div id=&quot;swbwa-no1-overlap&quot; class=&quot;facet-grid&quot;&gt;&lt;/div&gt;
+  &lt;div class=&quot;tooltip&quot; role=&quot;tooltip&quot;&gt;&lt;/div&gt;
+
+  &lt;script src=&quot;https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js&quot;&gt;&lt;/script&gt;
+  &lt;script&gt;
+  (() =&gt; {
+    const root = document.getElementById(&#x27;swbwa-bigdata-performance&#x27;);
+    const tooltip = root.querySelector(&#x27;.tooltip&#x27;);
+    const raw = `configuration\tio_mode\tdataset\tread_mode\ttotal_s\tstage1_s\tstage2_s\tstage3_s\tsam_write_s\tfread_s
+cgs_cross_pool\thas1\tERR1203383\tPE\t264.869\t50.134\t71.093\t143.030\t132.047\t50.117
+cgs_cross_pool\thas1\tERR1203383\tSE\t122.750\t25.476\t29.281\t67.543\t62.058\t25.461
+cgs_cross_pool\thas1\tsmall_SRR7963242\tPE\t409.185\t52.027\t220.988\t135.568\t128.398\t52.013
+cgs_cross_pool\thas1\tsmall_SRR7963242\tSE\t147.198\t26.565\t55.641\t64.625\t61.043\t26.549
+cgs_cross_pool\thas1\tSRR2496709\tPE\t269.063\t59.373\t69.618\t139.221\t130.188\t59.346
+cgs_cross_pool\thas1\tSRR2496709\tSE\t119.881\t26.037\t29.020\t64.013\t59.484\t26.022
+cgs_cross_system\thas1\tERR1203383\tPE\t295.213\t61.046\t90.421\t143.144\t132.231\t61.022
+cgs_cross_system\thas1\tERR1203383\tSE\t141.782\t33.322\t40.484\t67.531\t62.036\t33.297
+cgs_cross_system\thas1\tsmall_SRR7963242\tPE\t744.129\t74.084\t528.387\t140.972\t133.822\t74.054
+cgs_cross_system\thas1\tsmall_SRR7963242\tSE\t189.353\t36.121\t87.510\t65.342\t61.759\t36.095
+cgs_cross_system\thas1\tSRR2496709\tPE\t305.581\t66.078\t100.378\t138.232\t129.253\t66.052
+cgs_cross_system\thas1\tSRR2496709\tSE\t133.615\t25.980\t42.444\t64.301\t59.800\t25.964
+cgs_pool\thas1\tERR1203383\tPE\t317.027\t67.543\t112.352\t136.560\t125.668\t67.532
+cgs_pool\thas1\tERR1203383\tSE\t147.611\t28.176\t51.330\t67.667\t62.218\t28.165
+cgs_pool\thas1\tsmall_SRR7963242\tPE\t430.522\t67.306\t225.965\t136.611\t129.439\t67.280
+cgs_pool\thas1\tsmall_SRR7963242\tSE\t174.187\t27.591\t79.819\t66.402\t62.821\t27.578
+cgs_pool\thas1\tSRR2496709\tPE\t306.812\t64.827\t102.679\t138.481\t129.469\t64.800
+cgs_pool\thas1\tSRR2496709\tSE\t137.120\t24.388\t47.132\t64.774\t60.267\t24.385
+cgs_system\thas1\tERR1203383\tPE\t317.725\t59.192\t120.710\t137.229\t126.228\t59.187
+cgs_system\thas1\tERR1203383\tSE\t150.079\t26.556\t54.581\t68.509\t62.998\t26.552
+cgs_system\thas1\tsmall_SRR7963242\tPE\t768.353\t97.264\t529.156\t141.298\t134.105\t97.256
+cgs_system\thas1\tsmall_SRR7963242\tSE\t190.927\t27.161\t97.053\t66.344\t62.737\t27.153
+cgs_system\thas1\tSRR2496709\tPE\t350.127\t84.734\t125.381\t139.166\t130.094\t84.724
+cgs_system\thas1\tSRR2496709\tSE\t145.266\t24.480\t54.498\t65.449\t60.908\t24.478
+single_system\thas1\tERR1203383\tPE\t557.102\t67.180\t351.031\t138.308\t127.355\t67.161
+single_system\thas1\tERR1203383\tSE\t224.237\t30.316\t129.112\t64.387\t58.907\t30.300
+single_system\thas1\tsmall_SRR7963242\tPE\t1569.846\t162.691\t1275.176\t131.353\t124.178\t162.657
+single_system\thas1\tsmall_SRR7963242\tSE\t370.406\t28.914\t277.616\t63.540\t59.953\t28.896
+single_system\thas1\tSRR2496709\tPE\t543.031\t62.032\t348.645\t131.522\t122.482\t62.013
+single_system\thas1\tSRR2496709\tSE\t227.363\t33.496\t130.556\t62.444\t57.928\t33.480
+cgs_cross_pool\tno1\tERR1203383\tPE\t188.202\t70.974\t73.120\t182.818\t170.010\t70.940
+cgs_cross_pool\tno1\tERR1203383\tSE\t91.877\t35.760\t31.055\t88.406\t81.822\t35.742
+cgs_cross_pool\tno1\tsmall_SRR7963242\tPE\t226.982\t91.685\t221.732\t181.067\t172.429\t91.656
+cgs_cross_pool\tno1\tsmall_SRR7963242\tSE\t93.286\t41.565\t56.792\t89.241\t85.027\t41.543
+cgs_cross_pool\tno1\tSRR2496709\tPE\t184.673\t79.911\t71.352\t178.724\t167.644\t79.871
+cgs_cross_pool\tno1\tSRR2496709\tSE\t89.448\t36.642\t30.515\t85.529\t79.814\t36.623
+cgs_cross_system\tno1\tERR1203383\tPE\t200.828\t90.357\t91.681\t194.267\t179.686\t90.324
+cgs_cross_system\tno1\tERR1203383\tSE\t101.109\t39.433\t42.667\t97.781\t90.343\t39.419
+cgs_cross_system\tno1\tsmall_SRR7963242\tPE\t619.470\t97.975\t615.560\t224.670\t206.385\t97.958
+cgs_cross_system\tno1\tsmall_SRR7963242\tSE\t108.433\t51.418\t90.361\t103.204\t96.987\t51.385
+cgs_cross_system\tno1\tSRR2496709\tPE\t206.594\t86.994\t103.154\t199.970\t184.674\t86.969
+cgs_cross_system\tno1\tSRR2496709\tSE\t98.161\t40.352\t43.915\t94.074\t88.060\t40.323
+cgs_pool\tno1\tERR1203383\tPE\t241.957\t100.925\t115.341\t234.885\t215.740\t100.879
+cgs_pool\tno1\tERR1203383\tSE\t115.908\t42.827\t52.753\t111.889\t100.933\t42.820
+cgs_pool\tno1\tsmall_SRR7963242\tPE\t243.229\t126.196\t227.530\t231.095\t211.806\t126.182
+cgs_pool\tno1\tsmall_SRR7963242\tSE\t129.149\t58.403\t81.840\t123.958\t116.372\t58.391
+cgs_pool\tno1\tSRR2496709\tPE\t232.261\t93.339\t104.582\t225.470\t208.955\t93.309
+cgs_pool\tno1\tSRR2496709\tSE\t110.754\t42.176\t48.408\t106.547\t97.622\t42.168
+cgs_system\tno1\tERR1203383\tPE\t260.193\t90.188\t122.411\t253.315\t235.976\t90.160
+cgs_system\tno1\tERR1203383\tSE\t124.138\t54.334\t55.968\t120.241\t106.193\t54.321
+cgs_system\tno1\tsmall_SRR7963242\tPE\t626.289\t97.012\t622.153\t224.058\t206.398\t97.002
+cgs_system\tno1\tsmall_SRR7963242\tSE\t131.811\t57.356\t99.288\t126.341\t116.873\t57.338
+cgs_system\tno1\tSRR2496709\tPE\t251.674\t103.242\t131.107\t243.886\t225.743\t103.206
+cgs_system\tno1\tSRR2496709\tSE\t119.413\t43.531\t55.681\t115.372\t105.250\t43.521
+single_system\tno1\tERR1203383\tPE\t360.230\t118.303\t358.276\t250.228\t216.982\t118.278
+single_system\tno1\tERR1203383\tSE\t137.430\t56.860\t134.480\t128.367\t110.728\t56.848
+single_system\tno1\tsmall_SRR7963242\tPE\t1312.415\t139.816\t1311.306\t216.941\t197.400\t139.799
+single_system\tno1\tsmall_SRR7963242\tSE\t282.654\t48.319\t282.032\t104.771\t92.853\t48.304
+single_system\tno1\tSRR2496709\tPE\t361.472\t115.647\t359.997\t245.872\t218.270\t115.631
+single_system\tno1\tSRR2496709\tSE\t136.551\t51.846\t135.274\t118.887\t104.074\t51.834`;
+
+    const rows = d3.tsvParse(raw, d3.autoType);
+    const configs = [&#x27;single_system&#x27;, &#x27;cgs_system&#x27;, &#x27;cgs_pool&#x27;, &#x27;cgs_cross_system&#x27;, &#x27;cgs_cross_pool&#x27;];
+    const configLabel = new Map([
+      [&#x27;single_system&#x27;, &#x27;single / system&#x27;],
+      [&#x27;cgs_system&#x27;, &#x27;cgs / system&#x27;],
+      [&#x27;cgs_pool&#x27;, &#x27;cgs / pool&#x27;],
+      [&#x27;cgs_cross_system&#x27;, &#x27;cross / system&#x27;],
+      [&#x27;cgs_cross_pool&#x27;, &#x27;cross / pool&#x27;]
+    ]);
+    const workloads = [
+      [&#x27;ERR1203383&#x27;, &#x27;PE&#x27;], [&#x27;ERR1203383&#x27;, &#x27;SE&#x27;],
+      [&#x27;small_SRR7963242&#x27;, &#x27;PE&#x27;], [&#x27;small_SRR7963242&#x27;, &#x27;SE&#x27;],
+      [&#x27;SRR2496709&#x27;, &#x27;PE&#x27;], [&#x27;SRR2496709&#x27;, &#x27;SE&#x27;]
+    ];
+    const stages = [
+      {key: &#x27;stage1_s&#x27;, short: &#x27;S1&#x27;, css: &#x27;var(--viz-series-1)&#x27;},
+      {key: &#x27;stage2_s&#x27;, short: &#x27;S2&#x27;, css: &#x27;var(--viz-series-2)&#x27;},
+      {key: &#x27;stage3_s&#x27;, short: &#x27;S3&#x27;, css: &#x27;var(--viz-series-3)&#x27;}
+    ];
+    const active = new Set(stages.map(d =&gt; d.key));
+    const fmt = d3.format(&#x27;.1f&#x27;);
+
+    function workloadTitle(dataset, mode) {
+      return `${dataset.replace(&#x27;small_&#x27;, &#x27;small &#x27;)} ${mode}`;
+    }
+
+    function subset(io, dataset, mode) {
+      return rows.filter(d =&gt; d.io_mode === io &amp;&amp; d.dataset === dataset &amp;&amp; d.read_mode === mode)
+        .sort((a, b) =&gt; configs.indexOf(a.configuration) - configs.indexOf(b.configuration));
+    }
+
+    function showTip(event, d) {
+      const bottleneck = stages.reduce((best, s) =&gt; d[s.key] &gt; d[best.key] ? s : best, stages[0]);
+      tooltip.innerHTML = `&lt;strong&gt;${configLabel.get(d.configuration)}&lt;/strong&gt;&lt;br&gt;` +
+        `Pipeline total: ${fmt(d.total_s)} s&lt;br&gt;` +
+        `Stage 1: ${fmt(d.stage1_s)} s&lt;br&gt;` +
+        `Stage 2: ${fmt(d.stage2_s)} s&lt;br&gt;` +
+        `Stage 3: ${fmt(d.stage3_s)} s&lt;br&gt;` +
+        `最长累计阶段: ${bottleneck.short}`;
+      const rr = root.getBoundingClientRect();
+      tooltip.style.display = &#x27;block&#x27;;
+      tooltip.style.left = `${Math.min(event.clientX - rr.left + 12, root.clientWidth - tooltip.offsetWidth - 4)}px`;
+      tooltip.style.top = `${event.clientY - rr.top + 12}px`;
+    }
+    function hideTip() { tooltip.style.display = &#x27;none&#x27;; }
+
+    function facet(container, title) {
+      const div = document.createElement(&#x27;div&#x27;);
+      div.className = &#x27;facet&#x27;;
+      div.innerHTML = `&lt;div class=&quot;facet-title&quot;&gt;${title}&lt;/div&gt;`;
+      container.appendChild(div);
+      return div;
+    }
+
+    function baseSvg(div, rowHeight = 31) {
+      const width = Math.max(330, div.clientWidth || 330);
+      const margin = {top: 8, right: 64, bottom: 42, left: 108};
+      const height = margin.top + margin.bottom + configs.length * rowHeight;
+      const svg = d3.select(div).append(&#x27;svg&#x27;)
+        .attr(&#x27;viewBox&#x27;, `0 0 ${width} ${height}`)
+        .attr(&#x27;height&#x27;, height);
+      return {svg, width, height, margin, innerW: width - margin.left - margin.right,
+              innerH: height - margin.top - margin.bottom};
+    }
+
+    function axes(ctx, x, y) {
+      const {svg, margin, innerW, innerH, width} = ctx;
+      svg.append(&#x27;rect&#x27;).attr(&#x27;data-chart-frame&#x27;, &#x27;&#x27;)
+        .attr(&#x27;x&#x27;, margin.left).attr(&#x27;y&#x27;, margin.top)
+        .attr(&#x27;width&#x27;, innerW).attr(&#x27;height&#x27;, innerH);
+      svg.append(&#x27;g&#x27;).attr(&#x27;class&#x27;, &#x27;axis&#x27;)
+        .attr(&#x27;transform&#x27;, `translate(0,${margin.top + innerH})`)
+        .call(d3.axisBottom(x).ticks(width &lt; 430 ? 4 : 5).tickSizeOuter(0));
+      svg.append(&#x27;g&#x27;).attr(&#x27;class&#x27;, &#x27;axis&#x27;)
+        .attr(&#x27;transform&#x27;, `translate(${margin.left},0)`)
+        .call(d3.axisLeft(y).tickFormat(d =&gt; configLabel.get(d)).tickSize(0))
+        .call(g =&gt; g.select(&#x27;.domain&#x27;).remove());
+      svg.append(&#x27;text&#x27;).attr(&#x27;class&#x27;, &#x27;axis-title&#x27;).attr(&#x27;data-axis&#x27;, &#x27;x&#x27;)
+        .attr(&#x27;x&#x27;, margin.left + innerW / 2).attr(&#x27;y&#x27;, margin.top + innerH + 37)
+        .attr(&#x27;text-anchor&#x27;, &#x27;middle&#x27;).text(&#x27;累计耗时（秒）&#x27;);
+    }
+
+    function drawStacked(div, data, onlyStage2) {
+      const ctx = baseSvg(div);
+      const max = d3.max(data, d =&gt; onlyStage2 ? d.stage2_s : d.stage1_s + d.stage2_s + d.stage3_s);
+      const x = d3.scaleLinear().domain([0, max * 1.12]).nice().range([ctx.margin.left, ctx.margin.left + ctx.innerW]);
+      const y = d3.scaleBand().domain(configs).range([ctx.margin.top, ctx.margin.top + ctx.innerH]).padding(0.3);
+      axes(ctx, x, y);
+      data.forEach(d =&gt; {
+        let start = 0;
+        const visibleStages = onlyStage2 ? stages.filter(s =&gt; s.key === &#x27;stage2_s&#x27;) : stages;
+        visibleStages.forEach(s =&gt; {
+          const x0 = x(start), x1 = x(start + d[s.key]);
+          ctx.svg.append(&#x27;rect&#x27;)
+            .attr(&#x27;x&#x27;, x0).attr(&#x27;y&#x27;, y(d.configuration))
+            .attr(&#x27;width&#x27;, Math.max(0, x1 - x0)).attr(&#x27;height&#x27;, y.bandwidth())
+            .attr(&#x27;fill&#x27;, s.css).attr(&#x27;data-stage&#x27;, s.key)
+            .style(&#x27;opacity&#x27;, active.has(s.key) ? 1 : 0.08)
+            .on(&#x27;mousemove&#x27;, event =&gt; showTip(event, d)).on(&#x27;mouseleave&#x27;, hideTip);
+          if (x1 - x0 &gt; 42) {
+            ctx.svg.append(&#x27;text&#x27;).attr(&#x27;data-stage&#x27;, s.key)
+              .attr(&#x27;x&#x27;, (x0 + x1) / 2).attr(&#x27;y&#x27;, y(d.configuration) + y.bandwidth() / 2 + 4)
+              .attr(&#x27;text-anchor&#x27;, &#x27;middle&#x27;).style(&#x27;font-weight&#x27;, 650)
+              .style(&#x27;opacity&#x27;, active.has(s.key) ? 1 : 0.08).text(fmt(d[s.key]));
+          }
+          start += d[s.key];
+        });
+        const end = onlyStage2 ? d.stage2_s : start;
+        ctx.svg.append(&#x27;text&#x27;).attr(&#x27;x&#x27;, x(end) + 4)
+          .attr(&#x27;y&#x27;, y(d.configuration) + y.bandwidth() / 2 + 4)
+          .text(onlyStage2 ? `${fmt(d.stage2_s)} s` : `${fmt(d.total_s)} s`);
+      });
+    }
+
+    function drawOverlap(div, data) {
+      const ctx = baseSvg(div, 39);
+      const max = d3.max(data, d =&gt; Math.max(d.total_s, d.stage1_s, d.stage2_s, d.stage3_s));
+      const x = d3.scaleLinear().domain([0, max * 1.18]).nice().range([ctx.margin.left, ctx.margin.left + ctx.innerW]);
+      const y = d3.scaleBand().domain(configs).range([ctx.margin.top, ctx.margin.top + ctx.innerH]).padding(0.24);
+      axes(ctx, x, y);
+      data.forEach(d =&gt; {
+        const cy = y(d.configuration) + y.bandwidth() / 2;
+        ctx.svg.append(&#x27;line&#x27;).attr(&#x27;x1&#x27;, x(0)).attr(&#x27;x2&#x27;, x(d.total_s)).attr(&#x27;y1&#x27;, cy).attr(&#x27;y2&#x27;, cy)
+          .attr(&#x27;stroke&#x27;, &#x27;var(--foreground)&#x27;).attr(&#x27;stroke-opacity&#x27;, 0.28).attr(&#x27;stroke-width&#x27;, 1);
+        ctx.svg.append(&#x27;rect&#x27;).attr(&#x27;x&#x27;, x(d.total_s) - 4).attr(&#x27;y&#x27;, cy - 4).attr(&#x27;width&#x27;, 8).attr(&#x27;height&#x27;, 8)
+          .attr(&#x27;fill&#x27;, &#x27;var(--foreground)&#x27;).attr(&#x27;transform&#x27;, `rotate(45 ${x(d.total_s)} ${cy})`);
+        const offsets = [-7, 0, 7];
+        stages.forEach((s, i) =&gt; {
+          ctx.svg.append(&#x27;line&#x27;).attr(&#x27;data-stage&#x27;, s.key)
+            .attr(&#x27;x1&#x27;, x(0)).attr(&#x27;x2&#x27;, x(d[s.key])).attr(&#x27;y1&#x27;, cy + offsets[i]).attr(&#x27;y2&#x27;, cy + offsets[i])
+            .attr(&#x27;stroke&#x27;, s.css).attr(&#x27;stroke-width&#x27;, 3)
+            .style(&#x27;opacity&#x27;, active.has(s.key) ? 1 : 0.08);
+          ctx.svg.append(&#x27;circle&#x27;).attr(&#x27;data-stage&#x27;, s.key)
+            .attr(&#x27;cx&#x27;, x(d[s.key])).attr(&#x27;cy&#x27;, cy + offsets[i]).attr(&#x27;r&#x27;, 3.5).attr(&#x27;fill&#x27;, s.css)
+            .style(&#x27;opacity&#x27;, active.has(s.key) ? 1 : 0.08);
+        });
+        const bottleneck = stages.reduce((best, s) =&gt; d[s.key] &gt; d[best.key] ? s : best, stages[0]);
+        const bx = x(d[bottleneck.key]);
+        const edge = bx &gt; ctx.margin.left + ctx.innerW - 58;
+        ctx.svg.append(&#x27;text&#x27;).attr(&#x27;x&#x27;, bx + (edge ? -5 : 5)).attr(&#x27;y&#x27;, cy - 11)
+          .attr(&#x27;text-anchor&#x27;, edge ? &#x27;end&#x27; : &#x27;start&#x27;).style(&#x27;font-weight&#x27;, 700)
+          .text(`${bottleneck.short} ${fmt(d[bottleneck.key])}`);
+        ctx.svg.append(&#x27;rect&#x27;).attr(&#x27;data-chart-hit&#x27;, &#x27;&#x27;).attr(&#x27;x&#x27;, ctx.margin.left).attr(&#x27;y&#x27;, y(d.configuration))
+          .attr(&#x27;width&#x27;, ctx.innerW).attr(&#x27;height&#x27;, y.bandwidth()).attr(&#x27;fill&#x27;, &#x27;transparent&#x27;)
+          .on(&#x27;mousemove&#x27;, event =&gt; showTip(event, d)).on(&#x27;mouseleave&#x27;, hideTip);
+      });
+    }
+
+    function render() {
+      const stacked = root.querySelector(&#x27;#swbwa-has1-stacked&#x27;);
+      const stage2 = root.querySelector(&#x27;#swbwa-has1-stage2&#x27;);
+      const overlap = root.querySelector(&#x27;#swbwa-no1-overlap&#x27;);
+      stacked.innerHTML = &#x27;&#x27;; stage2.innerHTML = &#x27;&#x27;; overlap.innerHTML = &#x27;&#x27;;
+      workloads.forEach(([dataset, mode]) =&gt; {
+        const title = workloadTitle(dataset, mode);
+        drawStacked(facet(stacked, title), subset(&#x27;has1&#x27;, dataset, mode), false);
+        drawStacked(facet(stage2, title), subset(&#x27;has1&#x27;, dataset, mode), true);
+        drawOverlap(facet(overlap, title), subset(&#x27;no1&#x27;, dataset, mode));
+      });
+    }
+
+    root.querySelectorAll(&#x27;.legend button[data-stage]&#x27;).forEach(button =&gt; {
+      button.addEventListener(&#x27;click&#x27;, () =&gt; {
+        const key = button.dataset.stage;
+        if (active.has(key)) active.delete(key); else active.add(key);
+        button.setAttribute(&#x27;aria-pressed&#x27;, active.has(key) ? &#x27;true&#x27; : &#x27;false&#x27;);
+        root.querySelectorAll(`[data-stage=&quot;${key}&quot;]`).forEach(el =&gt; {
+          el.style.opacity = active.has(key) ? 1 : 0.08;
+        });
+      });
+    });
+
+    render();
+    let previousWidth = root.clientWidth;
+    new ResizeObserver(() =&gt; {
+      if (Math.abs(root.clientWidth - previousWidth) &lt; 4) return;
+      previousWidth = root.clientWidth;
+      render();
+    }).observe(root);
+  })();
+  &lt;/script&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>

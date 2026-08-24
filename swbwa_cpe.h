@@ -24,6 +24,7 @@ typedef struct {
     int *sam_lengths;
     const mem_pestat_t *pes;
     int *sequence_ids;
+    long *profile_counters;
 
     volatile int *completion_flags;
     void *relocated_gp;

@@ -1,0 +1,2582 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=1 chunk_bytes=19660800 file_bytes=3536060312
+[MPI rank 000000/000006] input range: records=[0, 2120671) bytes=[0, 589343464)
+[MPI rank 000001/000006] input range: records=[2120671, 4225469) bytes=[589343464, 1178686904)
+[MPI rank 000002/000006] input range: records=[4225469, 6330267) bytes=[1178686904, 1768030344)
+[MPI rank 000003/000006] input range: records=[6330267, 8435065) bytes=[1768030344, 2357373784)
+[MPI rank 000004/000006] input range: records=[8435065, 10532259) bytes=[2357373784, 2946717144)
+[MPI rank 000005/000006] input range: records=[10532259, 12607411) bytes=[2946717144, 3536060312)
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->bwt 3107576584, 0x500008804020
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+malloc bwt->sa 1553788264, 0x5000c1ba1b40
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+malloc pac 776894131, 0x50011e5708c0
+the input file is ../data/bwa_test_big_data/SRR2496709_1.fastq
+the input file is ../data/bwa_test_big_data/SRR2496709_2.fastq
+[MPI rank 000000/000006] output: correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+[MPI rank 000001/000006] output: correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+[MPI rank 000002/000006] output: correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+[MPI rank 000003/000006] output: correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+[MPI rank 000004/000006] output: correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+[MPI rank 000005/000006] output: correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+step2 get 0x50000201d8e0
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+step2 get 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R1 offset=1787690264 requested=19660800 read=19660800 elapsed=1.505 s
+[DBG stage1] slow fread: R1 offset=2377033704 requested=19660800 read=19660800 elapsed=1.697 s
+[DBG stage1] slow fread: R1 offset=609003384 requested=19660800 read=19660800 elapsed=1.515 s
+[DBG stage1] slow fread: R1 offset=19659800 requested=19660800 read=19660800 elapsed=1.707 s
+[DBG stage1] slow fread: R1 offset=2966377044 requested=19660800 read=19660800 elapsed=1.534 s
+[DBG stage1] slow fread: R1 offset=1198346824 requested=19660800 read=19660800 elapsed=1.725 s
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.800 CPU sec, 2.171 real sec
+step2 put 0x50000201d8e0
+step3 0x50000201d8e0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.670 CPU sec, 2.221 real sec
+step2 put 0x50000201d8e0
+step3 0x50000201d8e0
+slave pre done
+now n is 144884
+processed 144884
+[M::mem_process_seqs_merge2] Processed 144884 reads in 0.730 CPU sec, 2.470 real sec
+step2 put 0x50000201d8e0
+step3 0x50000201d8e0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.860 CPU sec, 2.371 real sec
+step2 put 0x50000201d8e0
+step3 0x50000201d8e0
+[DBG stage1] slow fread: R2 offset=1787690264 requested=19660800 read=19660800 elapsed=1.188 s
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=609003384 requested=19660800 read=19660800 elapsed=1.171 s
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d930
+slave pre done
+now n is 140428
+[DBG stage1] slow fread: R2 offset=2966377044 requested=19660800 read=19660800 elapsed=1.156 s
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.810 CPU sec, 2.910 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R2 offset=19659800 requested=19660800 read=19660800 elapsed=1.347 s
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=2377033704 requested=19660800 read=19660800 elapsed=1.381 s
+step2 get 0x50000201d930
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d930
+[DBG stage1] slow fread: R2 offset=1198346824 requested=19660800 read=19660800 elapsed=1.358 s
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step2 get 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.760 CPU sec, 3.141 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201d930
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R1 offset=1807350184 requested=19660800 read=19660800 elapsed=1.562 s
+[DBG stage1] slow fread: R1 offset=628663304 requested=19660800 read=19660800 elapsed=1.578 s
+[DBG stage1] slow fread: R1 offset=2986036944 requested=19660800 read=19660800 elapsed=1.587 s
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.190 CPU sec, 1.551 real sec
+step2 put 0x50000201d930
+slave pre done
+now n is 143262
+step3 0x50000201d930
+processed 143262
+[M::mem_process_seqs_merge2] Processed 143262 reads in 0.180 CPU sec, 1.601 real sec
+step2 put 0x50000201d930
+step3 0x50000201d930
+[DBG stage1] slow fread: R1 offset=2396693624 requested=19660800 read=19660800 elapsed=1.662 s
+[DBG stage1] slow fread: R1 offset=39319728 requested=19660800 read=19660800 elapsed=1.683 s
+[DBG stage1] slow fread: R1 offset=1218006744 requested=19660800 read=19660800 elapsed=1.655 s
+slave pre done
+now n is 140428
+slave pre done
+now n is 138450
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.510 CPU sec, 2.220 real sec
+step2 put 0x50000201d930
+step3 0x50000201d930
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.530 CPU sec, 2.220 real sec
+step2 put 0x50000201d930
+step3 0x50000201d930
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.370 CPU sec, 1.887 real sec
+step2 put 0x50000201d930
+step3 0x50000201d930
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.370 CPU sec, 2.231 real sec
+step2 put 0x50000201d930
+step3 0x50000201d930
+[DBG stage1] slow fread: R2 offset=1807350184 requested=19660800 read=19660800 elapsed=1.233 s
+step1 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201eba0
+[DBG stage1] slow fread: R2 offset=628663304 requested=19660800 read=19660800 elapsed=1.224 s
+step1 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201eba0
+[DBG stage1] slow fread: R2 offset=2986036944 requested=19660800 read=19660800 elapsed=1.210 s
+step1 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R2 offset=2396693624 requested=19660800 read=19660800 elapsed=1.151 s
+step1 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=39319728 requested=19660800 read=19660800 elapsed=1.151 s
+step1 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201eba0
+step2 get 0x50000201eba0
+[DBG stage1] slow fread: R2 offset=1218006744 requested=19660800 read=19660800 elapsed=1.173 s
+step1 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step2 get 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.180 CPU sec, 1.500 real sec
+step2 put 0x50000201eba0
+[DBG stage1] slow fread: R1 offset=1827010104 requested=19660800 read=19660800 elapsed=1.644 s
+[DBG stage1] slow fread: R1 offset=2416353544 requested=19660800 read=19660800 elapsed=1.419 s
+[DBG stage1] slow fread: R1 offset=58979760 requested=19660800 read=19660800 elapsed=1.422 s
+[DBG stage1] slow fread: R1 offset=648323224 requested=19660800 read=19660800 elapsed=1.675 s
+[DBG stage1] slow fread: R1 offset=3005696844 requested=19660800 read=19660800 elapsed=1.678 s
+[DBG stage1] slow fread: R1 offset=1237666664 requested=19660800 read=19660800 elapsed=1.437 s
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.180 CPU sec, 1.500 real sec
+step2 put 0x50000201eba0
+slave pre done
+now n is 140428
+slave pre done
+now n is 142464
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.290 CPU sec, 1.600 real sec
+step2 put 0x50000201eba0
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.190 CPU sec, 1.650 real sec
+step2 put 0x50000201eba0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.370 CPU sec, 2.241 real sec
+step2 put 0x50000201eba0
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step2 get 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R2 offset=1827010104 requested=19660800 read=19660800 elapsed=1.169 s
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R2 offset=3005696844 requested=19660800 read=19660800 elapsed=1.186 s
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=648323224 requested=19660800 read=19660800 elapsed=1.199 s
+step1 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.870 CPU sec, 3.281 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R1 offset=1846670024 requested=19660800 read=19660800 elapsed=1.340 s
+[DBG stage1] slow fread: R1 offset=2436013464 requested=19660800 read=19660800 elapsed=1.635 s
+slave pre done
+now n is 140428
+[DBG stage1] slow fread: R1 offset=78639792 requested=19660800 read=19660800 elapsed=1.666 s
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.300 CPU sec, 1.651 real sec
+step2 put 0x50000201d8e0
+[DBG stage1] slow fread: R1 offset=667983144 requested=19660800 read=19660800 elapsed=1.351 s
+[DBG stage1] slow fread: R1 offset=1257326584 requested=19660800 read=19660800 elapsed=1.665 s
+[DBG stage1] slow fread: R1 offset=3025356744 requested=19660800 read=19660800 elapsed=1.363 s
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.400 CPU sec, 1.801 real sec
+step2 put 0x50000201d8e0
+slave pre done
+now n is 142464
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.230 CPU sec, 1.840 real sec
+step2 put 0x50000201d8e0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.270 CPU sec, 1.690 real sec
+step2 put 0x50000201d8e0
+[DBG stage1] slow fread: R2 offset=1846670024 requested=19660800 read=19660800 elapsed=1.024 s
+step1 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+step2 get 0x50000201ebf0
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.450 CPU sec, 2.450 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.350 CPU sec, 2.027 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R2 offset=2436013464 requested=19660800 read=19660800 elapsed=1.218 s
+step1 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201ebf0
+[DBG stage1] slow fread: R2 offset=78639792 requested=19660800 read=19660800 elapsed=1.219 s
+step1 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step2 get 0x50000201ebf0
+[DBG stage1] slow fread: R2 offset=1257326584 requested=19660800 read=19660800 elapsed=1.215 s
+step1 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step2 get 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R1 offset=1866329944 requested=19660800 read=19660800 elapsed=1.460 s
+[DBG stage1] slow fread: R1 offset=687643064 requested=19660800 read=19660800 elapsed=1.462 s
+[DBG stage1] slow fread: R1 offset=3045016644 requested=19660800 read=19660800 elapsed=1.459 s
+[DBG stage1] slow fread: R1 offset=2455673384 requested=19660800 read=19660800 elapsed=1.548 s
+[DBG stage1] slow fread: R1 offset=98299824 requested=19660800 read=19660800 elapsed=1.540 s
+slave pre done
+now n is 140428
+[DBG stage1] slow fread: R1 offset=1276986504 requested=19660800 read=19660800 elapsed=1.548 s
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.310 CPU sec, 1.600 real sec
+step2 put 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.370 CPU sec, 2.080 real sec
+step2 put 0x50000201ebf0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.520 CPU sec, 2.150 real sec
+step2 put 0x50000201ebf0
+slave pre done
+now n is 142464
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.280 CPU sec, 2.090 real sec
+step2 put 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.360 CPU sec, 2.101 real sec
+step2 put 0x50000201ebf0
+[DBG stage1] slow fread: R2 offset=1866329944 requested=19660800 read=19660800 elapsed=1.209 s
+step1 0x50000201ec40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=3045016644 requested=19660800 read=19660800 elapsed=1.193 s
+step1 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=687643064 requested=19660800 read=19660800 elapsed=1.202 s
+step1 0x50000201ec40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201ec40
+step2 get 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d8e0
+[DBG stage1] slow fread: R2 offset=2455673384 requested=19660800 read=19660800 elapsed=1.185 s
+step1 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x500002755d00
+[DBG stage1] slow fread: R2 offset=98299824 requested=19660800 read=19660800 elapsed=1.182 s
+step1 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R2 offset=1276986504 requested=19660800 read=19660800 elapsed=1.191 s
+step1 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step2 get 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.190 CPU sec, 1.440 real sec
+step2 put 0x500002755d00
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.610 CPU sec, 4.230 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201ec40
+[DBG stage1] slow fread: R1 offset=1885989864 requested=19660800 read=19660800 elapsed=1.677 s
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R1 offset=2475333304 requested=19660800 read=19660800 elapsed=1.403 s
+[DBG stage1] slow fread: R1 offset=117959856 requested=19660800 read=19660800 elapsed=1.405 s
+slave pre done
+now n is 140428
+[DBG stage1] slow fread: R1 offset=3064676544 requested=19660800 read=19660800 elapsed=1.701 s
+[DBG stage1] slow fread: R1 offset=707302984 requested=19660800 read=19660800 elapsed=1.704 s
+[DBG stage1] slow fread: R1 offset=1296646424 requested=19660800 read=19660800 elapsed=1.412 s
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.200 CPU sec, 1.460 real sec
+step2 put 0x500002755d00
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.230 CPU sec, 1.490 real sec
+step2 put 0x500002755d00
+slave pre done
+now n is 142464
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.320 CPU sec, 2.111 real sec
+step2 put 0x500002755d00
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.470 CPU sec, 2.411 real sec
+step2 put 0x50000201ec40
+[DBG stage1] slow fread: R2 offset=2475333304 requested=19660800 read=19660800 elapsed=1.021 s
+step1 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201eba0
+[DBG stage1] slow fread: R2 offset=117959856 requested=19660800 read=19660800 elapsed=1.019 s
+step1 0x500002755d50
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x500002755d50
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[DBG stage1] slow fread: R2 offset=1296646424 requested=19660800 read=19660800 elapsed=1.004 s
+step1 0x500002755d50
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x500002755d50
+[DBG stage1] slow fread: R2 offset=1885989864 requested=19660800 read=19660800 elapsed=1.250 s
+step1 0x50000201ec90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=3064676544 requested=19660800 read=19660800 elapsed=1.240 s
+step1 0x500002755d50
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x500002755d50
+[DBG stage1] slow fread: R2 offset=707302984 requested=19660800 read=19660800 elapsed=1.253 s
+step1 0x50000201ec90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step2 get 0x50000201ec90
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.360 CPU sec, 1.590 real sec
+step2 put 0x50000201ec40
+step2 get 0x50000201ec90
+[DBG stage1] slow fread: R1 offset=2494993224 requested=19660800 read=19660800 elapsed=1.068 s
+[DBG stage1] slow fread: R1 offset=137619888 requested=19660800 read=19660800 elapsed=1.056 s
+[DBG stage1] slow fread: R1 offset=1316306344 requested=19660800 read=19660800 elapsed=1.049 s
+[DBG stage1] slow fread: R1 offset=1905649784 requested=19660800 read=19660800 elapsed=1.024 s
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.510 CPU sec, 2.960 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755d50
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.310 CPU sec, 1.730 real sec
+step2 put 0x50000201d930
+step2 get 0x500002755d50
+step1 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=1944969624 requested=19660800 read=19660800 elapsed=1.137 s
+step1 0x500002755bc0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=3123656244 requested=19660800 read=19660800 elapsed=1.121 s
+step1 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R2 offset=766282744 requested=19660800 read=19660800 elapsed=1.117 s
+step1 0x500002755bc0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[DBG stage1] slow fread: R1 offset=2553972984 requested=19660800 read=19660800 elapsed=1.071 s
+slave pre done
+now n is 142464
+[DBG stage1] slow fread: R1 offset=196599984 requested=19660800 read=19660800 elapsed=1.064 s
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.450 CPU sec, 2.130 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755da0
+[DBG stage1] slow fread: R1 offset=1375286104 requested=19660800 read=19660800 elapsed=1.077 s
+[DBG stage1] slow fread: R1 offset=1964629544 requested=19660800 read=19660800 elapsed=1.063 s
+[DBG stage1] slow fread: R1 offset=3143316144 requested=19660800 read=19660800 elapsed=1.069 s
+[DBG stage1] slow fread: R1 offset=785942664 requested=19660800 read=19660800 elapsed=1.056 s
+step1 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755e90
+step1 0x500002755c10
+step1 0x500002755e90
+step1 0x500002755c10
+step1 0x500002755e90
+step1 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755e90
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.270 CPU sec, 1.651 real sec
+step2 put 0x50000201ec90
+step2 get 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d930
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+step3 0x50000201d8e0
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.240 CPU sec, 1.451 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d930
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d8e0
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.340 CPU sec, 2.671 real sec
+step2 put 0x50000201ec90
+step2 get 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.280 CPU sec, 1.641 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201eba0
+step1 0x50000201eba0
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.220 CPU sec, 1.539 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.340 CPU sec, 1.980 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.470 CPU sec, 1.988 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d930
+step1 0x50000201d8e0
+step1 0x50000201d930
+slave pre done
+now n is 142464
+step3 0x50000201d8e0
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.330 CPU sec, 2.051 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+step1 0x50000201d8e0
+slave pre done
+now n is 142464
+step3 0x50000201d8e0
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.270 CPU sec, 1.619 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.570 CPU sec, 2.051 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201eba0
+step1 0x50000201d8e0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.330 CPU sec, 1.400 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201d8e0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.320 CPU sec, 1.999 real sec
+step2 put 0x50000201ed30
+step2 get 0x500002755bc0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201eba0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.320 CPU sec, 1.730 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.150 CPU sec, 1.500 real sec
+step2 put 0x50000201ed30
+step2 get 0x500002755bc0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201eba0
+step1 0x50000201d8e0
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.240 CPU sec, 1.690 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201eba0
+step1 0x50000201d8e0
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.270 CPU sec, 1.410 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755d00
+step3 0x50000201ec40
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 142464
+step3 0x50000201ec90
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.170 CPU sec, 1.720 real sec
+step2 put 0x500002755e40
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.290 CPU sec, 1.860 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ebf0
+step1 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.250 CPU sec, 1.361 real sec
+step2 put 0x500002755bc0
+step2 get 0x500002755c10
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ec40
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755d50
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.150 CPU sec, 1.639 real sec
+step2 put 0x500002755c10
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201ec40
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.260 CPU sec, 1.441 real sec
+step2 put 0x500002755e40
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ec90
+step1 0x50000201ebf0
+step1 0x500002755d00
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.240 CPU sec, 1.491 real sec
+step2 put 0x500002755bc0
+step2 get 0x500002755c10
+step3 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.210 CPU sec, 1.569 real sec
+step2 put 0x500002755e90
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755d50
+step1 0x50000201ec40
+step1 0x50000201ebf0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.340 CPU sec, 1.821 real sec
+step2 put 0x500002755e40
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755d00
+step3 0x500002755d50
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.270 CPU sec, 1.710 real sec
+step2 put 0x500002755e40
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201eba0
+slave pre done
+now n is 142464
+step3 0x50000201ece0
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.260 CPU sec, 1.610 real sec
+step2 put 0x50000201d930
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755d00
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.770 CPU sec, 3.699 real sec
+step2 put 0x500002755e90
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755da0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.250 CPU sec, 1.970 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ec90
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.160 CPU sec, 1.509 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201ece0
+step1 0x500002755d50
+step3 0x500002755da0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 1.770 CPU sec, 9.649 real sec
+step2 put 0x500002755c10
+step2 get 0x50000201eba0
+step3 0x500002755d50
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755da0
+step1 0x50000201ec90
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.230 CPU sec, 1.760 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755d50
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.220 CPU sec, 1.398 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.250 CPU sec, 1.450 real sec
+step2 put 0x500002755e90
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755da0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ebf0
+step1 0x500002755d50
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.260 CPU sec, 1.681 real sec
+step2 put 0x50000201d8e0
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 142464
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.330 CPU sec, 1.830 real sec
+step2 put 0x500002755e90
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d930
+step1 0x500002755d50
+step3 0x500002755df0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e40
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.340 CPU sec, 2.291 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ece0
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755bc0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.290 CPU sec, 1.601 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755df0
+step3 0x500002755df0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e40
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.320 CPU sec, 1.770 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ed30
+step3 0x500002755df0
+slave pre done
+now n is 138450
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.320 CPU sec, 2.329 real sec
+step2 put 0x50000201eba0
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.500 CPU sec, 1.831 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755da0
+step1 0x500002755df0
+slave pre done
+now n is 140428
+step3 0x500002755df0
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.380 CPU sec, 2.021 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201ec40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e40
+step1 0x50000201ece0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.350 CPU sec, 1.648 real sec
+step2 put 0x50000201d8e0
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.280 CPU sec, 2.471 real sec
+step2 put 0x500002755d00
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755bc0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755da0
+step3 0x500002755c10
+step1 0x500002755da0
+slave pre done
+now n is 142464
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.370 CPU sec, 1.990 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755df0
+step3 0x500002755e90
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.390 CPU sec, 1.950 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201ec40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755bc0
+slave pre done
+now n is 142464
+processed 142464
+[M::mem_process_seqs_merge2] Processed 142464 reads in 0.360 CPU sec, 2.420 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755c10
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.240 CPU sec, 1.721 real sec
+step2 put 0x500002755d00
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755da0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.350 CPU sec, 1.660 real sec
+step2 put 0x50000201ec40
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755e40
+step1 0x50000201ed30
+step3 0x500002755e90
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+step3 0x500002755e40
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.220 CPU sec, 2.610 real sec
+step2 put 0x50000201ec40
+step2 get 0x50000201ec90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e90
+step1 0x500002755bc0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.200 CPU sec, 1.621 real sec
+step2 put 0x500002755d00
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755e40
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.330 CPU sec, 2.190 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140460
+processed 140460
+[M::mem_process_seqs_merge2] Processed 140460 reads in 0.240 CPU sec, 1.460 real sec
+step2 put 0x50000201ebf0
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755e40
+step1 0x500002755e40
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d8e0
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.370 CPU sec, 2.720 real sec
+step2 put 0x50000201eba0
+step2 get 0x500002755d50
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.420 CPU sec, 2.400 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201ec90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201d930
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.350 CPU sec, 1.821 real sec
+step2 put 0x50000201ebf0
+step2 get 0x500002755d50
+step1 0x500002755c10
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755df0
+step1 0x50000201d930
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.340 CPU sec, 1.840 real sec
+step2 put 0x50000201ec90
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d930
+step1 0x50000201eba0
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.160 CPU sec, 1.981 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.410 CPU sec, 2.170 real sec
+step2 put 0x50000201ebf0
+step2 get 0x500002755d50
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755e90
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d8e0
+step1 0x500002755c10
+step1 0x50000201eba0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.360 CPU sec, 1.680 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+step3 0x50000201d8e0
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.570 CPU sec, 2.811 real sec
+step2 put 0x500002755d50
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201eba0
+step1 0x500002755e90
+step1 0x500002755e90
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.990 CPU sec, 6.408 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.320 CPU sec, 1.581 real sec
+step2 put 0x50000201ec90
+step2 get 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755e90
+step1 0x50000201d8e0
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.310 CPU sec, 1.961 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755da0
+slave pre done
+now n is 140428
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.360 CPU sec, 2.379 real sec
+step2 put 0x50000201ece0
+step2 get 0x500002755bc0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201d8e0
+step1 0x50000201d930
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.250 CPU sec, 2.120 real sec
+step2 put 0x50000201ed30
+step2 get 0x50000201ece0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d930
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.340 CPU sec, 1.851 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 1.370 CPU sec, 8.541 real sec
+step2 put 0x500002755d00
+step2 get 0x500002755d50
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201d930
+step1 0x500002755e90
+step3 0x50000201eba0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.390 CPU sec, 2.400 real sec
+step2 put 0x50000201d930
+step2 get 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ec40
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.900 CPU sec, 2.461 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755d00
+step1 0x50000201d8e0
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.350 CPU sec, 1.798 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755da0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.490 CPU sec, 2.641 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.330 CPU sec, 2.461 real sec
+step2 put 0x500002755bc0
+step2 get 0x50000201ed30
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d930
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.340 CPU sec, 1.600 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201d8e0
+step1 0x50000201eba0
+step3 0x50000201ec40
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755d00
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.230 CPU sec, 1.570 real sec
+step2 put 0x500002755e40
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+step1 0x50000201eba0
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.560 CPU sec, 2.171 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755e40
+step3 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755d00
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ec90
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.340 CPU sec, 2.690 real sec
+step2 put 0x500002755e40
+step2 get 0x500002755df0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.730 CPU sec, 5.120 real sec
+step2 put 0x50000201ece0
+step2 get 0x500002755bc0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.410 CPU sec, 2.080 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755e40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.540 CPU sec, 2.778 real sec
+step2 put 0x500002755e40
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201d8e0
+step1 0x50000201ebf0
+step1 0x50000201d8e0
+step3 0x500002755d50
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.350 CPU sec, 2.141 real sec
+step2 put 0x500002755e40
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201eba0
+step3 0x50000201ec90
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.770 CPU sec, 3.940 real sec
+step2 put 0x50000201ed30
+step2 get 0x500002755c10
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.190 CPU sec, 1.610 real sec
+step2 put 0x50000201d930
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ebf0
+step1 0x50000201ebf0
+step3 0x500002755d50
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.410 CPU sec, 1.630 real sec
+step2 put 0x500002755bc0
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ec90
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.310 CPU sec, 1.791 real sec
+step2 put 0x500002755c10
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ec40
+step3 0x500002755d50
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.250 CPU sec, 1.661 real sec
+step2 put 0x50000201eba0
+step2 get 0x500002755c10
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.300 CPU sec, 1.810 real sec
+step2 put 0x50000201eba0
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201ebf0
+step1 0x50000201ec40
+step3 0x500002755d50
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.270 CPU sec, 1.611 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755e90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x50000201eba0
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755df0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.330 CPU sec, 2.250 real sec
+step2 put 0x500002755e90
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755da0
+step1 0x500002755d00
+step3 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.300 CPU sec, 1.540 real sec
+step2 put 0x500002755e90
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.360 CPU sec, 2.751 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755df0
+step1 0x50000201ec90
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.240 CPU sec, 1.480 real sec
+step2 put 0x50000201d8e0
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755df0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+step3 0x500002755da0
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.270 CPU sec, 2.001 real sec
+step2 put 0x500002755c10
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755d50
+step1 0x50000201ebf0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755da0
+step3 0x500002755df0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755da0
+slave pre done
+now n is 139020
+processed 139020
+[M::mem_process_seqs_merge2] Processed 139020 reads in 0.320 CPU sec, 1.421 real sec
+step2 put 0x500002755e90
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201d930
+step3 0x500002755bc0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ed30
+step3 0x500002755e40
+slave pre done
+now n is 140428
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.530 CPU sec, 2.460 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.360 CPU sec, 2.311 real sec
+step2 put 0x500002755d00
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755df0
+step1 0x500002755d50
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.670 CPU sec, 2.750 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.250 CPU sec, 1.670 real sec
+step2 put 0x500002755d00
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x50000201ece0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.260 CPU sec, 1.900 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755bc0
+step1 0x500002755bc0
+step1 0x500002755da0
+step1 0x500002755d50
+slave pre done
+now n is 140428
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.380 CPU sec, 2.020 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201ebf0
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.380 CPU sec, 1.841 real sec
+step2 put 0x50000201d930
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 1.650 CPU sec, 8.361 real sec
+step2 put 0x500002755e90
+step2 get 0x50000201d930
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e40
+step1 0x50000201ece0
+step1 0x50000201ece0
+step1 0x500002755df0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.320 CPU sec, 1.988 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201ec90
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step3 0x500002755e40
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201ed30
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.900 CPU sec, 2.568 real sec
+step2 put 0x50000201d930
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x500002755da0
+step3 0x500002755e40
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.250 CPU sec, 2.211 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19205784 bytes)...
+step3 0x500002755c10
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.320 CPU sec, 2.019 real sec
+step2 put 0x500002755d00
+step2 get 0x50000201d8e0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.160 CPU sec, 1.640 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201eba0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19660800 bytes)...
+step1 0x500002755da0
+step1 0x500002755d50
+step1 0x500002755da0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e90
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.260 CPU sec, 1.760 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201ec40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19205760 bytes)...
+step1 0x50000201ed30
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.270 CPU sec, 1.551 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19206068 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201d930
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e90
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.270 CPU sec, 1.491 real sec
+step2 put 0x50000201ec90
+step2 get 0x50000201ec40
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19205760 bytes)...
+step1 0x500002755bc0
+step3 0x500002755df0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.260 CPU sec, 1.998 real sec
+step2 put 0x50000201ebf0
+step2 get 0x500002755df0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755e90
+slave pre done
+now n is 140428
+step3 0x500002755e90
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.400 CPU sec, 2.200 real sec
+step2 put 0x50000201d8e0
+step2 get 0x50000201ebf0
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19205760 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d8e0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.420 CPU sec, 1.631 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step1 0x50000201eba0
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.290 CPU sec, 1.651 real sec
+step2 put 0x50000201eba0
+step2 get 0x500002755d00
+[M::process] read chunk (19660800 bytes/CG x 1 CGs, 19204640 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d930
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.460 CPU sec, 2.080 real sec
+step2 put 0x50000201ebf0
+step2 get 0x500002755df0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.120 CPU sec, 1.688 real sec
+step2 put 0x50000201eba0
+step2 get 0x50000201d930
+step1 0x500002755e90
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.420 CPU sec, 2.251 real sec
+step2 put 0x50000201ec40
+step2 get 0x50000201ec90
+slave pre done
+now n is 140428
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.380 CPU sec, 2.190 real sec
+step2 put 0x500002755d00
+step2 get 0x500002755df0
+step3 0x500002755c10
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d930
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.230 CPU sec, 1.700 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755d50
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.440 CPU sec, 1.960 real sec
+step2 put 0x50000201ec40
+step2 get 0x50000201ebf0
+slave pre done
+now n is 140428
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.250 CPU sec, 2.138 real sec
+step2 put 0x50000201ec90
+step2 get 0x500002755bc0
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.280 CPU sec, 1.600 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755da0
+step3 0x50000201d930
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.190 CPU sec, 1.431 real sec
+step2 put 0x50000201d930
+step2 get 0x500002755d50
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.180 CPU sec, 2.040 real sec
+step2 put 0x50000201ebf0
+step2 get 0x50000201ece0
+step3 0x50000201eba0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.290 CPU sec, 2.350 real sec
+step2 put 0x500002755df0
+step2 get 0x500002755d50
+step3 0x50000201eba0
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.380 CPU sec, 2.200 real sec
+step2 put 0x500002755bc0
+step2 get 0x50000201ece0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.280 CPU sec, 1.590 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755da0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755d00
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201d8e0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.230 CPU sec, 1.781 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+step3 0x50000201d8e0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.140 CPU sec, 1.980 real sec
+step2 put 0x500002755da0
+step2 get 0x50000201d930
+step3 0x50000201ebf0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.450 CPU sec, 1.910 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755d50
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201eba0
+slave pre done
+now n is 138450
+processed 138450
+[M::mem_process_seqs_merge2] Processed 138450 reads in 0.320 CPU sec, 1.470 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755da0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ec40
+slave pre done
+now n is 135252
+processed 135252
+[M::mem_process_seqs_merge2] Processed 135252 reads in 0.090 CPU sec, 1.511 real sec
+step2 put 0x500002755da0
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.290 CPU sec, 2.350 real sec
+step2 put 0x500002755d50
+step2 get 0x50000201eba0
+step3 0x50000201ec90
+slave pre done
+now n is 140428
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.540 CPU sec, 2.150 real sec
+step2 put 0x50000201ece0
+step2 get 0x50000201ed30
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201ec40
+step3 0x50000201ebf0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 135254
+processed 135254
+[M::mem_process_seqs_merge2] Processed 135254 reads in 0.320 CPU sec, 2.341 real sec
+step2 put 0x50000201d930
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.370 CPU sec, 1.710 real sec
+step2 put 0x50000201ed30
+step2 get 0x500002755bc0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x50000201eba0
+slave pre done
+now n is 137184
+processed 137184
+[M::mem_process_seqs_merge2] Processed 137184 reads in 0.190 CPU sec, 2.390 real sec
+step2 put 0x50000201ed30
+step3 0x500002755d00
+slave pre done
+now n is 137184
+processed 137184
+[M::mem_process_seqs_merge2] Processed 137184 reads in 0.100 CPU sec, 2.121 real sec
+step2 put 0x500002755bc0
+step3 0x50000201ec90
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 1.770 CPU sec, 8.310 real sec
+step2 put 0x500002755d50
+step2 get 0x500002755da0
+step3 0x500002755df0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755d50
+slave pre done
+now n is 137184
+step3 0x50000201ebf0
+processed 137184
+[M::mem_process_seqs_merge2] Processed 137184 reads in 0.840 CPU sec, 5.171 real sec
+step2 put 0x50000201eba0
+slave pre done
+now n is 140428
+processed 140428
+[M::mem_process_seqs_merge2] Processed 140428 reads in 0.120 CPU sec, 1.830 real sec
+step2 put 0x500002755da0
+step2 get 0x500002755e90
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+step3 0x500002755df0
+step3 0x500002755da0
+step3 0x50000201d930
+step3 0x500002755d50
+slave pre done
+now n is 137176
+processed 137176
+[M::mem_process_seqs_merge2] Processed 137176 reads in 0.570 CPU sec, 2.150 real sec
+step2 put 0x500002755e90
+step3 0x500002755df0
+step3 0x500002755d50
+step3 0x500002755bc0
+step3 0x50000201ece0
+step3 0x500002755da0
+step3 0x50000201ece0
+step3 0x50000201ed30
+step3 0x500002755d50
+step3 0x500002755da0
+step3 0x500002755da0
+step3 0x50000201ed30
+step3 0x50000201d930
+step3 0x500002755bc0
+step3 0x50000201eba0
+step3 0x500002755e90
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000000 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                         4241342
+    submitted SAM bytes                           1400254709
+    buffered flushes                                      21
+    buffered flush bytes                          1400254709
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                       163.762003 s  (21 calls, 7798190.638 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                 local
+    reservations                                           21
+    reservation total                            0.000753 s  (21 calls,    35.879 us/call)
+      MPI_Fetch_and_op                             0.000173 s  (21 calls,     8.260 us/call)
+      MPI_Win_flush(target rank 0)                 0.000555 s  (21 calls,    26.431 us/call)
+      reservation call overhead (derived)          0.000025 s  (21 calls,     1.188 us/call)
+
+  POSIX positioned writes
+    pwrite system calls                                    21
+    pwrite system-call bytes                       1400254709
+    POSIX pwrite system calls                  163.761107 s  (21 calls, 7798147.962 us/call)
+    POSIX pwrite effective bandwidth                8.154 MiB/s
+
+  Output close timing
+    MPI_Win_unlock_all                           0.000009 s  (1 calls,     8.650 us/call)
+    MPI_Win_free                                 0.137816 s  (1 calls, 137815.972 us/call)
+    POSIX close                                  0.007311 s  (1 calls,  7310.778 us/call)
+================================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000001 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                         4209596
+    submitted SAM bytes                           1352308965
+    buffered flushes                                      21
+    buffered flush bytes                          1352308965
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                       163.654686 s  (21 calls, 7793080.304 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                           21
+    reservation total                            0.104377 s  (21 calls,  4970.347 us/call)
+      MPI_Fetch_and_op                             0.002194 s  (21 calls,   104.460 us/call)
+      MPI_Win_flush(target rank 0)                 0.102155 s  (21 calls,  4864.521 us/call)
+      reservation call overhead (derived)          0.000029 s  (21 calls,     1.367 us/call)
+
+  POSIX positioned writes
+    pwrite system calls                                    21
+    pwrite system-call bytes                       1352308965
+    POSIX pwrite system calls                  163.550124 s  (21 calls, 7788101.157 us/call)
+    POSIX pwrite effective bandwidth                7.885 MiB/s
+
+  Output close timing
+    MPI_Win_unlock_all                           0.000026 s  (1 calls,    26.000 us/call)
+    MPI_Win_free                                 0.007392 s  (1 calls,  7392.478 us/call)
+    POSIX close                                  0.000614 s  (1 calls,   614.352 us/call)
+================================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000002 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                         4209596
+    submitted SAM bytes                           1342332515
+    buffered flushes                                      21
+    buffered flush bytes                          1342332515
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                       163.304830 s  (21 calls, 7776420.479 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                           21
+    reservation total                            0.109810 s  (21 calls,  5229.070 us/call)
+      MPI_Fetch_and_op                             0.001420 s  (21 calls,    67.603 us/call)
+      MPI_Win_flush(target rank 0)                 0.108359 s  (21 calls,  5159.939 us/call)
+      reservation call overhead (derived)          0.000032 s  (21 calls,     1.529 us/call)
+
+  POSIX positioned writes
+    pwrite system calls                                    21
+    pwrite system-call bytes                       1342332515
+    POSIX pwrite system calls                  163.194926 s  (21 calls, 7771186.929 us/call)
+    POSIX pwrite effective bandwidth                7.844 MiB/s
+
+  Output close timing
+    MPI_Win_unlock_all                           0.000028 s  (1 calls,    28.450 us/call)
+    MPI_Win_free                                 0.000047 s  (1 calls,    46.600 us/call)
+    POSIX close                                  0.001098 s  (1 calls,  1098.054 us/call)
+================================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000003 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                         4209596
+    submitted SAM bytes                           1342525090
+    buffered flushes                                      21
+    buffered flush bytes                          1342525090
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                       163.895654 s  (21 calls, 7804554.934 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                           21
+    reservation total                            0.137691 s  (21 calls,  6556.694 us/call)
+      MPI_Fetch_and_op                             0.001990 s  (21 calls,    94.769 us/call)
+      MPI_Win_flush(target rank 0)                 0.135672 s  (21 calls,  6460.577 us/call)
+      reservation call overhead (derived)          0.000028 s  (21 calls,     1.348 us/call)
+
+  POSIX positioned writes
+    pwrite system calls                                    21
+    pwrite system-call bytes                       1342525090
+    POSIX pwrite system calls                  163.757879 s  (21 calls, 7797994.254 us/call)
+    POSIX pwrite effective bandwidth                7.818 MiB/s
+
+  Output close timing
+    MPI_Win_unlock_all                           0.000028 s  (1 calls,    27.900 us/call)
+    MPI_Win_free                                 0.002573 s  (1 calls,  2573.010 us/call)
+    POSIX close                                  0.000658 s  (1 calls,   657.703 us/call)
+================================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000004 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                         4194388
+    submitted SAM bytes                           1352843526
+    buffered flushes                                      21
+    buffered flush bytes                          1352843526
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                       163.875130 s  (21 calls, 7803577.604 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                           21
+    reservation total                            0.134642 s  (21 calls,  6411.539 us/call)
+      MPI_Fetch_and_op                             0.001712 s  (21 calls,    81.512 us/call)
+      MPI_Win_flush(target rank 0)                 0.132901 s  (21 calls,  6328.619 us/call)
+      reservation call overhead (derived)          0.000030 s  (21 calls,     1.407 us/call)
+
+  POSIX positioned writes
+    pwrite system calls                                    21
+    pwrite system-call bytes                       1352843526
+    POSIX pwrite system calls                  163.740404 s  (21 calls, 7797162.110 us/call)
+    POSIX pwrite effective bandwidth                7.879 MiB/s
+
+  Output close timing
+    MPI_Win_unlock_all                           0.000026 s  (1 calls,    26.250 us/call)
+    MPI_Win_free                                 0.860186 s  (1 calls, 860185.607 us/call)
+    POSIX close                                  0.001084 s  (1 calls,  1084.154 us/call)
+================================================================
+
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000005 / 000006
+  mode:     MPI single_unordered
+  path:     correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                         4150304
+    submitted SAM bytes                           1329335395
+    buffered flushes                                      20
+    buffered flush bytes                          1329335395
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                       161.197059 s  (20 calls, 8059852.927 us/call)
+
+  Global offset reservation
+    target rank                                             0
+    target relationship                                remote
+    reservations                                           20
+    reservation total                            0.146820 s  (20 calls,  7340.995 us/call)
+      MPI_Fetch_and_op                             0.002148 s  (20 calls,   107.395 us/call)
+      MPI_Win_flush(target rank 0)                 0.144647 s  (20 calls,  7232.345 us/call)
+      reservation call overhead (derived)          0.000025 s  (20 calls,     1.255 us/call)
+
+  POSIX positioned writes
+    pwrite system calls                                    20
+    pwrite system-call bytes                       1329335395
+    POSIX pwrite system calls                  161.050149 s  (20 calls, 8052507.431 us/call)
+    POSIX pwrite effective bandwidth                7.872 MiB/s
+
+  Output close timing
+    MPI_Win_unlock_all                           0.000027 s  (1 calls,    26.750 us/call)
+    MPI_Win_free                                 2.884985 s  (1 calls, 2884984.625 us/call)
+    POSIX close                                  0.000716 s  (1 calls,   716.253 us/call)
+================================================================
+
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000000 / 000006
+  lifetime                                      176.200775 s
+  MPI_Iprobe calls                                   17587
+  MPI_Iprobe total                                0.272792 s
+  MPI_Iprobe average                                15.511 us
+  MPI_Iprobe maximum                              0.000402 s
+  calls >= 1 ms                                          0
+  calls >= 10 ms                                         0
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000001 / 000006
+  lifetime                                      176.189300 s
+  MPI_Iprobe calls                                   17591
+  MPI_Iprobe total                                0.228418 s
+  MPI_Iprobe average                                12.985 us
+  MPI_Iprobe maximum                              0.000224 s
+  calls >= 1 ms                                          0
+  calls >= 10 ms                                         0
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000002 / 000006
+  lifetime                                      176.189675 s
+  MPI_Iprobe calls                                   17591
+  MPI_Iprobe total                                0.347391 s
+  MPI_Iprobe average                                19.748 us
+  MPI_Iprobe maximum                              0.003821 s
+  calls >= 1 ms                                          1
+  calls >= 10 ms                                         0
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000003 / 000006
+  lifetime                                      176.189677 s
+  MPI_Iprobe calls                                   17590
+  MPI_Iprobe total                                0.235141 s
+  MPI_Iprobe average                                13.368 us
+  MPI_Iprobe maximum                              0.001342 s
+  calls >= 1 ms                                          1
+  calls >= 10 ms                                         0
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000004 / 000006
+  lifetime                                      176.203088 s
+  MPI_Iprobe calls                                   17590
+  MPI_Iprobe total                                0.246776 s
+  MPI_Iprobe average                                14.029 us
+  MPI_Iprobe maximum                              0.000079 s
+  calls >= 1 ms                                          0
+  calls >= 10 ms                                         0
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000005 / 000006
+  lifetime                                      176.188885 s
+  MPI_Iprobe calls                                   17592
+  MPI_Iprobe total                                0.220288 s
+  MPI_Iprobe average                                12.522 us
+  MPI_Iprobe maximum                              0.000210 s
+  calls >= 1 ms                                          0
+  calls >= 10 ms                                         0
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000000 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting              30          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length      30          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation         30          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                90          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000001 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting              30          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length      30          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation         30          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                90          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000002 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting              30          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length      30          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation         30          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                90          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000003 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting              30          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length      30          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation         30          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                90          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000000 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   176.202 s
+    stage 1 - allocate and read raw FASTQ blocks             38.067 s
+    stage 2 - align reads and generate SAM records           72.348 s
+    stage 3 - write SAM and release batch data              165.804 s
+      SAM output writes                                       163.743 s
+      batch cleanup and loop overhead (derived)                 2.061 s
+
+  Stage 1 input details
+    batches completed / stage calls                      30 / 31
+    input-buffer and batch allocations                        0.000 s  (91 calls, max 0.000 s)
+    aggregate requested allocation bytes           1178799104
+    FASTQ fseeko calls                                        0.001 s  (60 calls, max 0.001 s)
+    FASTQ fread calls                                        38.063 s  (60 calls, max 1.707 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (58 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.003 s
+    raw FASTQ bytes read                           1178735680  (1124.130 MiB)
+    effective fread bandwidth                         29.534 MiB/s
+    slowest allocation                                 0.000 s  (19661824 bytes)
+    slowest fread                                      1.707 s  (R1 offset=19659800, bytes=19660800)
+
+  Stage 2 worker details
+    total - active merge worker                              72.344 s
+      part 1 - prepare CPE task and reusable buffers            1.068 s
+      part 2 - CPE FASTQ formatting and input release           0.505 s
+      part 3 - CPE alignment and SAM length pass               69.860 s
+      part 4 - assign slices in the shared SAM buffer           0.314 s
+      part 5 - CPE SAM record generation                        0.592 s
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000001 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   176.196 s
+    stage 1 - allocate and read raw FASTQ blocks             37.930 s
+    stage 2 - align reads and generate SAM records           64.553 s
+    stage 3 - write SAM and release batch data              166.066 s
+      SAM output writes                                       164.065 s
+      batch cleanup and loop overhead (derived)                 2.001 s
+
+  Stage 1 input details
+    batches completed / stage calls                      30 / 31
+    input-buffer and batch allocations                        0.000 s  (91 calls, max 0.000 s)
+    aggregate requested allocation bytes           1178801344
+    FASTQ fseeko calls                                        0.153 s  (60 calls, max 0.077 s)
+    FASTQ fread calls                                        37.772 s  (60 calls, max 1.704 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (58 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.005 s
+    raw FASTQ bytes read                           1178737920  (1124.132 MiB)
+    effective fread bandwidth                         29.761 MiB/s
+    slowest allocation                                 0.000 s  (19661824 bytes)
+    slowest fread                                      1.704 s  (R1 offset=707302984, bytes=19660800)
+
+  Stage 2 worker details
+    total - active merge worker                              64.544 s
+      part 1 - prepare CPE task and reusable buffers            1.050 s
+      part 2 - CPE FASTQ formatting and input release           0.511 s
+      part 3 - CPE alignment and SAM length pass               62.080 s
+      part 4 - assign slices in the shared SAM buffer           0.309 s
+      part 5 - CPE SAM record generation                        0.582 s
+      part 6 - release temporary worker data                    0.002 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000002 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   176.198 s
+    stage 1 - allocate and read raw FASTQ blocks             37.946 s
+    stage 2 - align reads and generate SAM records           69.671 s
+    stage 3 - write SAM and release batch data              168.441 s
+      SAM output writes                                       166.373 s
+      batch cleanup and loop overhead (derived)                 2.068 s
+
+  Stage 1 input details
+    batches completed / stage calls                      30 / 31
+    input-buffer and batch allocations                        0.000 s  (91 calls, max 0.000 s)
+    aggregate requested allocation bytes           1178801344
+    FASTQ fseeko calls                                        0.314 s  (60 calls, max 0.162 s)
+    FASTQ fread calls                                        37.625 s  (60 calls, max 1.725 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (58 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.007 s
+    raw FASTQ bytes read                           1178737920  (1124.132 MiB)
+    effective fread bandwidth                         29.877 MiB/s
+    slowest allocation                                 0.000 s  (19661824 bytes)
+    slowest fread                                      1.725 s  (R1 offset=1198346824, bytes=19660800)
+
+  Stage 2 worker details
+    total - active merge worker                              69.661 s
+      part 1 - prepare CPE task and reusable buffers            1.155 s
+      part 2 - CPE FASTQ formatting and input release           0.477 s
+      part 3 - CPE alignment and SAM length pass               67.093 s
+      part 4 - assign slices in the shared SAM buffer           0.361 s
+      part 5 - CPE SAM record generation                        0.560 s
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000003 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   176.198 s
+    stage 1 - allocate and read raw FASTQ blocks             37.694 s
+    stage 2 - align reads and generate SAM records           70.737 s
+    stage 3 - write SAM and release batch data              167.672 s
+      SAM output writes                                       165.860 s
+      batch cleanup and loop overhead (derived)                 1.812 s
+
+  Stage 1 input details
+    batches completed / stage calls                      30 / 31
+    input-buffer and batch allocations                        0.000 s  (91 calls, max 0.000 s)
+    aggregate requested allocation bytes           1178801344
+    FASTQ fseeko calls                                        0.149 s  (60 calls, max 0.078 s)
+    FASTQ fread calls                                        37.539 s  (60 calls, max 1.677 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (58 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.005 s
+    raw FASTQ bytes read                           1178737920  (1124.132 MiB)
+    effective fread bandwidth                         29.946 MiB/s
+    slowest allocation                                 0.000 s  (19661824 bytes)
+    slowest fread                                      1.677 s  (R1 offset=1885989864, bytes=19660800)
+
+  Stage 2 worker details
+    total - active merge worker                              70.728 s
+      part 1 - prepare CPE task and reusable buffers            1.147 s
+      part 2 - CPE FASTQ formatting and input release           0.510 s
+      part 3 - CPE alignment and SAM length pass               68.169 s
+      part 4 - assign slices in the shared SAM buffer           0.302 s
+      part 5 - CPE SAM record generation                        0.591 s
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000004 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting              30          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length      30          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation         30          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                90          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000004 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   176.204 s
+    stage 1 - allocate and read raw FASTQ blocks             39.352 s
+    stage 2 - align reads and generate SAM records           58.820 s
+    stage 3 - write SAM and release batch data              164.682 s
+      SAM output writes                                       162.959 s
+      batch cleanup and loop overhead (derived)                 1.723 s
+
+  Stage 1 input details
+    batches completed / stage calls                      30 / 31
+    input-buffer and batch allocations                        0.000 s  (91 calls, max 0.000 s)
+    aggregate requested allocation bytes           1178801392
+    FASTQ fseeko calls                                        0.297 s  (60 calls, max 0.165 s)
+    FASTQ fread calls                                        39.039 s  (60 calls, max 1.697 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (58 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.016 s
+    raw FASTQ bytes read                           1178737968  (1124.132 MiB)
+    effective fread bandwidth                         28.795 MiB/s
+    slowest allocation                                 0.000 s  (19661824 bytes)
+    slowest fread                                      1.697 s  (R1 offset=2377033704, bytes=19660800)
+
+  Stage 2 worker details
+    total - active merge worker                              58.809 s
+      part 1 - prepare CPE task and reusable buffers            1.042 s
+      part 2 - CPE FASTQ formatting and input release           0.512 s
+      part 3 - CPE alignment and SAM length pass               56.350 s
+      part 4 - assign slices in the shared SAM buffer           0.305 s
+      part 5 - CPE SAM record generation                        0.588 s
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000005 / 000006
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting              30          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length      30          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation         30          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                90          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000005 / 000006
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   176.198 s
+    stage 1 - allocate and read raw FASTQ blocks             37.367 s
+    stage 2 - align reads and generate SAM records           58.917 s
+    stage 3 - write SAM and release batch data              161.548 s
+      SAM output writes                                       159.728 s
+      batch cleanup and loop overhead (derived)                 1.820 s
+
+  Stage 1 input details
+    batches completed / stage calls                      30 / 31
+    input-buffer and batch allocations                        0.000 s  (91 calls, max 0.000 s)
+    aggregate requested allocation bytes           1178801960
+    FASTQ fseeko calls                                        0.151 s  (60 calls, max 0.077 s)
+    FASTQ fread calls                                        37.211 s  (60 calls, max 1.701 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (58 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.005 s
+    raw FASTQ bytes read                           1178738536  (1124.133 MiB)
+    effective fread bandwidth                         30.210 MiB/s
+    slowest allocation                                 0.000 s  (19661824 bytes)
+    slowest fread                                      1.701 s  (R1 offset=3064676544, bytes=19660800)
+
+  Stage 2 worker details
+    total - active merge worker                              58.908 s
+      part 1 - prepare CPE task and reusable buffers            1.122 s
+      part 2 - CPE FASTQ formatting and input release           0.518 s
+      part 3 - CPE alignment and SAM length pass               56.365 s
+      part 4 - assign slices in the shared SAM buffer           0.306 s
+      part 5 - CPE SAM record generation                        0.587 s
+      part 6 - release temporary worker data                    0.002 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -v 4 -t 1 -o correctness_results/bigdata_mpi_lwpf_off_20260823/mpi_static_single/no1/SRR2496709_PE.sam -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa ../data/bwa_test_big_data/SRR2496709_1.fastq ../data/bwa_test_big_data/SRR2496709_2.fastq

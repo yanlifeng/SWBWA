@@ -37,6 +37,7 @@
 
 #include "kstring.h"
 #include "bwamem.h"
+#include "swbwa_cpe_profile.h"
 #include "bntseq.h"
 #include "ksw.h"
 #include "kvec.h"
@@ -1267,15 +1268,20 @@ mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt, const bwt_t *init_bwt
 	for (i = 0; i < l_seq; ++i) // convert to 2-bit encoding if we have not done so
 		seq[i] = seq[i] < 4? seq[i] : nst_nt4_table[(int)seq[i]];
 
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_CHAIN);
 	chn = mem_chain(opt, bwt, bns, l_seq, (uint8_t*)seq, buf);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_CHAIN);
 
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_FILTER);
 	chn.n = mem_chain_flt(opt, chn.n, chn.a);
 
 	mem_flt_chained_seeds(opt, bns, pac, l_seq, (uint8_t*)seq, chn.n, chn.a);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_FILTER);
 	if (bwa_verbose >= 4) mem_print_chain(bns, &chn);
 
 
 	kv_init(regs);
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_EXTENSION);
 	for (i = 0; i < chn.n; ++i) {
 		mem_chain_t *p = &chn.a[i];
 		if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
@@ -1283,8 +1289,11 @@ mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt, const bwt_t *init_bwt
 		free(chn.a[i].seeds);
 	}
 	free(chn.a);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_EXTENSION);
 
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_ALIGNMENT_FINALIZE);
 	regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_ALIGNMENT_FINALIZE);
 
 	if (bwa_verbose >= 4) {
 		err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
@@ -1856,6 +1865,7 @@ void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens,
     }
 
     if (!(w->opt->flag&MEM_F_PE)) {
+        swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_SAM_FORMAT);
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
             bseq1_t tmp_seq = w->seqs[i];
@@ -1867,7 +1877,9 @@ void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens,
             cpe_sams[i] = tmp_seq.sam;
             sam_lens[i] = cpe_sam_len;
         }
+        swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_SAM_FORMAT);
     } else {
+        swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_SAM_FORMAT);
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
             bseq1_t tmp_seq[2];
@@ -1883,6 +1895,7 @@ void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens,
                 sam_lens[i<<1|id] = cpe_sam_len;
             }
         }
+        swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_SAM_FORMAT);
     }
 }
 

@@ -30,6 +30,7 @@
 #include <math.h>
 #include "kstring.h"
 #include "bwamem.h"
+#include "swbwa_cpe_profile.h"
 #include "kvec.h"
 #include "utils.h"
 #include "ksw.h"
@@ -331,6 +332,7 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	n_aa[0] = n_aa[1] = 0;
 	if (!(opt->flag & MEM_F_NO_RESCUE)) { // then perform SW for the best alignment
 		mem_alnreg_v b[2];
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_RESCUE);
 		kv_init(b[0]); kv_init(b[1]);
 		for (i = 0; i < 2; ++i)
 			for (j = 0; j < a[i].n; ++j)
@@ -340,6 +342,7 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 			for (j = 0; j < b[i].n && j < opt->max_matesw; ++j)
 				n += mem_matesw(opt, bns, pac, pes, &b[i].a[j], s[!i].l_seq, (uint8_t*)s[!i].seq, &a[!i]);
 		free(b[0].a); free(b[1].a);
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_RESCUE);
 	}
 	n_pri[0] = mem_mark_primary_se(opt, a[0].n, a[0].a, id<<1|0);
 	n_pri[1] = mem_mark_primary_se(opt, a[1].n, a[1].a, id<<1|1);
@@ -354,7 +357,9 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	// pairing single-end hits
 	//if (n_pri[0] && n_pri[1] && (o = mem_pair(opt, bns, pac, pes, s, a, id, &subo, &n_sub, z, n_pri)) > 0) {
 	if (n_pri[0] && n_pri[1]) {
+        swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_PAIRING);
         o = mem_pair(opt, bns, pac, pes, s, a, id, &subo, &n_sub, z, n_pri);
+        swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_PAIRING);
         if(o <= 0) goto no_pairing;
 		int is_multi[2], q_pe, score_un, q_se[2];
 		char **XA[2];

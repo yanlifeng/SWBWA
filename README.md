@@ -47,7 +47,7 @@ The supported build variables are:
 | `HOST_MALLOC_STATS` | `0`, `1` | `0` |
 | `USE_MPI` | `0`, `1` | `1` |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
-| `OUTPUT_MODE` | `split`, `single_unordered` | `single_unordered` |
+| `OUTPUT_MODE` | `split`, `single_unordered`, `discard` | `single_unordered` |
 | `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
 
 The three `MPI_*`/`OUTPUT_MODE` options are only defined and validated when
@@ -57,10 +57,18 @@ The three `MPI_*`/`OUTPUT_MODE` options are only defined and validated when
 complete FASTQ once before alignment to build exact record prefixes.
 
 Dynamic MPI input keeps the configured large chunks for the first part of the
-FASTQ. In the final 10% of the input it switches to chunks one quarter that
-size, reducing end-of-run load imbalance while retaining coarse scheduling for
-most of the file. Set `SWBWA_MPI_TAIL_PERCENT=0` at runtime to disable this
-tail refinement for profiling; values from 0 through 100 are accepted.
+FASTQ. In the final 10% it uses chunks one quarter that size, and the final two
+rank waves use chunks one quarter of the medium-tail size. This preserves large
+CPE batches while reducing the last indivisible unit of work. Set
+`SWBWA_MPI_TAIL_PERCENT=0` to disable all tail refinement, or set
+`SWBWA_MPI_FINE_TAIL_WAVES=0` to retain the 10% medium tail without the final
+fine region. Tail percentages from 0 through 100 and fine-tail wave counts from
+0 through 1024 are accepted.
+
+`OUTPUT_MODE=discard` is a profiling mode: it creates no SAM file. By default
+it hashes each non-empty SAM blob submitted through the output interface and
+prints per-rank order-independent sum and XOR fingerprints. Set
+`SWBWA_DISCARD_HASH=0` only when measuring the hash overhead itself.
 
 For example:
 

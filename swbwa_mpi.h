@@ -50,6 +50,8 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
 int64_t swbwa_mpi_fastq_scheduler_chunk_bytes(void);
 int swbwa_mpi_fastq_scheduler_tail_percent(void);
 int64_t swbwa_mpi_fastq_scheduler_micro_chunk_bytes(void);
+int64_t swbwa_mpi_fastq_scheduler_fine_chunk_bytes(void);
+int swbwa_mpi_fastq_scheduler_fine_tail_waves(void);
 int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range);
 void swbwa_mpi_fastq_scheduler_record_stage2(int64_t chunk_id,
                                              int64_t records,

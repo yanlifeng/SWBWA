@@ -9,3 +9,11 @@ bwamem-lite
 *.codex.backup
 __pycache__/
 *.pyc
+
+# Local benchmark controllers and interrupted attempts
+correctness_results/**/controller.log
+correctness_results/**/controller.pid
+correctness_results/**/controller.rc
+correctness_results/**/driver.pid
+correctness_results/mpi_fine2_hash_1n6_20260825/
+correctness_results/*_aborted_*/

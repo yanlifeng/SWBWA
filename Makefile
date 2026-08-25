@@ -14,7 +14,7 @@ AR  = ar
 # USE_MPI:       0 | 1
 # MPI-only options:
 #   MPI_INPUT_MODE: static | dynamic
-#   OUTPUT_MODE: split | single_unordered
+#   OUTPUT_MODE: split | single_unordered | discard
 #   MPI_EXACT_READ_INDEX: 0 | 1 (exact n_processed for correctness checks)
 EXEC_MODE           ?= single
 CPE_ALLOCATOR       ?= system
@@ -41,7 +41,7 @@ VALID_EXEC_MODES     := single cgs cgs_cross
 VALID_CPE_ALLOCATORS := system pool
 VALID_BOOLEAN_VALUES := 0 1
 VALID_MPI_INPUT_MODES := static dynamic
-VALID_OUTPUT_MODES   := split single_unordered
+VALID_OUTPUT_MODES   := split single_unordered discard
 
 ifeq ($(filter $(EXEC_MODE),$(VALID_EXEC_MODES)),)
 $(error EXEC_MODE must be one of: $(VALID_EXEC_MODES))
@@ -99,6 +99,7 @@ MPI_INPUT_MODE_VALUE_static  := SWBWA_MPI_INPUT_STATIC
 MPI_INPUT_MODE_VALUE_dynamic := SWBWA_MPI_INPUT_DYNAMIC
 OUTPUT_MODE_VALUE_split            := SWBWA_OUTPUT_SPLIT
 OUTPUT_MODE_VALUE_single_unordered := SWBWA_OUTPUT_SINGLE_UNORDERED
+OUTPUT_MODE_VALUE_discard          := SWBWA_OUTPUT_DISCARD
 
 SWBWA_CPPFLAGS := \
 	-DSWBWA_EXEC_MODE=$(EXEC_MODE_VALUE_$(EXEC_MODE)) \

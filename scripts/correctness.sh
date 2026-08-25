@@ -95,8 +95,11 @@ bigdata-mpi options:
   --datasets LIST       ERR1203383, small_SRR7963242, SRR2496709, or all
   --result-root DIR     Output root for logs and MD5 summaries
   --chunk-bytes INT     Pass -K INT; omitted by default
+  --io-mode MODE        has1, no1, or both (default: both)
+  --mpi-input MODE      static, dynamic, or both (default: both)
+  --output-mode MODE    split, single_unordered, or both (default: both)
 
-The bigdata command always runs has1 and no1 PE/SE tests for:
+By default, the bigdata command runs has1 and no1 PE/SE tests for:
   single + system
   cgs + system
   cgs + pool
@@ -1509,6 +1512,9 @@ write_bigdata_mpi_global_summary()
 bigdata_mpi_command()
 {
     local datasets=all
+    local io_mode=both
+    local mpi_input=both
+    local output_mode=both
     local failures=0
 
     while (($# > 0)); do
@@ -1516,6 +1522,9 @@ bigdata_mpi_command()
             --datasets) datasets=${2:?}; shift 2 ;;
             --result-root) BIGDATA_MPI_RESULT_ROOT=${2:?}; shift 2 ;;
             --chunk-bytes) CHUNK_BYTES=${2:?}; shift 2 ;;
+            --io-mode) io_mode=${2:?}; shift 2 ;;
+            --mpi-input) mpi_input=${2:?}; shift 2 ;;
+            --output-mode) output_mode=${2:?}; shift 2 ;;
             -h|--help) usage; exit 0 ;;
             *) die "unknown bigdata-mpi option '$1'" ;;
         esac
@@ -1529,7 +1538,15 @@ bigdata_mpi_command()
     [[ "$MPI_NODES" == 1 ]] ||
         die "bigdata-mpi is restricted to MPI_NODES=1"
     select_bigdata_datasets "$datasets"
-    select_io_modes both
+    select_io_modes "$io_mode"
+    case "$mpi_input" in
+        static|dynamic|both) ;;
+        *) die "invalid MPI input mode '$mpi_input'; expected static, dynamic, or both" ;;
+    esac
+    case "$output_mode" in
+        split|single_unordered|both) ;;
+        *) die "invalid MPI output mode '$output_mode'; expected split, single_unordered, or both" ;;
+    esac
     [[ -d "$BIGDATA_DATA" ]] ||
         die "big-data input directory not found: $BIGDATA_DATA"
     [[ -f "$BIGDATA_MD5_FILE" ]] ||
@@ -1538,19 +1555,27 @@ bigdata_mpi_command()
     mkdir -p "$BIGDATA_MPI_RESULT_ROOT"
     build_sorted_md5_tool
 
-    if ! run_bigdata_mpi_configuration mpi_static_split static split; then
-        failures=$((failures + 1))
+    if [[ "$mpi_input" != dynamic && "$output_mode" != single_unordered ]]; then
+        if ! run_bigdata_mpi_configuration mpi_static_split static split; then
+            failures=$((failures + 1))
+        fi
     fi
-    if ! run_bigdata_mpi_configuration mpi_static_single static \
-                                        single_unordered; then
-        failures=$((failures + 1))
+    if [[ "$mpi_input" != dynamic && "$output_mode" != split ]]; then
+        if ! run_bigdata_mpi_configuration mpi_static_single static \
+                                            single_unordered; then
+            failures=$((failures + 1))
+        fi
     fi
-    if ! run_bigdata_mpi_configuration mpi_dynamic_split dynamic split; then
-        failures=$((failures + 1))
+    if [[ "$mpi_input" != static && "$output_mode" != single_unordered ]]; then
+        if ! run_bigdata_mpi_configuration mpi_dynamic_split dynamic split; then
+            failures=$((failures + 1))
+        fi
     fi
-    if ! run_bigdata_mpi_configuration mpi_dynamic_single dynamic \
-                                        single_unordered; then
-        failures=$((failures + 1))
+    if [[ "$mpi_input" != static && "$output_mode" != split ]]; then
+        if ! run_bigdata_mpi_configuration mpi_dynamic_single dynamic \
+                                            single_unordered; then
+            failures=$((failures + 1))
+        fi
     fi
     write_bigdata_mpi_global_summary
 

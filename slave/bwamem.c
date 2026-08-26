@@ -150,89 +150,46 @@ mem_opt_t *mem_opt_init()
 KSORT_INIT(mem_intv, bwtintv_t, intv_lt)
 
 typedef struct {
-	bwtintv_v mem, mem1, *tmpv[2];
+	bwtintv_v mem, mem1;
+	bwtintv_v heap_tmpv[2], ldm_tmpv[2], *tmpv[2];
+	bwtintv_t *ldm_tmp_storage;
 } smem_aux_t;
 
-// TODO at least seq len
-#define SWBWA_LDM_TMP_BUFFER_1_BYTES 128
-#define SWBWA_LDM_TMP_BUFFER_2_BYTES 512
+enum { SWBWA_SMEM_LDM_TMP_CAPACITY = 256 };
 
-//__thread_local_fix bwtintv_t tmpv0_fixed[SWBWA_LDM_TMP_BUFFER_1_BYTES];
-//__thread_local_fix bwtintv_t tmpv1_fixed[SWBWA_LDM_TMP_BUFFER_1_BYTES];
-//__thread_local_fix bwtintv_t mema_fixed[SWBWA_LDM_TMP_BUFFER_2_BYTES];
-//__thread_local_fix bwtintv_t mem1a_fixed[SWBWA_LDM_TMP_BUFFER_2_BYTES];
-
-
-static smem_aux_t *smem_aux_init()
+static smem_aux_t *smem_aux_init(int use_ldm)
 {
-	smem_aux_t *a;
-    //init version
-	a = calloc(1, sizeof(smem_aux_t));
-	a->tmpv[0] = calloc(1, sizeof(bwtintv_v));
-	a->tmpv[1] = calloc(1, sizeof(bwtintv_v));
+	smem_aux_t *a = calloc(1, sizeof(*a));
 
+	if (use_ldm) {
+		size_t bytes = 2 * SWBWA_SMEM_LDM_TMP_CAPACITY *
+		               sizeof(bwtintv_t);
 
-    //ldm malloc version
-//	a = ldm_malloc(sizeof(smem_aux_t));
-//	a->tmpv[0] = ldm_malloc(sizeof(bwtintv_v));
-//	a->tmpv[1] = ldm_malloc(sizeof(bwtintv_v));
-//    a->tmpv[0]->n = 0;
-//    a->tmpv[0]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
-//    a->tmpv[0]->a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
-//    a->tmpv[1]->n = 0;
-//    a->tmpv[1]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
-//    a->tmpv[1]->a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
-//    a->mem.n = 0;
-//    a->mem.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
-//    a->mem.a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
-//    a->mem1.n = 0;
-//    a->mem1.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
-//    a->mem1.a = ldm_malloc(SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
-
-
-    //global fix version
-	//a = ldm_malloc(sizeof(smem_aux_t));
-	//a->tmpv[0] = ldm_malloc(sizeof(bwtintv_v));
-	//a->tmpv[1] = ldm_malloc(sizeof(bwtintv_v));
-    //a->tmpv[0]->n = 0;
-    //a->tmpv[0]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
-    //a->tmpv[0]->a = tmpv0_fixed;
-    //a->tmpv[1]->n = 0;
-    //a->tmpv[1]->m = SWBWA_LDM_TMP_BUFFER_1_BYTES;
-    //a->tmpv[1]->a = tmpv1_fixed;
-    //a->mem.n = 0;
-    //a->mem.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
-    //a->mem.a = mema_fixed;
-    //a->mem1.n = 0;
-    //a->mem1.m = SWBWA_LDM_TMP_BUFFER_2_BYTES;
-    //a->mem1.a = mem1a_fixed;
-
+		/* The two vectors are never live with more than len entries. */
+		a->ldm_tmp_storage = ldm_malloc(bytes);
+		assert(a->ldm_tmp_storage != NULL);
+		a->ldm_tmpv[0].m = SWBWA_SMEM_LDM_TMP_CAPACITY;
+		a->ldm_tmpv[0].a = a->ldm_tmp_storage;
+		a->ldm_tmpv[1].m = SWBWA_SMEM_LDM_TMP_CAPACITY;
+		a->ldm_tmpv[1].a = a->ldm_tmp_storage +
+		                    SWBWA_SMEM_LDM_TMP_CAPACITY;
+	}
 	return a;
 }
 
 static void smem_aux_destroy(smem_aux_t *a)
-{	
-    //init version
-    free(a->tmpv[0]->a);
-    free(a->tmpv[0]);
-	free(a->tmpv[1]->a);
-    free(a->tmpv[1]);
-	free(a->mem.a); free(a->mem1.a);
+{
+	free(a->heap_tmpv[0].a);
+	free(a->heap_tmpv[1].a);
+	free(a->mem.a);
+	free(a->mem1.a);
+	if (a->ldm_tmp_storage != NULL) {
+		size_t bytes = 2 * SWBWA_SMEM_LDM_TMP_CAPACITY *
+		               sizeof(bwtintv_t);
+
+		ldm_free(a->ldm_tmp_storage, bytes);
+	}
 	free(a);
-
-    //ldm free version
-//    ldm_free(a->tmpv[0]->a, SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
-//    ldm_free(a->tmpv[0], sizeof(bwtintv_v));
-//	ldm_free(a->tmpv[1]->a, SWBWA_LDM_TMP_BUFFER_1_BYTES * sizeof(bwtintv_t));
-//    ldm_free(a->tmpv[1], sizeof(bwtintv_v));
-//	ldm_free(a->mem.a, SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
-//    ldm_free(a->mem1.a, SWBWA_LDM_TMP_BUFFER_2_BYTES * sizeof(bwtintv_t));
-//	ldm_free(a, sizeof(smem_aux_t));
-
-    //global fix version
-    //ldm_free(a->tmpv[0], sizeof(bwtintv_v));
-    //ldm_free(a->tmpv[1], sizeof(bwtintv_v));
-	//ldm_free(a, sizeof(smem_aux_t));
 }
 
 static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a)
@@ -240,6 +197,13 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
 	int i, k, x = 0, old_n;
 	int start_width = 1;
 	int split_len = (int)(opt->min_seed_len * opt->split_factor + .499);
+	int use_ldm_tmp = a->ldm_tmp_storage != NULL &&
+	                  len < SWBWA_SMEM_LDM_TMP_CAPACITY;
+
+	/* Each SMEM temporary vector grows to at most the query length. */
+	a->tmpv[0] = use_ldm_tmp ? &a->ldm_tmpv[0] : &a->heap_tmpv[0];
+	a->tmpv[1] = use_ldm_tmp ? &a->ldm_tmpv[1] : &a->heap_tmpv[1];
+	a->tmpv[0]->n = a->tmpv[1]->n = 0;
 	a->mem.n = 0;
 
 	// first pass: find all SMEMs
@@ -413,10 +377,13 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     if (len < opt->min_seed_len) return chain; // if the query is shorter than the seed length, no match
     tree = kb_init(chn, KB_DEFAULT_SIZE);
 
-    aux = buf? (smem_aux_t*)buf : smem_aux_init();
+	aux = buf? (smem_aux_t*)buf : smem_aux_init(0);
     int max_s_size = opt->max_occ;
 
-    mem_collect_intv(opt, bwt, len, seq, aux);
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_CHAIN_COLLECT);
+	mem_collect_intv(opt, bwt, len, seq, aux);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_CHAIN_COLLECT);
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_CHAIN_BUILD);
 
     for (i = 0, b = e = l_rep = 0; i < aux->mem.n; ++i) { // compute frac_rep
         bwtintv_t *p = &aux->mem.a[i];
@@ -504,6 +471,7 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	if (bwa_verbose >= 4) printf("* fraction of repetitive seeds: %.3f\n", (float)l_rep / len);
 
 	kb_destroy(chn, tree);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_CHAIN_BUILD);
 	return chain;
 }
 
@@ -587,6 +555,22 @@ KSORT_INIT(mem_ars2, mem_alnreg_t, alnreg_slt2)
 #define alnreg_slt(a, b) ((a).score > (b).score || ((a).score == (b).score && ((a).rb < (b).rb || ((a).rb == (b).rb && (a).qb < (b).qb))))
 KSORT_INIT(mem_ars, mem_alnreg_t, alnreg_slt)
 
+typedef struct {
+	int64_t coordinate;
+	int score, query_begin, index;
+} mem_alnreg_sort_key_t;
+
+enum { SWBWA_MATE_DEDUP_LDM_MAX_BYTES = 64 << 10 };
+
+#define alnreg_key_end_lt(a, b) ((a).coordinate < (b).coordinate)
+KSORT_INIT(mem_ars_key_end, mem_alnreg_sort_key_t, alnreg_key_end_lt)
+
+#define alnreg_key_score_lt(a, b) \
+	((a).score > (b).score || ((a).score == (b).score && \
+	((a).coordinate < (b).coordinate || ((a).coordinate == (b).coordinate && \
+	(a).query_begin < (b).query_begin))))
+KSORT_INIT(mem_ars_key_score, mem_alnreg_sort_key_t, alnreg_key_score_lt)
+
 #define alnreg_hlt(a, b)  ((a).score > (b).score || ((a).score == (b).score && ((a).is_alt < (b).is_alt || ((a).is_alt == (b).is_alt && (a).hash < (b).hash))))
 KSORT_INIT(mem_ars_hash, mem_alnreg_t, alnreg_hlt)
 
@@ -630,9 +614,45 @@ int mem_patch_reg(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac,
 int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, uint8_t *query, int n, mem_alnreg_t *a)
 {
 	int m, i, j;
+	int mate_rescue_dedup = bns == 0 && pac == 0 && query == 0;
+	int sort_storage_in_ldm = 0;
+	size_t sort_storage_bytes = 0;
+	void *sort_storage = 0;
+	mem_alnreg_sort_key_t *sort_keys = 0;
+	mem_alnreg_t *sort_scratch = 0;
 	if (n <= 1) return n;
+	if (mate_rescue_dedup) {
+		size_t key_bytes = (size_t)n * sizeof(*sort_keys);
+		sort_storage_bytes = key_bytes +
+		                     (size_t)n * sizeof(*sort_scratch);
 
-	ks_introsort(mem_ars2, n, a); // sort by the END position, not START!
+		/* Keep common small sorts in LDM and preserve a heap fallback. */
+		if (sort_storage_bytes <= SWBWA_MATE_DEDUP_LDM_MAX_BYTES) {
+			sort_storage = ldm_malloc(sort_storage_bytes);
+			sort_storage_in_ldm = sort_storage != 0;
+		}
+		if (sort_storage == 0) sort_storage = malloc(sort_storage_bytes);
+		assert(sort_storage != 0);
+		sort_keys = sort_storage;
+		sort_scratch = (mem_alnreg_t*)((char*)sort_storage + key_bytes);
+	}
+
+	if (mate_rescue_dedup)
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_DEDUP_SORT_END);
+	if (mate_rescue_dedup) {
+		for (i = 0; i < n; ++i) {
+			sort_keys[i].coordinate = a[i].re;
+			sort_keys[i].index = i;
+		}
+		ks_introsort(mem_ars_key_end, n, sort_keys);
+		for (i = 0; i < n; ++i)
+			sort_scratch[i] = a[sort_keys[i].index];
+		memcpy(a, sort_scratch, n * sizeof(*a));
+	} else ks_introsort(mem_ars2, n, a); // sort by the END position, not START!
+	if (mate_rescue_dedup) {
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_DEDUP_SORT_END);
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_DEDUP_REDUNDANCY);
+	}
 	for (i = 0; i < n; ++i) a[i].n_comp = 1;
 	for (i = 1; i < n; ++i) {
 		mem_alnreg_t *p = &a[i];
@@ -670,7 +690,22 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 		}
 	n = m;
 
-	ks_introsort(mem_ars, n, a);
+	if (mate_rescue_dedup) {
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_DEDUP_REDUNDANCY);
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_DEDUP_SORT_SCORE);
+	}
+	if (mate_rescue_dedup) {
+		for (i = 0; i < n; ++i) {
+			sort_keys[i].coordinate = a[i].rb;
+			sort_keys[i].score = a[i].score;
+			sort_keys[i].query_begin = a[i].qb;
+			sort_keys[i].index = i;
+		}
+		ks_introsort(mem_ars_key_score, n, sort_keys);
+		for (i = 0; i < n; ++i)
+			sort_scratch[i] = a[sort_keys[i].index];
+		memcpy(a, sort_scratch, n * sizeof(*a));
+	} else ks_introsort(mem_ars, n, a);
 	for (i = 1; i < n; ++i) { // mark identical hits
 		if (a[i].score == a[i-1].score && a[i].rb == a[i-1].rb && a[i].qb == a[i-1].qb)
 			a[i].qe = a[i].qb;
@@ -680,6 +715,11 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 			if (m != i) a[m++] = a[i];
 			else ++m;
 		}
+	if (mate_rescue_dedup)
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_DEDUP_SORT_SCORE);
+	if (sort_storage_in_ldm)
+		ldm_free(sort_storage, sort_storage_bytes);
+	else free(sort_storage);
 	return m;
 }
 
@@ -926,7 +966,9 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 					printf("*** Left ref:   "); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
 					printf("*** Left query: "); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
 				}
+				swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_EXTENSION_DP);
 				a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
+				swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_EXTENSION_DP);
 				if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
 				if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
 			}
@@ -955,7 +997,9 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 					printf("*** Right query: "); for (j = 0; j < l_query - qe; ++j) putchar("ACGTN"[(int)query[qe+j]]); putchar('\n');
 				}
 
-                a->score = ksw_extend2(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[1], opt->pen_clip3, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
+				swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_EXTENSION_DP);
+				a->score = ksw_extend2(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[1], opt->pen_clip3, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
+				swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_EXTENSION_DP);
 				if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
 				if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;
 			}
@@ -1251,16 +1295,12 @@ void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, 
 	}
 }
 
-mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt, const bwt_t *init_bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
+static mem_alnreg_v mem_align1_core_impl(int id, const mem_opt_t *opt,
+                                         const bwt_t *bwt,
+                                         const bntseq_t *bns,
+                                         const uint8_t *pac, int l_seq,
+                                         char *seq, void *buf)
 {
-
-
-    //bwt_t *bwt = init_bwt;
-    bwt_t *bwt = ldm_malloc(sizeof(bwt_t));
-    *bwt = *init_bwt;
-    memcpy(bwt->L2, init_bwt->L2, sizeof(bwtint_t) * 5);
-    memcpy(bwt->cnt_table, init_bwt->cnt_table, sizeof(uint32_t) * 256);
-
 	int i;
 	mem_chain_v chn;
 	mem_alnreg_v regs;
@@ -1308,7 +1348,21 @@ mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt, const bwt_t *init_bwt
 			p->is_alt = 1;
 	}
 
-    ldm_free(bwt, sizeof(bwt_t));
+	return regs;
+}
+
+mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt,
+                             const bwt_t *init_bwt, const bntseq_t *bns,
+                             const uint8_t *pac, int l_seq, char *seq,
+                             void *buf)
+{
+	bwt_t *bwt = ldm_malloc(sizeof(*bwt));
+	mem_alnreg_v regs;
+
+	assert(bwt != NULL);
+	*bwt = *init_bwt;
+	regs = mem_align1_core_impl(id, opt, bwt, bns, pac, l_seq, seq, buf);
+	ldm_free(bwt, sizeof(*bwt));
 	return regs;
 }
 
@@ -1395,6 +1449,32 @@ typedef struct {
     mem_alnreg_v *regs;
     int64_t n_processed;
 } worker_t;
+
+typedef struct {
+	bwt_t bwt;
+	smem_aux_t *smem_aux;
+} worker12_context_t;
+
+void *worker12_context_init(void *data)
+{
+	worker_t *w = (worker_t*)data;
+	worker12_context_t *context = ldm_malloc(sizeof(*context));
+
+	assert(context != NULL);
+	context->bwt = *w->bwt;
+	context->smem_aux = smem_aux_init(1);
+	assert(context->smem_aux != NULL);
+	return context;
+}
+
+void worker12_context_destroy(void *opaque_context)
+{
+	worker12_context_t *context = (worker12_context_t*)opaque_context;
+
+	if (context == NULL) return;
+	smem_aux_destroy(context->smem_aux);
+	ldm_free(context, sizeof(*context));
+}
 
 
 void worker1_pre_fast(void *data, int i, int tid, mem_alnreg_v* cpe_regs)
@@ -1838,22 +1918,34 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
     return local_read_count;
 }
 
-void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, char **cpe_sams, const mem_pestat_t *pes0, int* s_ids)
+void worker12_pre_fast(void *data, void *opaque_context, int l_pos, int r_pos,
+                       int tid, int *sam_lens, char **cpe_sams,
+                       const mem_pestat_t *pes0, int *s_ids)
 {
     extern int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2]);
     extern void mem_reg2ovlp(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a);
-    worker_t *w = (worker_t*)data;
+	worker_t *w = (worker_t*)data;
+	worker12_context_t *context = (worker12_context_t*)opaque_context;
+
+	(void)tid;
+	assert(context != NULL);
 
     if (!(w->opt->flag&MEM_F_PE)) {
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
-            w->regs[i] = mem_align1_core(i, w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+			w->regs[i] = mem_align1_core_impl(i, w->opt, &context->bwt,
+				w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq,
+				context->smem_aux);
         }
     } else {
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
-            w->regs[i<<1|0] = mem_align1_core(i * 2, w->opt, w->bwt, w->bns, w->pac, w->seqs[i<<1|0].l_seq, w->seqs[i<<1|0].seq, w->aux[tid]);
-            w->regs[i<<1|1] = mem_align1_core(i * 2 + 1, w->opt, w->bwt, w->bns, w->pac, w->seqs[i<<1|1].l_seq, w->seqs[i<<1|1].seq, w->aux[tid]);
+			w->regs[i<<1|0] = mem_align1_core_impl(i * 2, w->opt,
+				&context->bwt, w->bns, w->pac, w->seqs[i<<1|0].l_seq,
+				w->seqs[i<<1|0].seq, context->smem_aux);
+			w->regs[i<<1|1] = mem_align1_core_impl(i * 2 + 1, w->opt,
+				&context->bwt, w->bns, w->pac, w->seqs[i<<1|1].l_seq,
+				w->seqs[i<<1|1].seq, context->smem_aux);
         }
     }
 

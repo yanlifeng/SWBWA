@@ -1,0 +1,10 @@
+variant	label	stage2_s	part3_s	stage2_speedup_vs_previous	part3_speedup_vs_previous
+previous	Previous optimized	54.637	53.830	1.0000	1.0000
+context	Per-CPE context	53.844	53.030	1.0147	1.0151
+ksw_ldm	KSW query profile in LDM	53.315	52.410	1.0248	1.0271
+smem_ldm	SMEM temporary vectors in LDM	53.593	52.631	1.0195	1.0228
+query_reuse	Reverse-complement reuse	53.731	52.930	1.0169	1.0170
+local_ksw_o3	Local KSW DP at O3	52.614	51.731	1.0384	1.0406
+compact_keys	Compact mate-dedup keys	47.424	46.541	1.1521	1.1566
+compact_keys_ldm	Compact keys and scratch in LDM	46.426	45.527	1.1769	1.1824
+final	Function-scoped O3 final	46.371	45.411	1.1783	1.1854

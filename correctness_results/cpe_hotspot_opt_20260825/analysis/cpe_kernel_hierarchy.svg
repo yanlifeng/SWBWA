@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1316" viewBox="0 0 1500 1316">
+<rect width="100%" height="100%" fill="#fbfbf8"/>
+<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; fill: #1d252c; } .mono { font-family: Menlo, Consolas, monospace; } .small { font-size: 12px; fill: #53606a; }</style>
+<text x="40" y="42" font-size="24" font-weight="700">CPE kernel hierarchy: average cycles per sampled CPE</text>
+<rect x="1010" y="21" width="14" height="10" fill="#657786"/>
+<text x="1032" y="31" class="small">baseline</text>
+<rect x="1130" y="21" width="14" height="10" fill="#d55e00"/>
+<text x="1152" y="31" class="small">optimized</text>
+<text x="40" y="90" font-size="18" font-weight="700">ERR1203383 PE</text>
+<text x="430" y="90" class="small">0</text>
+<text x="1380" y="90" class="small" text-anchor="end">8.7G cycles</text>
+<line x1="430" y1="98" x2="1380" y2="98" stroke="#c8ced3"/>
+<text x="50" y="129" class="mono" font-size="12" font-weight="700">WORKER_ALIGNMENT</text>
+<rect x="430" y="117" width="950.00" height="8" fill="#657786"/>
+<rect x="430" y="127" width="896.16" height="8" fill="#d55e00"/>
+<text x="1332.1564938044976" y="135" class="small">8.22G</text>
+<path d="M 60 132 V 149 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="156" class="mono" font-size="12" font-weight="700">MEM_CHAIN</text>
+<rect x="430" y="144" width="512.60" height="8" fill="#657786"/>
+<rect x="430" y="154" width="471.51" height="8" fill="#d55e00"/>
+<text x="907.5121615419918" y="162" class="small">4.33G</text>
+<path d="M 83 159 V 176 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="183" class="mono" font-size="12" font-weight="400">MEM_CHAIN_COLLECT</text>
+<rect x="430" y="171" width="332.65" height="8" fill="#657786"/>
+<rect x="430" y="181" width="299.19" height="8" fill="#d55e00"/>
+<text x="735.1911427260211" y="189" class="small">2.75G</text>
+<path d="M 83 159 V 203 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="210" class="mono" font-size="12" font-weight="400">MEM_CHAIN_BUILD</text>
+<rect x="430" y="198" width="153.25" height="8" fill="#657786"/>
+<rect x="430" y="208" width="152.59" height="8" fill="#d55e00"/>
+<text x="588.5929325378614" y="216" class="small">1.40G</text>
+<path d="M 60 132 V 230 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="237" class="mono" font-size="12" font-weight="400">CHAIN_FILTER</text>
+<rect x="430" y="225" width="21.80" height="8" fill="#657786"/>
+<rect x="430" y="235" width="25.07" height="8" fill="#d55e00"/>
+<text x="461.0688389169344" y="243" class="small">0.23G</text>
+<path d="M 60 132 V 257 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="264" class="mono" font-size="12" font-weight="700">CHAIN_EXTENSION</text>
+<rect x="430" y="252" width="97.33" height="8" fill="#657786"/>
+<rect x="430" y="262" width="97.77" height="8" fill="#d55e00"/>
+<text x="533.7684717760441" y="270" class="small">0.90G</text>
+<path d="M 83 267 V 284 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="291" class="mono" font-size="12" font-weight="400">CHAIN_EXTENSION_DP</text>
+<rect x="430" y="279" width="49.16" height="8" fill="#657786"/>
+<rect x="430" y="289" width="47.52" height="8" fill="#d55e00"/>
+<text x="483.5217989903625" y="297" class="small">0.44G</text>
+<path d="M 60 132 V 311 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="318" class="mono" font-size="12" font-weight="400">ALIGNMENT_FINALIZE</text>
+<rect x="430" y="306" width="11.23" height="8" fill="#657786"/>
+<rect x="430" y="316" width="11.34" height="8" fill="#d55e00"/>
+<text x="447.33547498852687" y="324" class="small">0.10G</text>
+<path d="M 60 132 V 338 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="345" class="mono" font-size="12" font-weight="700">SAM_FORMAT</text>
+<rect x="430" y="333" width="288.18" height="8" fill="#657786"/>
+<rect x="430" y="343" width="273.69" height="8" fill="#d55e00"/>
+<text x="709.6863240018357" y="351" class="small">2.51G</text>
+<path d="M 83 348 V 365 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="372" class="mono" font-size="12" font-weight="700">MATE_RESCUE</text>
+<rect x="430" y="360" width="180.60" height="8" fill="#657786"/>
+<rect x="430" y="370" width="175.15" height="8" fill="#d55e00"/>
+<text x="611.1548875631023" y="378" class="small">1.61G</text>
+<path d="M 106 375 V 392 H 115" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="119" y="399" class="mono" font-size="12" font-weight="400">MATE_REF_FETCH</text>
+<rect x="430" y="387" width="2.29" height="8" fill="#657786"/>
+<rect x="430" y="397" width="2.29" height="8" fill="#d55e00"/>
+<text x="438.2888939880679" y="405" class="small">0.02G</text>
+<path d="M 106 375 V 419 H 115" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="119" y="426" class="mono" font-size="12" font-weight="700">MATE_KSW_ALIGN</text>
+<rect x="430" y="414" width="113.79" height="8" fill="#657786"/>
+<rect x="430" y="424" width="115.32" height="8" fill="#d55e00"/>
+<text x="551.3166590178981" y="432" class="small">1.06G</text>
+<path d="M 129 429 V 446 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="453" class="mono" font-size="12" font-weight="400">KSW_QUERY_INIT_FORWARD</text>
+<rect x="430" y="441" width="3.27" height="8" fill="#657786"/>
+<rect x="430" y="451" width="3.71" height="8" fill="#d55e00"/>
+<text x="439.7058283616338" y="459" class="small">0.03G</text>
+<path d="M 129 429 V 473 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="480" class="mono" font-size="12" font-weight="400">KSW_DP_FORWARD</text>
+<rect x="430" y="468" width="93.63" height="8" fill="#657786"/>
+<rect x="430" y="478" width="94.83" height="8" fill="#d55e00"/>
+<text x="530.8256080770996" y="486" class="small">0.87G</text>
+<path d="M 129 429 V 500 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="507" class="mono" font-size="12" font-weight="400">KSW_QUERY_INIT_REVERSE</text>
+<rect x="430" y="495" width="2.29" height="8" fill="#657786"/>
+<rect x="430" y="505" width="2.18" height="8" fill="#d55e00"/>
+<text x="438.17989903625516" y="513" class="small">0.02G</text>
+<path d="M 129 429 V 527 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="534" class="mono" font-size="12" font-weight="400">KSW_DP_REVERSE</text>
+<rect x="430" y="522" width="12.86" height="8" fill="#657786"/>
+<rect x="430" y="532" width="12.97" height="8" fill="#d55e00"/>
+<text x="448.97039926571824" y="540" class="small">0.12G</text>
+<path d="M 106 375 V 554 H 115" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="119" y="561" class="mono" font-size="12" font-weight="400">MATE_DEDUP</text>
+<text x="435" y="556" class="small">baseline n/a</text>
+<rect x="430" y="559" width="44.58" height="8" fill="#d55e00"/>
+<text x="480.5789352914181" y="567" class="small">0.41G</text>
+<path d="M 83 348 V 581 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="588" class="mono" font-size="12" font-weight="400">PAIRING</text>
+<rect x="430" y="576" width="13.30" height="8" fill="#657786"/>
+<rect x="430" y="586" width="10.35" height="8" fill="#d55e00"/>
+<text x="446.35452042221203" y="594" class="small">0.10G</text>
+<text x="50" y="615" class="mono" font-size="12" font-weight="700">SAM_COPY</text>
+<rect x="430" y="603" width="6.76" height="8" fill="#657786"/>
+<rect x="430" y="613" width="6.65" height="8" fill="#d55e00"/>
+<text x="442.64869206057824" y="621" class="small">0.06G</text>
+<text x="40" y="673" font-size="18" font-weight="700">SRR7963242 PE</text>
+<text x="430" y="673" class="small">0</text>
+<text x="1380" y="673" class="small" text-anchor="end">113.0G cycles</text>
+<line x1="430" y1="681" x2="1380" y2="681" stroke="#c8ced3"/>
+<text x="50" y="712" class="mono" font-size="12" font-weight="700">WORKER_ALIGNMENT</text>
+<rect x="430" y="700" width="950.00" height="8" fill="#657786"/>
+<rect x="430" y="710" width="933.19" height="8" fill="#d55e00"/>
+<text x="1369.1858407079646" y="718" class="small">111.00G</text>
+<path d="M 60 715 V 732 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="739" class="mono" font-size="12" font-weight="700">MEM_CHAIN</text>
+<rect x="430" y="727" width="210.18" height="8" fill="#657786"/>
+<rect x="430" y="737" width="210.18" height="8" fill="#d55e00"/>
+<text x="646.1769911504425" y="745" class="small">25.00G</text>
+<path d="M 83 742 V 759 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="766" class="mono" font-size="12" font-weight="400">MEM_CHAIN_COLLECT</text>
+<rect x="430" y="754" width="109.29" height="8" fill="#657786"/>
+<rect x="430" y="764" width="100.88" height="8" fill="#d55e00"/>
+<text x="536.8849557522124" y="772" class="small">12.00G</text>
+<path d="M 83 742 V 786 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="793" class="mono" font-size="12" font-weight="400">MEM_CHAIN_BUILD</text>
+<rect x="430" y="781" width="109.29" height="8" fill="#657786"/>
+<rect x="430" y="791" width="109.29" height="8" fill="#d55e00"/>
+<text x="545.29203539823" y="799" class="small">13.00G</text>
+<path d="M 60 715 V 813 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="820" class="mono" font-size="12" font-weight="400">CHAIN_FILTER</text>
+<rect x="430" y="808" width="32.05" height="8" fill="#657786"/>
+<rect x="430" y="818" width="32.46" height="8" fill="#d55e00"/>
+<text x="468.4597345132743" y="826" class="small">3.86G</text>
+<path d="M 60 715 V 840 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="847" class="mono" font-size="12" font-weight="700">CHAIN_EXTENSION</text>
+<rect x="430" y="835" width="184.96" height="8" fill="#657786"/>
+<rect x="430" y="845" width="184.96" height="8" fill="#d55e00"/>
+<text x="620.9557522123894" y="853" class="small">22.00G</text>
+<path d="M 83 850 V 867 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="874" class="mono" font-size="12" font-weight="400">CHAIN_EXTENSION_DP</text>
+<rect x="430" y="862" width="151.33" height="8" fill="#657786"/>
+<rect x="430" y="872" width="151.33" height="8" fill="#d55e00"/>
+<text x="587.3274336283185" y="880" class="small">18.00G</text>
+<path d="M 60 715 V 894 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="901" class="mono" font-size="12" font-weight="400">ALIGNMENT_FINALIZE</text>
+<rect x="430" y="889" width="11.36" height="8" fill="#657786"/>
+<rect x="430" y="899" width="11.39" height="8" fill="#d55e00"/>
+<text x="447.39159292035396" y="907" class="small">1.35G</text>
+<path d="M 60 715 V 921 H 69" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="73" y="928" class="mono" font-size="12" font-weight="700">SAM_FORMAT</text>
+<rect x="430" y="916" width="504.42" height="8" fill="#657786"/>
+<rect x="430" y="926" width="487.61" height="8" fill="#d55e00"/>
+<text x="923.6106194690266" y="934" class="small">58.00G</text>
+<path d="M 83 931 V 948 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="955" class="mono" font-size="12" font-weight="700">MATE_RESCUE</text>
+<rect x="430" y="943" width="479.20" height="8" fill="#657786"/>
+<rect x="430" y="953" width="462.39" height="8" fill="#d55e00"/>
+<text x="898.3893805309734" y="961" class="small">55.00G</text>
+<path d="M 106 958 V 975 H 115" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="119" y="982" class="mono" font-size="12" font-weight="400">MATE_REF_FETCH</text>
+<rect x="430" y="970" width="2.73" height="8" fill="#657786"/>
+<rect x="430" y="980" width="2.68" height="8" fill="#d55e00"/>
+<text x="438.68185840707963" y="988" class="small">0.32G</text>
+<path d="M 106 958 V 1002 H 115" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="119" y="1009" class="mono" font-size="12" font-weight="700">MATE_KSW_ALIGN</text>
+<rect x="430" y="997" width="294.25" height="8" fill="#657786"/>
+<rect x="430" y="1007" width="294.25" height="8" fill="#d55e00"/>
+<text x="730.2477876106195" y="1015" class="small">35.00G</text>
+<path d="M 129 1012 V 1029 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="1036" class="mono" font-size="12" font-weight="400">KSW_QUERY_INIT_FORWARD</text>
+<rect x="430" y="1024" width="6.46" height="8" fill="#657786"/>
+<rect x="430" y="1034" width="6.55" height="8" fill="#d55e00"/>
+<text x="442.5491150442478" y="1042" class="small">0.78G</text>
+<path d="M 129 1012 V 1056 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="1063" class="mono" font-size="12" font-weight="400">KSW_DP_FORWARD</text>
+<rect x="430" y="1051" width="218.58" height="8" fill="#657786"/>
+<rect x="430" y="1061" width="218.58" height="8" fill="#d55e00"/>
+<text x="654.5840707964602" y="1069" class="small">26.00G</text>
+<path d="M 129 1012 V 1083 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="1090" class="mono" font-size="12" font-weight="400">KSW_QUERY_INIT_REVERSE</text>
+<rect x="430" y="1078" width="4.33" height="8" fill="#657786"/>
+<rect x="430" y="1088" width="4.27" height="8" fill="#d55e00"/>
+<text x="440.270796460177" y="1096" class="small">0.51G</text>
+<path d="M 129 1012 V 1110 H 138" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="142" y="1117" class="mono" font-size="12" font-weight="400">KSW_DP_REVERSE</text>
+<rect x="430" y="1105" width="60.15" height="8" fill="#657786"/>
+<rect x="430" y="1115" width="60.31" height="8" fill="#d55e00"/>
+<text x="496.312389380531" y="1123" class="small">7.17G</text>
+<path d="M 106 958 V 1137 H 115" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="119" y="1144" class="mono" font-size="12" font-weight="400">MATE_DEDUP</text>
+<rect x="430" y="1132" width="176.55" height="8" fill="#657786"/>
+<rect x="430" y="1142" width="159.73" height="8" fill="#d55e00"/>
+<text x="595.7345132743362" y="1150" class="small">19.00G</text>
+<path d="M 83 931 V 1164 H 92" fill="none" stroke="#aab3ba" stroke-width="1"/>
+<text x="96" y="1171" class="mono" font-size="12" font-weight="400">PAIRING</text>
+<rect x="430" y="1159" width="2.96" height="8" fill="#657786"/>
+<rect x="430" y="1169" width="2.87" height="8" fill="#d55e00"/>
+<text x="438.86681415929206" y="1177" class="small">0.34G</text>
+<text x="50" y="1198" class="mono" font-size="12" font-weight="700">SAM_COPY</text>
+<rect x="430" y="1186" width="1.48" height="8" fill="#657786"/>
+<rect x="430" y="1196" width="1.48" height="8" fill="#d55e00"/>
+<text x="437.4796460176991" y="1204" class="small">0.18G</text>
+<text x="40" y="1291" class="small">Nested regions overlap with their parents; do not add parent and child cycle counts.</text>
+</svg>

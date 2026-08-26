@@ -141,7 +141,11 @@ extern "C" {
     void worker1_fast(void *data, int i, int tid, mem_alnreg_v* cpe_regs);
     void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams);
     void worker2_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams);
-    void worker12_pre_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, char **cpe_sams, const mem_pestat_t *pes0, int* s_ids);
+    void *worker12_context_init(void *data);
+    void worker12_context_destroy(void *context);
+    void worker12_pre_fast(void *data, void *context, int l_pos, int r_pos,
+                           int tid, int *sam_lens, char **cpe_sams,
+                           const mem_pestat_t *pes0, int *s_ids);
     void worker12_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, char **cpe_sams, int* s_ids);
 	smem_i *smem_itr_init(const bwt_t *bwt);
 	void smem_itr_destroy(smem_i *itr);

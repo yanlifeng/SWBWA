@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="730" viewBox="0 0 1480 730">
+<rect width="100%" height="100%" fill="#fbfbf8"/>
+<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; fill: #182229; letter-spacing: 0; } .small { font-size: 12px; fill: #58656e; } .mono { font-family: Menlo, Consolas, monospace; }</style>
+<text x="36" y="40" font-size="23" font-weight="700">Optimized big-data pipeline timing and I/O diagnostics</text>
+<text x="36" y="63" class="small">Stages overlap in the pipeline and must not be added together; red OUTLIER marks bandwidth below 30 MiB/s</text>
+<rect x="780" y="28" width="13" height="9" fill="#0072b2"/>
+<text x="799" y="37" class="small">stage1</text>
+<rect x="895" y="28" width="13" height="9" fill="#d55e00"/>
+<text x="914" y="37" class="small">stage2</text>
+<rect x="1010" y="28" width="13" height="9" fill="#009e73"/>
+<text x="1029" y="37" class="small">stage3</text>
+<line x1="330" y1="88" x2="1250" y2="88" stroke="#c8ced3"/>
+<text x="330" y="83" class="small">0</text>
+<text x="1250" y="83" class="small" text-anchor="end">670.2 s</text>
+<text x="36" y="122" font-size="12">ERR1203383 PE has1</text>
+<rect x="330" y="104" width="114.11" height="8" fill="#0072b2"/>
+<rect x="330" y="115" width="95.36" height="8" fill="#d55e00"/>
+<rect x="330" y="126" width="198.40" height="8" fill="#009e73"/>
+<text x="1270" y="122" font-size="11" style="fill:#58656e">read 80.3, write 67.9 MiB/s</text>
+<text x="36" y="172" font-size="12">ERR1203383 PE no1</text>
+<rect x="330" y="154" width="180.69" height="8" fill="#0072b2"/>
+<rect x="330" y="165" width="98.99" height="8" fill="#d55e00"/>
+<rect x="330" y="176" width="255.12" height="8" fill="#009e73"/>
+<text x="1270" y="172" font-size="11" style="fill:#58656e">read 50.7, write 52.2 MiB/s</text>
+<text x="36" y="222" font-size="12">ERR1203383 SE has1</text>
+<rect x="330" y="204" width="72.09" height="8" fill="#0072b2"/>
+<rect x="330" y="215" width="39.79" height="8" fill="#d55e00"/>
+<rect x="330" y="226" width="101.21" height="8" fill="#009e73"/>
+<text x="1270" y="222" font-size="11" style="fill:#58656e">read 63.6, write 58.9 MiB/s</text>
+<text x="36" y="272" font-size="12">ERR1203383 SE no1</text>
+<rect x="330" y="254" width="497.23" height="8" fill="#0072b2"/>
+<rect x="330" y="265" width="40.50" height="8" fill="#d55e00"/>
+<rect x="330" y="276" width="117.91" height="8" fill="#009e73"/>
+<text x="1270" y="272" font-size="11" style="fill:#b3261e">read 9.2, write 50.9 MiB/s  OUTLIER</text>
+<text x="36" y="322" font-size="12">small SRR7963242 PE has1</text>
+<rect x="330" y="304" width="125.09" height="8" fill="#0072b2"/>
+<rect x="330" y="315" width="296.84" height="8" fill="#d55e00"/>
+<rect x="330" y="326" width="181.14" height="8" fill="#009e73"/>
+<text x="1270" y="322" font-size="11" style="fill:#58656e">read 79.5, write 72.9 MiB/s</text>
+<text x="36" y="372" font-size="12">small SRR7963242 PE no1</text>
+<rect x="330" y="354" width="920.00" height="8" fill="#0072b2"/>
+<rect x="330" y="365" width="297.66" height="8" fill="#d55e00"/>
+<rect x="330" y="376" width="215.26" height="8" fill="#009e73"/>
+<text x="1270" y="372" font-size="11" style="fill:#b3261e">read 10.8, write 60.7 MiB/s  OUTLIER</text>
+<text x="36" y="422" font-size="12">small SRR7963242 SE has1</text>
+<rect x="330" y="404" width="41.39" height="8" fill="#0072b2"/>
+<rect x="330" y="415" width="75.27" height="8" fill="#d55e00"/>
+<rect x="330" y="426" width="85.94" height="8" fill="#009e73"/>
+<text x="1270" y="422" font-size="11" style="fill:#58656e">read 120.1, write 71.9 MiB/s</text>
+<text x="36" y="472" font-size="12">small SRR7963242 SE no1</text>
+<rect x="330" y="454" width="415.40" height="8" fill="#0072b2"/>
+<rect x="330" y="465" width="75.90" height="8" fill="#d55e00"/>
+<rect x="330" y="476" width="122.43" height="8" fill="#009e73"/>
+<text x="1270" y="472" font-size="11" style="fill:#b3261e">read 12.0, write 49.2 MiB/s  OUTLIER</text>
+<text x="36" y="522" font-size="12">SRR2496709 PE has1</text>
+<rect x="330" y="504" width="146.55" height="8" fill="#0072b2"/>
+<rect x="330" y="515" width="93.31" height="8" fill="#d55e00"/>
+<rect x="330" y="526" width="182.67" height="8" fill="#009e73"/>
+<text x="1270" y="522" font-size="11" style="fill:#58656e">read 63.2, write 72.5 MiB/s</text>
+<text x="36" y="572" font-size="12">SRR2496709 PE no1</text>
+<rect x="330" y="554" width="863.92" height="8" fill="#0072b2"/>
+<rect x="330" y="565" width="95.44" height="8" fill="#d55e00"/>
+<rect x="330" y="576" width="230.46" height="8" fill="#009e73"/>
+<text x="1270" y="572" font-size="11" style="fill:#b3261e">read 10.7, write 56.1 MiB/s  OUTLIER</text>
+<text x="36" y="622" font-size="12">SRR2496709 SE has1</text>
+<rect x="330" y="604" width="72.84" height="8" fill="#0072b2"/>
+<rect x="330" y="615" width="39.14" height="8" fill="#d55e00"/>
+<rect x="330" y="626" width="86.12" height="8" fill="#009e73"/>
+<text x="1270" y="622" font-size="11" style="fill:#58656e">read 63.6, write 70.2 MiB/s</text>
+<text x="36" y="672" font-size="12">SRR2496709 SE no1</text>
+<rect x="330" y="654" width="478.66" height="8" fill="#0072b2"/>
+<rect x="330" y="665" width="39.40" height="8" fill="#d55e00"/>
+<rect x="330" y="676" width="102.12" height="8" fill="#009e73"/>
+<text x="1270" y="672" font-size="11" style="fill:#b3261e">read 9.7, write 58.0 MiB/s  OUTLIER</text>
+</svg>

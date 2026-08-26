@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1450" height="500" viewBox="0 0 1450 500">
+<rect width="100%" height="100%" fill="#fbfbf8"/>
+<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; fill: #1d252c; } .mono { font-family: Menlo, Consolas, monospace; } .small { font-size: 12px; fill: #53606a; }</style>
+<text x="40" y="42" font-size="24" font-weight="700">Stage2 breakdown: baseline versus optimized</text>
+<rect x="280" y="60" width="12" height="12" fill="#e69f00"/>
+<text x="298" y="70" class="small">part1 prepare CPE task and reusable buffers</text>
+<rect x="640" y="60" width="12" height="12" fill="#009e73"/>
+<text x="658" y="70" class="small">part2 CPE FASTQ formatting and input release</text>
+<rect x="1000" y="60" width="12" height="12" fill="#0072b2"/>
+<text x="1018" y="70" class="small">part3 CPE alignment and SAM length pass</text>
+<rect x="280" y="84" width="12" height="12" fill="#d55e00"/>
+<text x="298" y="94" class="small">part4 assign slices in the shared SAM buffer</text>
+<rect x="640" y="84" width="12" height="12" fill="#8b5fbf"/>
+<text x="658" y="94" class="small">part5 CPE SAM record generation</text>
+<rect x="1000" y="84" width="12" height="12" fill="#7a7a7a"/>
+<text x="1018" y="94" class="small">part6 release temporary worker data</text>
+<text x="40" y="166" font-size="14">ERR1203383 baseline</text>
+<rect x="260.00" y="150" width="11.85" height="28" fill="#e69f00"/>
+<rect x="271.85" y="150" width="0.64" height="28" fill="#009e73"/>
+<rect x="272.49" y="150" width="82.02" height="28" fill="#0072b2"/>
+<rect x="354.50" y="150" width="2.91" height="28" fill="#d55e00"/>
+<rect x="357.42" y="150" width="0.75" height="28" fill="#8b5fbf"/>
+<rect x="358.17" y="150" width="0.00" height="28" fill="#7a7a7a"/>
+<text x="366.1712917463324" y="169" font-size="13" font-weight="700">5.088 s</text>
+<text x="40" y="241" font-size="14">ERR1203383 optimized</text>
+<rect x="260.00" y="225" width="1.87" height="28" fill="#e69f00"/>
+<rect x="261.87" y="225" width="0.54" height="28" fill="#009e73"/>
+<rect x="262.41" y="225" width="76.81" height="28" fill="#0072b2"/>
+<rect x="339.22" y="225" width="2.91" height="28" fill="#d55e00"/>
+<rect x="342.13" y="225" width="0.75" height="28" fill="#8b5fbf"/>
+<rect x="342.89" y="225" width="0.00" height="28" fill="#7a7a7a"/>
+<text x="350.8869074209745" y="244" font-size="13" font-weight="700">4.295 s</text>
+<text x="40" y="316" font-size="14">SRR7963242 baseline</text>
+<rect x="260.00" y="300" width="13.57" height="28" fill="#e69f00"/>
+<rect x="273.57" y="300" width="2.49" height="28" fill="#009e73"/>
+<rect x="276.06" y="300" width="1054.47" height="28" fill="#0072b2"/>
+<rect x="1330.52" y="300" width="7.33" height="28" fill="#d55e00"/>
+<rect x="1337.86" y="300" width="2.12" height="28" fill="#8b5fbf"/>
+<rect x="1339.98" y="300" width="0.00" height="28" fill="#7a7a7a"/>
+<text x="1347.9807015349427" y="319" font-size="13" font-weight="700">55.963 s</text>
+<text x="40" y="391" font-size="14">SRR7963242 optimized</text>
+<rect x="260.00" y="375" width="3.61" height="28" fill="#e69f00"/>
+<rect x="263.61" y="375" width="2.49" height="28" fill="#009e73"/>
+<rect x="266.10" y="375" width="1038.84" height="28" fill="#0072b2"/>
+<rect x="1304.93" y="375" width="7.33" height="28" fill="#d55e00"/>
+<rect x="1312.27" y="375" width="2.12" height="28" fill="#8b5fbf"/>
+<rect x="1314.39" y="375" width="0.00" height="28" fill="#7a7a7a"/>
+<text x="1322.3909368690029" y="394" font-size="13" font-weight="700">54.636 s</text>
+<line x1="260" y1="130" x2="1340" y2="130" stroke="#c8ced3"/>
+<text x="260" y="125" class="small">0</text>
+<text x="1340" y="125" class="small" text-anchor="end">56.0 s</text>
+</svg>

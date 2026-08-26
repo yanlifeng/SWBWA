@@ -162,7 +162,8 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 
 
 	int64_t l_pac = bns->l_pac;
-	int i, r, skip[4], n = 0, rid;
+	int added = 0, i, r, skip[4], n = 0, rid = -1;
+	uint8_t *rev = 0;
 	for (r = 0; r < 4; ++r)
 		skip[r] = pes[r].failed? 1 : 0;
 	for (i = 0; i < ma->n; ++i) { // check which orinentation has been found
@@ -176,14 +177,17 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 
 	for (r = 0; r < 4; ++r) {
 		int is_rev, is_larger;
-		uint8_t *seq, *rev = 0, *ref = 0;
+		uint8_t *seq, *ref = 0;
 		int64_t rb, re;
 		if (skip[r]) continue;
 		is_rev = (r>>1 != (r&1)); // whether to reverse complement the mate
 		is_larger = !(r>>1); // whether the mate has larger coordinate
 		if (is_rev) {
-			rev = malloc(l_ms); // this is the reverse complement of $ms
-			for (i = 0; i < l_ms; ++i) rev[l_ms - 1 - i] = ms[i] < 4? 3 - ms[i] : 4;
+			if (rev == 0) {
+				rev = malloc(l_ms); // this is the reverse complement of $ms
+				for (i = 0; i < l_ms; ++i)
+					rev[l_ms - 1 - i] = ms[i] < 4? 3 - ms[i] : 4;
+			}
 			seq = rev;
 		} else seq = (uint8_t*)ms;
 		if (!is_rev) {
@@ -195,12 +199,20 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		}
 		if (rb < 0) rb = 0;
 		if (re > l_pac<<1) re = l_pac<<1;
-		if (rb < re) ref = bns_fetch_seq(bns, pac, &rb, (rb+re)>>1, &re, &rid);
+		if (rb < re) {
+			swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_REF_FETCH);
+			ref = bns_fetch_seq(bns, pac, &rb, (rb+re)>>1, &re, &rid);
+			swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_REF_FETCH);
+		}
 		if (a->rid == rid && re - rb >= opt->min_seed_len) { // no funny things happening
 			kswr_t aln;
 			mem_alnreg_t b;
 			int tmp, xtra = KSW_XSUBO | KSW_XSTART | (l_ms * opt->a < 250? KSW_XBYTE : 0) | (opt->min_seed_len * opt->a);
-			aln = ksw_align2(l_ms, seq, re - rb, ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, xtra, 0);
+			swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
+			aln = ksw_align2_matesw(l_ms, seq, re - rb, ref, 5, opt->mat,
+			                          opt->o_del, opt->e_del, opt->o_ins,
+			                          opt->e_ins, xtra, 0);
+			swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
 			memset(&b, 0, sizeof(mem_alnreg_t));
 			if (aln.score >= opt->min_seed_len && aln.qb >= 0) { // something goes wrong if aln.qb < 0
 				b.rid = a->rid;
@@ -221,12 +233,17 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 				tmp = i;
 				for (i = ma->n - 1; i > tmp; --i) ma->a[i] = ma->a[i-1];
 				ma->a[i] = b;
+				added = 1;
 			}
 			++n;
 		}
-		if (n) ma->n = mem_sort_dedup_patch(opt, 0, 0, 0, ma->n, ma->a);
-		if (rev) free(rev);
 		free(ref);
+	}
+	free(rev);
+	if (added) {
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_DEDUP);
+		ma->n = mem_sort_dedup_patch(opt, 0, 0, 0, ma->n, ma->a);
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_DEDUP);
 	}
 
 	return n;

@@ -1811,7 +1811,6 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         tmp_block_buffer2 = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*tmp_block_buffer2), "temporary paired FASTQ block");
         for(int i = 0; i < SWBWA_PIPELINE_BUFFER_COUNT; i++) {
             sam_blocks_static[i] = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*sam_blocks_static[i]), "static SAM block");
-            memset(sam_blocks_static[i], 'A', SWBWA_CPE_FORMAT_BUFFER_BYTES);
         }
         para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
     }

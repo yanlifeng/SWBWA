@@ -34,6 +34,7 @@
 #include "scalar_sse.h"
 #endif
 #include "ksw.h"
+#include "swbwa_cpe_profile.h"
 
 #if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
@@ -42,9 +43,11 @@
 #ifdef __GNUC__
 #define LIKELY(x) __builtin_expect((x),1)
 #define UNLIKELY(x) __builtin_expect((x),0)
+#define SWBWA_MATESW_HOT __attribute__((optimize("O3")))
 #else
 #define LIKELY(x) (x)
 #define UNLIKELY(x) (x)
+#define SWBWA_MATESW_HOT
 #endif
 
 #include <slave.h>
@@ -55,7 +58,11 @@ struct _kswq_t {
 	int qlen, slen;
 	uint8_t shift, mdiff, max, size;
 	__m128i *qp, *H0, *H1, *E, *Hmax;
+	size_t allocation_bytes;
+	int in_ldm;
 };
+
+enum { SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES = 64 << 10 };
 
 /**
  * Initialize the query data structure
@@ -73,10 +80,12 @@ struct _kswq_t {
 //__thread_local_fix char kswq_fix[32 << 10];
 
 
-kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t *mat)
+static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
+		int m, const int8_t *mat, int prefer_ldm)
 {
 	kswq_t *q;
 	int slen, a, tmp, p;
+	size_t allocation_bytes;
 
 	size = size > 1? 2 : 1;
 	p = 8 * (3 - size); // # values per __m128i
@@ -86,7 +95,13 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 #endif
 	slen = (qlen + p - 1) / p; // segmented length
 
-	q = (kswq_t*)malloc(sizeof(kswq_t) + 256 + 64 * 4 * slen * (m + 4)); // a single block of memory
+	allocation_bytes = sizeof(kswq_t) + 256 + 64 * 4 * slen * (m + 4);
+	if (prefer_ldm &&
+	    allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES)
+		q = (kswq_t*)ldm_malloc(allocation_bytes);
+	else
+		q = (kswq_t*)malloc(allocation_bytes);
+	assert(q != NULL);
     //memset(q, 0, sizeof(kswq_t) + 256 + 64 * 4 * slen * (m + 4));
     //q = (kswq_t*)kswq_fix;
 	//q = (kswq_t*)ldm_malloc(32 << 10); // a single block of memory
@@ -96,6 +111,9 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 	q->E  = q->H1 + slen;
 	q->Hmax = q->E + slen;
 	q->slen = slen; q->qlen = qlen; q->size = size;
+	q->allocation_bytes = allocation_bytes;
+	q->in_ldm = prefer_ldm &&
+	            allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES;
 	// compute shift
 	tmp = m * m;
 	for (a = 0, q->shift = 127, q->mdiff = 0; a < tmp; ++a) { // find the minimum and maximum score
@@ -137,11 +155,27 @@ kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m, const int8_t 
 	return q;
 }
 
+kswq_t *ksw_qinit(int size, int qlen, const uint8_t *query, int m,
+		const int8_t *mat)
+{
+	return ksw_qinit_impl(size, qlen, query, m, mat, 0);
+}
+
+static void ksw_qdestroy(kswq_t *q)
+{
+	if (q == NULL) return;
+	if (q->in_ldm)
+		ldm_free(q, q->allocation_bytes);
+	else
+		free(q);
+}
+
 #if defined __ARM_NEON
 // This macro implicitly uses each function's `zero` local variable
 #define _mm_slli_si128(a, n) (vextq_u8(zero, (a), 16 - (n)))
 #endif
 
+SWBWA_MATESW_HOT
 kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del, int _o_ins, int _e_ins, int xtra) // the first gap costs -(_o+_e)
 {
 	int slen, i, m_b, n_b, te = -1, gmax = 0, minsc, endsc;
@@ -288,6 +322,7 @@ end_loop16:
 	return r;
 }
 
+SWBWA_MATESW_HOT
 kswr_t ksw_i16(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del, int _o_ins, int _e_ins, int xtra) // the first gap costs -(_o+_e)
 {
 	int slen, i, m_b, n_b, te = -1, gmax = 0, minsc, endsc;
@@ -412,35 +447,70 @@ static inline void revseq(int l, uint8_t *s)
 		t = s[i], s[i] = s[l - 1 - i], s[l - 1 - i] = t;
 }
 
-kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int xtra, kswq_t **qry)
+static kswr_t ksw_align2_impl(int qlen, uint8_t *query, int tlen,
+		uint8_t *target, int m, const int8_t *mat, int o_del, int e_del,
+		int o_ins, int e_ins, int xtra, kswq_t **qry, int profile_matesw)
 {
 	int size;
 	kswq_t *q;
 	kswr_t r, rr;
 	kswr_t (*func)(kswq_t*, int, const uint8_t*, int, int, int, int, int);
-	q = (qry && *qry)? *qry : ksw_qinit((xtra&KSW_XBYTE)? 1 : 2, qlen, query, m, mat);
+	if (profile_matesw)
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_FORWARD);
+	q = (qry && *qry)? *qry : ksw_qinit_impl((xtra&KSW_XBYTE)? 1 : 2,
+			qlen, query, m, mat, profile_matesw && qry == 0);
+	if (profile_matesw)
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_FORWARD);
 
 	if (qry && *qry == 0) *qry = q;
 	func = q->size == 2? ksw_i16 : ksw_u8;
 	size = q->size;
+	if (profile_matesw)
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_DP_FORWARD);
 	r = func(q, tlen, target, o_del, e_del, o_ins, e_ins, xtra);
-	if (qry == 0) free(q);
+	if (profile_matesw)
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_DP_FORWARD);
+	if (qry == 0) ksw_qdestroy(q);
 	//if (qry == 0) ldm_free(q, 32 << 10);
 
 	if ((xtra&KSW_XSTART) == 0 || ((xtra&KSW_XSUBO) && r.score < (xtra&0xffff))) return r;
 
 	revseq(r.qe + 1, query); revseq(r.te + 1, target); // +1 because qe/te points to the exact end, not the position after the end
 
-	q = ksw_qinit(size, r.qe + 1, query, m, mat);
+	if (profile_matesw)
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_REVERSE);
+	q = ksw_qinit_impl(size, r.qe + 1, query, m, mat, profile_matesw);
+	if (profile_matesw)
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_REVERSE);
 
+	if (profile_matesw)
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_DP_REVERSE);
 	rr = func(q, tlen, target, o_del, e_del, o_ins, e_ins, KSW_XSTOP | r.score);
+	if (profile_matesw)
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_DP_REVERSE);
 	revseq(r.qe + 1, query); revseq(r.te + 1, target);
-	free(q);
+	ksw_qdestroy(q);
 	//ldm_free(q, 32 << 10);
 	if (r.score == rr.score)
 		r.tb = r.te - rr.te, r.qb = r.qe - rr.qe;
 
 	return r;
+}
+
+kswr_t ksw_align2(int qlen, uint8_t *query, int tlen, uint8_t *target,
+		int m, const int8_t *mat, int o_del, int e_del, int o_ins,
+		int e_ins, int xtra, kswq_t **qry)
+{
+	return ksw_align2_impl(qlen, query, tlen, target, m, mat, o_del,
+			e_del, o_ins, e_ins, xtra, qry, 0);
+}
+
+kswr_t ksw_align2_matesw(int qlen, uint8_t *query, int tlen,
+		uint8_t *target, int m, const int8_t *mat, int o_del, int e_del,
+		int o_ins, int e_ins, int xtra, kswq_t **qry)
+{
+	return ksw_align2_impl(qlen, query, tlen, target, m, mat, o_del,
+			e_del, o_ins, e_ins, xtra, qry, 1);
 }
 
 kswr_t ksw_align(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, const int8_t *mat, int gapo, int gape, int xtra, kswq_t **qry)

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1220" height="513" viewBox="0 0 1220 513">
+<rect width="100%" height="100%" fill="#fbfbf8"/>
+<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; fill: #17242c; letter-spacing: 0; } .small { font-size: 12px; fill: #59666e; } .mono { font-family: Menlo, Consolas, monospace; }</style>
+<text x="36" y="39" font-size="22" font-weight="700">CPE optimization ladder: SRR7963242 PE subset</text>
+<text x="36" y="62" class="small">One CGS-cross process; lower is better; Stage 2 includes part 3</text>
+<rect x="865" y="28" width="13" height="9" fill="#697982"/>
+<text x="884" y="37" class="small">Stage 2</text>
+<rect x="950" y="28" width="13" height="9" fill="#d55e00"/>
+<text x="969" y="37" class="small">CPE part 3</text>
+<text x="36" y="98" font-size="12">Previous optimized</text>
+<rect x="320" y="82" width="720.00" height="9" fill="#697982"/>
+<rect x="320" y="94" width="709.37" height="9" fill="#d55e00"/>
+<text x="1048.0" y="91" class="small">54.637 s (-0.0%)</text>
+<text x="36" y="143" font-size="12">Per-CPE context</text>
+<rect x="320" y="127" width="709.55" height="9" fill="#697982"/>
+<rect x="320" y="139" width="698.82" height="9" fill="#d55e00"/>
+<text x="1037.5499386862384" y="136" class="small">53.844 s (-1.5%)</text>
+<text x="36" y="188" font-size="12">KSW query profile in LDM</text>
+<rect x="320" y="172" width="702.58" height="9" fill="#697982"/>
+<rect x="320" y="184" width="690.65" height="9" fill="#d55e00"/>
+<text x="1030.578838516024" y="181" class="small">53.315 s (-2.4%)</text>
+<text x="36" y="233" font-size="12">SMEM temporary vectors in LDM</text>
+<rect x="320" y="217" width="706.24" height="9" fill="#697982"/>
+<rect x="320" y="229" width="693.57" height="9" fill="#d55e00"/>
+<text x="1034.2422900232443" y="226" class="small">53.593 s (-1.9%)</text>
+<text x="36" y="278" font-size="12">Reverse-complement reuse</text>
+<rect x="320" y="262" width="708.06" height="9" fill="#697982"/>
+<rect x="320" y="274" width="697.51" height="9" fill="#d55e00"/>
+<text x="1036.060837893735" y="271" class="small">53.731 s (-1.7%)</text>
+<text x="36" y="323" font-size="12">Local KSW DP at O3</text>
+<rect x="320" y="307" width="693.34" height="9" fill="#697982"/>
+<rect x="320" y="319" width="681.71" height="9" fill="#d55e00"/>
+<text x="1021.3411424492559" y="316" class="small">52.614 s (-3.7%)</text>
+<text x="36" y="368" font-size="12">Compact mate-dedup keys</text>
+<rect x="320" y="352" width="624.95" height="9" fill="#697982"/>
+<rect x="320" y="364" width="613.31" height="9" fill="#d55e00"/>
+<text x="952.9479290590625" y="361" class="small">47.424 s (-13.2%)</text>
+<text x="36" y="413" font-size="12">Compact keys and scratch in LDM</text>
+<rect x="320" y="397" width="611.80" height="9" fill="#697982"/>
+<rect x="320" y="409" width="599.95" height="9" fill="#d55e00"/>
+<text x="939.7964017058038" y="406" class="small">46.426 s (-15.0%)</text>
+<text x="36" y="458" font-size="12">Function-scoped O3 final</text>
+<rect x="320" y="442" width="611.07" height="9" fill="#697982"/>
+<rect x="320" y="454" width="598.42" height="9" fill="#d55e00"/>
+<text x="939.0716181342315" y="451" class="small">46.371 s (-15.1%)</text>
+</svg>

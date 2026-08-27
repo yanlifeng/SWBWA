@@ -1,0 +1,15 @@
+dataset	variant	label	correct	stage2_s	part3_s
+ERR 75 bp	int32	int32 baseline	yes	3.759	3.400
+ERR 75 bp	fp16x32	FP16 32 lanes (rejected)	no	3.715	3.360
+ERR 75 bp	fp16x16	FP16 16 logical lanes	yes	3.925	3.570
+ERR 75 bp	sa4	SA batch 4	yes	3.822	3.510
+ERR 75 bp	sa8	SA batch 8	yes	3.843	3.520
+ERR 75 bp	sa16	SA batch 16	yes	3.843	3.530
+ERR 75 bp	rid_ldm	contig offsets in LDM	yes	3.852	3.540
+ERR 75 bp	combined	combined before allocation fix	yes	3.783	3.470
+ERR 75 bp	final	final compact KSW allocation	yes	3.786	3.470
+ERR 75 bp	prefetch8	lookahead 8 (rejected)	yes	3.869	3.550
+SRR 150 bp	fp16x32	FP16 32 lanes (rejected)	no	43.201	42.221
+SRR 150 bp	fp16x16	FP16 16 logical lanes	yes	45.281	44.321
+SRR 150 bp	combined	combined before allocation fix	yes	45.407	44.590
+SRR 150 bp	final	final compact KSW allocation	yes	45.355	44.460

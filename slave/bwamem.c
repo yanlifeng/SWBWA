@@ -153,9 +153,14 @@ typedef struct {
 	bwtintv_v mem, mem1;
 	bwtintv_v heap_tmpv[2], ldm_tmpv[2], *tmpv[2];
 	bwtintv_t *ldm_tmp_storage;
+	unsigned char *ldm_chain_arena;
+	size_t chain_arena_used;
 } smem_aux_t;
 
-enum { SWBWA_SMEM_LDM_TMP_CAPACITY = 256 };
+enum {
+	SWBWA_SMEM_LDM_TMP_CAPACITY = 256,
+	SWBWA_CHAIN_LDM_ARENA_BYTES = 24 << 10
+};
 
 static smem_aux_t *smem_aux_init(int use_ldm)
 {
@@ -173,6 +178,7 @@ static smem_aux_t *smem_aux_init(int use_ldm)
 		a->ldm_tmpv[1].m = SWBWA_SMEM_LDM_TMP_CAPACITY;
 		a->ldm_tmpv[1].a = a->ldm_tmp_storage +
 		                    SWBWA_SMEM_LDM_TMP_CAPACITY;
+		a->ldm_chain_arena = ldm_malloc(SWBWA_CHAIN_LDM_ARENA_BYTES);
 	}
 	return a;
 }
@@ -189,7 +195,46 @@ static void smem_aux_destroy(smem_aux_t *a)
 
 		ldm_free(a->ldm_tmp_storage, bytes);
 	}
+	if (a->ldm_chain_arena != NULL)
+		ldm_free(a->ldm_chain_arena, SWBWA_CHAIN_LDM_ARENA_BYTES);
 	free(a);
+}
+
+static int smem_chain_arena_owns(const smem_aux_t *a, const void *ptr)
+{
+	uintptr_t p = (uintptr_t)ptr;
+	uintptr_t begin;
+
+	if (a == NULL || a->ldm_chain_arena == NULL) return 0;
+	begin = (uintptr_t)a->ldm_chain_arena;
+	return p >= begin && p < begin + SWBWA_CHAIN_LDM_ARENA_BYTES;
+}
+
+static void *smem_chain_alloc(smem_aux_t *a, size_t bytes, int clear)
+{
+	void *ptr = NULL;
+
+	if (a != NULL && a->ldm_chain_arena != NULL) {
+		size_t aligned_bytes;
+
+		assert(bytes <= SIZE_MAX - 7);
+		aligned_bytes = (bytes + 7) & ~(size_t)7;
+		if (a->chain_arena_used <= SWBWA_CHAIN_LDM_ARENA_BYTES &&
+		    aligned_bytes <= SWBWA_CHAIN_LDM_ARENA_BYTES -
+		                     a->chain_arena_used) {
+			ptr = a->ldm_chain_arena + a->chain_arena_used;
+			a->chain_arena_used += aligned_bytes;
+		}
+	}
+	if (ptr == NULL) ptr = clear ? calloc(1, bytes) : malloc(bytes);
+	else if (clear) memset(ptr, 0, bytes);
+	assert(ptr != NULL);
+	return ptr;
+}
+
+static void smem_chain_free(smem_aux_t *a, void *ptr)
+{
+	if (ptr != NULL && !smem_chain_arena_owns(a, ptr)) free(ptr);
 }
 
 static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a)
@@ -207,6 +252,7 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
 	a->mem.n = 0;
 
 	// first pass: find all SMEMs
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_COLLECT_FIRST);
 	while (x < len) {
 		if (seq[x] < 4) {
 			x = bwt_smem1(bwt, len, seq, x, start_width, &a->mem1, a->tmpv);
@@ -218,8 +264,10 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
 			}
 		} else ++x;
 	}
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_COLLECT_FIRST);
 
 	// second pass: find MEMs inside a long SMEM
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_COLLECT_SPLIT);
 	old_n = a->mem.n;
 #if SWBWA_ENABLE_TWO_PASS_BATCH
     int b_x[old_n];
@@ -248,11 +296,13 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
         bwt_smem1(bwt, len, seq, (start + end)>>1, p->x[2]+1, &a->mem1, a->tmpv);
         for (i = 0; i < a->mem1.n; ++i)
             if ((uint32_t)a->mem1.a[i].info - (a->mem1.a[i].info>>32) >= opt->min_seed_len)
-                kv_push(bwtintv_t, a->mem, a->mem1.a[i]);
+				kv_push(bwtintv_t, a->mem, a->mem1.a[i]);
     }
 #endif
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_COLLECT_SPLIT);
 
     // third pass: LAST-like
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_COLLECT_LAST);
     if (opt->max_mem_intv > 0) {
         x = 0;
         while (x < len) {
@@ -269,9 +319,12 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
             } else ++x;
         }
     }
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_COLLECT_LAST);
 
     // sort
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_COLLECT_SORT);
     ks_introsort(mem_intv, a->mem.n, a->mem.a);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_COLLECT_SORT);
 }
 
 /************
@@ -303,7 +356,9 @@ typedef struct { size_t n, m; mem_chain_t *a;  } mem_chain_v;
 KBTREE_INIT(chn, mem_chain_t, chain_cmp)
 
     // return 1 if the seed is merged into the chain
-static int test_and_merge(const mem_opt_t *opt, int64_t l_pac, mem_chain_t *c, const mem_seed_t *p, int seed_rid)
+static int test_and_merge(const mem_opt_t *opt, int64_t l_pac,
+                          smem_aux_t *aux, mem_chain_t *c,
+                          const mem_seed_t *p, int seed_rid)
 {
     int64_t qend, rend, x, y;
     const mem_seed_t *last = &c->seeds[c->n-1];
@@ -317,8 +372,20 @@ static int test_and_merge(const mem_opt_t *opt, int64_t l_pac, mem_chain_t *c, c
     y = p->rbeg - last->rbeg;
     if (y >= 0 && x - y <= opt->w && y - x <= opt->w && x - last->len < opt->max_chain_gap && y - last->len < opt->max_chain_gap) { // grow the chain
         if (c->n == c->m) {
+			mem_seed_t *old_seeds = c->seeds;
+			int old_n = c->n;
+
             c->m <<= 1;
-            c->seeds = realloc(c->seeds, c->m * sizeof(mem_seed_t));
+			if (smem_chain_arena_owns(aux, old_seeds)) {
+				c->seeds = smem_chain_alloc(aux,
+					c->m * sizeof(mem_seed_t), 0);
+				memcpy(c->seeds, old_seeds,
+				       old_n * sizeof(mem_seed_t));
+			} else {
+				c->seeds = realloc(old_seeds,
+				                   c->m * sizeof(mem_seed_t));
+				assert(c->seeds != NULL);
+			}
         }
         c->seeds[c->n++] = *p;
         return 1;
@@ -378,6 +445,7 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     tree = kb_init(chn, KB_DEFAULT_SIZE);
 
 	aux = buf? (smem_aux_t*)buf : smem_aux_init(0);
+	aux->chain_arena_used = 0;
     int max_s_size = opt->max_occ;
 
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_CHAIN_COLLECT);
@@ -385,6 +453,7 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_CHAIN_COLLECT);
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_CHAIN_BUILD);
 
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_BUILD_REPETITIVE);
     for (i = 0, b = e = l_rep = 0; i < aux->mem.n; ++i) { // compute frac_rep
         bwtintv_t *p = &aux->mem.a[i];
         if(p->x[2] > max_s_size) max_s_size = p->x[2];
@@ -394,71 +463,61 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
         else e = e > se? e : se;
 	}
 	l_rep += e - b;
-
-
-
-    //static long mem_cnt = 0;
-    //static long k_cnt = 0;
-    //static int cntt_0 = 0;
-    //cntt_0++;
-
-    //int64_t reg_pos[3000];
-    //int reg_num = 0;
-    //int now_pos = 0;
-    //for (i = 0; i < aux->mem.n; ++i) {
-	//	bwtintv_t *p = &aux->mem.a[i];
-	//	int step, count, slen = (uint32_t)p->info - (p->info>>32); // seed length
-	//	int64_t k;
-	//	// if (slen < opt->min_seed_len) continue; // ignore if too short or too repetitive
-	//	step = p->x[2] > opt->max_occ? p->x[2] / opt->max_occ : 1;
-	//	for (k = count = 0; k < p->x[2] && count < opt->max_occ; k += step, ++count) {
-    //        //reg_num++;
-	//		reg_pos[reg_num++] = bwt_sa(bwt, p->x[0] + k); // this is the base coordinate in the forward-reverse reference
-    //        if(reg_num == 3000) {
-    //            fprintf(stderr, "GGGGGGGGGGGGGGG %d\n", reg_num);
-    //        }
-    //    }
-    //}
-    //if(reg_num >= 2222) fprintf(stderr, "GGGGGGGGGGGGGGG %d\n", reg_num);
-		
-
-
-    //mem_cnt += aux->mem.n; 
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_BUILD_REPETITIVE);
 	for (i = 0; i < aux->mem.n; ++i) {
 		bwtintv_t *p = &aux->mem.a[i];
 		int step, count, slen = (uint32_t)p->info - (p->info>>32); // seed length
 		int64_t k;
-		// if (slen < opt->min_seed_len) continue; // ignore if too short or too repetitive
 		step = p->x[2] > opt->max_occ? p->x[2] / opt->max_occ : 1;
-		for (k = count = 0; k < p->x[2] && count < opt->max_occ; k += step, ++count) {
-            //k_cnt++;
+		for (k = count = 0;
+		     k < p->x[2] && count < opt->max_occ;
+		     k += step, ++count) {
 			mem_chain_t tmp, *lower, *upper;
 			mem_seed_t s;
 			int rid, to_add = 0;
-            //k_cnt++;
-			s.rbeg = tmp.pos = bwt_sa(bwt, p->x[0] + k); // this is the base coordinate in the forward-reverse reference
-			//s.rbeg = tmp.pos = reg_pos[now_pos++];
-			s.qbeg = p->info>>32;
-			s.score= s.len = slen;
-			rid = bns_intv2rid(bns, s.rbeg, s.rbeg + s.len);
-			if (rid < 0) continue; // bridging multiple reference sequences or the forward-reverse boundary; TODO: split the seed; don't discard it!!!
-			if (kb_size(tree)) {
-				kb_intervalp(chn, tree, &tmp, &lower, &upper); // find the closest chain
 
-				if (!lower || !test_and_merge(opt, l_pac, lower, &s, rid)) to_add = 1;
+			swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_BUILD_SA);
+			s.rbeg = tmp.pos = bwt_sa(bwt, p->x[0] + k);
+			swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_BUILD_SA);
+
+			s.qbeg = p->info >> 32;
+			s.score = s.len = slen;
+			swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_BUILD_RID);
+			rid = bns_intv2rid(bns, s.rbeg, s.rbeg + s.len);
+			swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_BUILD_RID);
+			if (rid < 0) continue;
+			if (kb_size(tree)) {
+				swbwa_cpe_profile_start(
+					SWBWA_CPE_PROFILE_CHAIN_BUILD_TREE_SEARCH);
+				kb_intervalp(chn, tree, &tmp, &lower, &upper);
+				swbwa_cpe_profile_stop(
+					SWBWA_CPE_PROFILE_CHAIN_BUILD_TREE_SEARCH);
+
+				swbwa_cpe_profile_start(
+					SWBWA_CPE_PROFILE_CHAIN_BUILD_MERGE);
+				if (!lower || !test_and_merge(opt, l_pac, aux,
+				                                  lower, &s, rid))
+					to_add = 1;
+				swbwa_cpe_profile_stop(
+					SWBWA_CPE_PROFILE_CHAIN_BUILD_MERGE);
 			} else to_add = 1;
-			if (to_add) { // add the seed as a new chain
-				tmp.n = 1; tmp.m = 4;
-				tmp.seeds = calloc(tmp.m, sizeof(mem_seed_t));
+			if (to_add) {
+				swbwa_cpe_profile_start(
+					SWBWA_CPE_PROFILE_CHAIN_BUILD_INSERT);
+				tmp.n = 1;
+				tmp.m = 4;
+				tmp.seeds = smem_chain_alloc(
+					aux, tmp.m * sizeof(mem_seed_t), 1);
 				tmp.seeds[0] = s;
 				tmp.rid = rid;
 				tmp.is_alt = !!bns->anns[rid].is_alt;
 				kb_putp(chn, tree, &tmp);
+				swbwa_cpe_profile_stop(
+					SWBWA_CPE_PROFILE_CHAIN_BUILD_INSERT);
 			}
 		}
 	}
-    //if(cntt_0 % 10000 == 0) fprintf(stderr, "%d [mem_cnt] %.3f, [k_cnt] %.3f\n", cntt_0, 1.0 * mem_cnt / cntt_0, 1.0 * k_cnt / cntt_0);
-
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_BUILD_FINALIZE);
 	if (buf == 0) smem_aux_destroy(aux);
 
 	kv_resize(mem_chain_t, chain, kb_size(tree));
@@ -471,6 +530,7 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	if (bwa_verbose >= 4) printf("* fraction of repetitive seeds: %.3f\n", (float)l_rep / len);
 
 	kb_destroy(chn, tree);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_BUILD_FINALIZE);
 	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_CHAIN_BUILD);
 	return chain;
 }
@@ -485,7 +545,8 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 #define flt_lt(a, b) ((a).w > (b).w)
 KSORT_INIT(mem_flt, mem_chain_t, flt_lt)
 
-int mem_chain_flt(const mem_opt_t *opt, int n_chn, mem_chain_t *a)
+int mem_chain_flt(const mem_opt_t *opt, int n_chn, mem_chain_t *a,
+                  smem_aux_t *aux)
 {
 	int i, k;
 	kvec_t(int) chains = {0,0,0}; // this keeps int indices of the non-overlapping chains
@@ -495,7 +556,7 @@ int mem_chain_flt(const mem_opt_t *opt, int n_chn, mem_chain_t *a)
 		mem_chain_t *c = &a[i];
 		c->first = -1; c->kept = 0;
 		c->w = mem_chain_weight(c);
-		if (c->w < opt->min_chain_weight) free(c->seeds);
+		if (c->w < opt->min_chain_weight) smem_chain_free(aux, c->seeds);
 		else a[k++] = *c;
 	}
 	n_chn = k;
@@ -539,7 +600,7 @@ int mem_chain_flt(const mem_opt_t *opt, int n_chn, mem_chain_t *a)
 		if (a[i].kept < 3) a[i].kept = 0;
 	for (i = k = 0; i < n_chn; ++i) { // free discarded chains
 		mem_chain_t *c = &a[i];
-		if (c->kept == 0) free(c->seeds);
+		if (c->kept == 0) smem_chain_free(aux, c->seeds);
 		else a[k++] = a[i];
 	}
 	return k;
@@ -1304,6 +1365,7 @@ static mem_alnreg_v mem_align1_core_impl(int id, const mem_opt_t *opt,
 	int i;
 	mem_chain_v chn;
 	mem_alnreg_v regs;
+	smem_aux_t *aux = buf;
 
 	for (i = 0; i < l_seq; ++i) // convert to 2-bit encoding if we have not done so
 		seq[i] = seq[i] < 4? seq[i] : nst_nt4_table[(int)seq[i]];
@@ -1313,7 +1375,7 @@ static mem_alnreg_v mem_align1_core_impl(int id, const mem_opt_t *opt,
 	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_CHAIN);
 
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_FILTER);
-	chn.n = mem_chain_flt(opt, chn.n, chn.a);
+	chn.n = mem_chain_flt(opt, chn.n, chn.a, aux);
 
 	mem_flt_chained_seeds(opt, bns, pac, l_seq, (uint8_t*)seq, chn.n, chn.a);
 	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_FILTER);
@@ -1326,7 +1388,7 @@ static mem_alnreg_v mem_align1_core_impl(int id, const mem_opt_t *opt,
 		mem_chain_t *p = &chn.a[i];
 		if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
 		mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
-		free(chn.a[i].seeds);
+		smem_chain_free(aux, chn.a[i].seeds);
 	}
 	free(chn.a);
 	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_EXTENSION);

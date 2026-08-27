@@ -1,0 +1,149 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=6 chunk_bytes=117964800 file_bytes=223555584
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is ../data/ERR1203383_1.fastq_1
+the input file is ../data/ERR1203383_2.fastq_1
+the output file is /dev/null
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+[DBG stage1] slow fread: R1 offset=0 requested=117964800 read=117964800 elapsed=1.168 s
+[DBG stage1] slow fread: R2 offset=0 requested=117964800 read=117964800 elapsed=1.028 s
+[M::swbwa_cross_runtime_init] initialized cross-segment runtime in 0.070 sec
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 1057218
+start swbwa_cross_run
+processed 1057218
+[M::mem_process_seqs_merge2] Processed 1057218 reads in 0.150 CPU sec, 1.967 real sec
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 105591588 bytes)...
+[DBG stage1] slow fread: R1 offset=117963996 requested=105591588 read=105591588 elapsed=1.040 s
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 942782
+start swbwa_cross_run
+processed 942782
+[M::mem_process_seqs_merge2] Processed 942782 reads in 0.090 CPU sec, 1.842 real sec
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000000 / 000001
+  mode:     non-MPI POSIX
+  path:     /dev/null
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                         2000000
+    submitted SAM bytes                            523048834
+    buffered flushes                                       8
+    buffered flush bytes                           523048834
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                         0.000059 s  (8 calls,     7.431 us/call)
+
+  POSIX file writes
+    write system calls                                      8
+    write system-call bytes                         523048834
+    POSIX write system calls                     0.000046 s  (8 calls,     5.731 us/call)
+    POSIX write effective bandwidth            10879143.769 MiB/s
+
+  Output close timing
+    POSIX close                                  0.000016 s  (1 calls,    15.950 us/call)
+================================================================
+
+
+================ SWBWA CPE Profile (LWPF) ================
+  sampled CG: 5 (64 CPEs)
+  counters: cycle, instructions, global loads/stores,
+            D-cache accesses/misses, memory-barrier waits,
+            instruction-buffer-empty cycles
+  values: average | minimum | maximum across sampled CPEs
+
+LWPF kernel summary for unit SWBWA
++-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+
+|                 |                 |                 |                 |                 |                 |                 |                 |       CYC       |
+|     KERNEL      |      CYCLE      |      INST       |       GLD       |       GST       |  DCACHE ACCESS  |   DCACHE MISS   |  CYC MEMB WAIT  | INSTBUFFEREMPTY |
+|                 |                 |                 |                 |                 |                 |                 |                 |                 |
++-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+
+|WORKER ALIGNMENT |7167M|7141M|7460M|3006M|2905M|3126M|2587.|2231.|2863.|   0.|   0.|   0.| 230M| 214M| 246M|3020K|2647K|3262K|  11.|   0.| 685.|1897M|1810M|1965M|
+|    MEM CHAIN    |3716M|3235M|4008M|1461M|1276M|1589M|   0.|   0.|   0.|   0.|   0.|   0.|  64M|  56M|  69M|2815K|2447K|3057K|   0.|   0.|   0.| 627M| 541M| 684M|
+|  CHAIN FILTER   | 214M| 171M| 309M|  61M|  38M|  99M|   0.|   0.|   0.|   0.|   0.|   0.|  14M|7968K|  23M|8702.|6125.| 114K|   0.|   0.|   0.| 100M|  91M| 106M|
+| CHAIN EXTENSION | 965M| 883M|1061M| 388M| 330M| 460M|   0.|   0.|   0.|   0.|   0.|   0.|  57M|  49M|  68M|  61K|  54K|  77K|   0.|   0.|   0.| 453M| 423M| 483M|
+| ALIGNMENT...... | 100M|  90M| 108M|  31M|  24M|  37M|   0.|   0.|   0.|   0.|   0.|   0.|4577K|3524K|5601K|  89.|  41.| 200.|   0.|   0.|   0.|  52M|  48M|  54M|
+|   MATE RESCUE   |1269M| 928M|1812M| 907M| 683M|1217M|   0.|   0.|   0.|   0.|   0.|   0.|  65M|  49M|  86M|  17K|  13K|  25K|   0.|   0.|   0.| 184M| 138M| 272M|
+|     PAIRING     |  69M|  63M|  74M|  17M|  15M|  18M|   0.|   0.|   0.|   0.|   0.|   0.|2289K|2192K|2399K|1427.| 775.|2787.|   0.|   0.|   0.|  42M|  37M|  46M|
+|   SAM FORMAT    |1998M|1668M|2469M|1059M| 836M|1361M|   0.|   0.|   0.|   0.|   0.|   0.|  89M|  73M| 109M|  55K|  50K|  65K|   0.|   0.|   0.| 641M| 601M| 680M|
+|    SAM COPY     | 138M| 123M| 145M|4867K|4186K|5411K|   0.|   0.|   0.|   0.|   0.|   0.| 922K| 796K|1023K|  28K|  24K|  31K|   0.|   0.|   0.| 115M| 103M| 120M|
+| MEM CHAIN...... |2179M|1875M|2378M|1060M| 915M|1170M|   0.|   0.|   0.|   0.|   0.|   0.|  39M|  34M|  43M|1836K|1585K|2030K|   0.|   0.|   0.| 354M| 305M| 386M|
+| MEM CHAIN BUILD |1459M|1293M|1547M| 395M| 355M| 416M|   0.|   0.|   0.|   0.|   0.|   0.|  24M|  22M|  25M| 973K| 856K|1045K|   0.|   0.|   0.| 211M| 183M| 229M|
+|CHAIN EXTENSION..| 443M| 367M| 514M| 292M| 227M| 359M|   0.|   0.|   0.|   0.|   0.|   0.|  43M|  33M|  52M|  12K|8931.|  15K|   0.|   0.|   0.| 120M| 102M| 136M|
+| MATE REF FETCH  |  24M|  20M|  29M|  14M|  11M|  16M|   0.|   0.|   0.|   0.|   0.|   0.|2098K|1700K|2437K|2567.|2076.|3202.|   0.|   0.|   0.|5413K|4318K|7078K|
+| MATE KSW ALIGN  | 916M| 728M|1124M| 772M| 614M| 935M|   0.|   0.|   0.|   0.|   0.|   0.|  53M|  42M|  65M|1374.|1184.|1663.|   0.|   0.|   0.|  70M|  57M|  90M|
+|KSW QUERY INIT...|  36M|  29M|  42M|  13M|  11M|  15M|   0.|   0.|   0.|   0.|   0.|   0.|1341K|1086K|1558K|   6.|   1.|  13.|   0.|   0.|   0.|  11M|8824K|  13M|
+| KSW DP FORWARD  | 745M| 600M| 899M| 663M| 535M| 789M|   0.|   0.|   0.|   0.|   0.|   0.|  44M|  35M|  53M| 976.| 824.|1321.|   0.|   0.|   0.|  48M|  39M|  63M|
+|KSW QUERY INIT...|  18M|  13M|  25M|7733K|5707K|  11M|   0.|   0.|   0.|   0.|   0.|   0.| 756K| 550K|1042K|   0.|   0.|   1.|   0.|   0.|   0.|3917K|2939K|5381K|
+| KSW DP REVERSE  | 108M|  76M| 160M|  84M|  59M| 124M|   0.|   0.|   0.|   0.|   0.|   0.|5830K|4093K|8614K|   0.|   0.|   2.|   0.|   0.|   0.|5431K|3939K|7666K|
+|   MATE DEDUP    | 236M|  69M| 558M| 102M|  29M| 241M|   0.|   0.|   0.|   0.|   0.|   0.|7260K|2603K|  16M| 143.|  21.|1114.|   0.|   0.|   0.|  57M|  22M| 126M|
+| DEDUP SORT END  |  80M|  24M| 188M|  41M|  11M|  97M|   0.|   0.|   0.|   0.|   0.|   0.|2819K| 980K|6217K| 127.|  17.| 924.|   0.|   0.|   0.|  14M|6086K|  31M|
+|DEDUP REDUNDANCY |  12M|5658K|  22M|5061K|2318K|9722K|   0.|   0.|   0.|   0.|   0.|   0.| 992K| 434K|1931K|   4.|   0.|   9.|   0.|   0.|   0.|3028K|1704K|5213K|
+|DEDUP SORT SCORE | 140M|  35M| 344M|  55M|  13M| 134M|   0.|   0.|   0.|   0.|   0.|   0.|3446K|1172K|7652K|   9.|   0.| 182.|   0.|   0.|   0.|  38M|  13M|  88M|
+|MEM COLLECT......| 758M| 655M| 829M| 350M| 303M| 387M|   0.|   0.|   0.|   0.|   0.|   0.|  11M|9525K|  12M| 625K| 542K| 692K|   0.|   0.|   0.| 102M|  88M| 111M|
+|MEM COLLECT......| 704M| 606M| 771M| 444M| 382M| 489M|   0.|   0.|   0.|   0.|   0.|   0.|  20M|  17M|  22M| 800K| 689K| 883K|   0.|   0.|   0.| 110M|  95M| 121M|
+|MEM COLLECT LAST | 555M| 476M| 607M| 259M| 223M| 286M|   0.|   0.|   0.|   0.|   0.|   0.|6697K|5771K|7414K| 326K| 279K| 361K|   0.|   0.|   0.|  67M|  57M|  73M|
+|MEM COLLECT SORT | 149M| 126M| 166M|6473K|5573K|7157K|   0.|   0.|   0.|   0.|   0.|   0.|1172K|1009K|1294K|  85K|  73K|  94K|   0.|   0.|   0.|  60M|  52M|  67M|
+|CHAIN BUILD......|4768K|4046K|5644K| 472K| 407K| 522K|   0.|   0.|   0.|   0.|   0.|   0.|  72K|  62K|  79K| 286.| 118.| 920.|   0.|   0.|   0.|3698K|3215K|4107K|
+| CHAIN BUILD SA  | 985M| 867M|1048M| 304M| 271M| 320M|   0.|   0.|   0.|   0.|   0.|   0.|  12M|  10M|  12M| 799K| 701K| 858K|   0.|   0.|   0.|  38M|  34M|  40M|
+| CHAIN BUILD RID | 105M|  92M| 112M|  22M|  20M|  23M|   0.|   0.|   0.|   0.|   0.|   0.|1839K|1652K|1948K|  51K|  44K|  55K|   0.|   0.|   0.|  20M|  17M|  21M|
+|CHAIN BUILD TREE.|  15M|  13M|  18M|5045K|4661K|5519K|   0.|   0.|   0.|   0.|   0.|   0.| 325K| 295K| 360K|4696.|3360.|6769.|   0.|   0.|   0.|2010K|1866K|2182K|
+|CHAIN BUILD......|9852K|8842K|  11M|2634K|2403K|2795K|   0.|   0.|   0.|   0.|   0.|   0.| 341K| 312K| 361K|3856.|3126.|4857.|   0.|   0.|   0.|1128K|1016K|1216K|
+|CHAIN BUILD......| 176M| 164M| 190M|  34M|  31M|  37M|   0.|   0.|   0.|   0.|   0.|   0.|6393K|5808K|7036K|  58K|  53K|  63K|   0.|   0.|   0.|  74M|  63M|  80M|
+|CHAIN BUILD......| 121M| 105M| 130M|  18M|  16M|  20M|   0.|   0.|   0.|   0.|   0.|   0.|2855K|2542K|3092K|  47K|  41K|  52K|   0.|   0.|   0.|  50M|  43M|  54M|
+=============================================================
+
+======================= SWBWA Timing Report =======================
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                    10.063 s
+    stage 1 - allocate and read raw FASTQ blocks              4.139 s
+    stage 2 - align reads and generate SAM records            3.810 s
+    stage 3 - write SAM and release batch data                2.107 s
+      SAM output writes                                         1.386 s
+      batch cleanup and loop overhead (derived)                 0.721 s
+
+  Stage 1 input details
+    batches completed / stage calls                       2 / 3
+    input-buffer and batch allocations                        0.000 s  (7 calls, max 0.000 s)
+    aggregate requested allocation bytes            447117064
+    FASTQ fseeko calls                                        0.000 s  (4 calls, max 0.000 s)
+    FASTQ fread calls                                         4.137 s  (4 calls, max 1.168 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (2 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.001 s
+    raw FASTQ bytes read                            447112776  (426.400 MiB)
+    effective fread bandwidth                        103.059 MiB/s
+    slowest allocation                                 0.000 s  (64 bytes)
+    slowest fread                                      1.168 s  (R1 offset=0, bytes=117964800)
+
+  Stage 2 worker details
+    total - active merge worker                               3.809 s
+      part 1 - prepare CPE task and reusable buffers            0.096 s
+      part 2 - CPE FASTQ formatting and input release           0.032 s
+      part 3 - CPE alignment and SAM length pass                3.450 s
+      part 4 - assign slices in the shared SAM buffer           0.152 s
+      part 5 - CPE SAM record generation                        0.077 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: correctness_results/cpe_ablation_repeat_20260826/bin/baseline/SWBWA mem -v 4 -t 1 -1 -o /dev/null -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa ../data/ERR1203383_1.fastq_1 ../data/ERR1203383_2.fastq_1

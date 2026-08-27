@@ -10,8 +10,14 @@
 
 typedef union m128i {
     float16v32 val;
+    intv16 words;
 } __m128i;
 
+/* Keep the original KSW stripe width while using native FP16 arithmetic. */
+static const intv16 swbwa_ksw_low_half_mask = {
+    -1, -1, -1, -1, -1, -1, -1, -1,
+     0,  0,  0,  0,  0,  0,  0,  0
+};
 
 static inline __m128i _mm_set1_epi32(int32_t n) {
 	assert(n >= 0 && n <= 255);
@@ -20,59 +26,23 @@ static inline __m128i _mm_set1_epi32(int32_t n) {
     return r;
 }
 
-int is_valid_address(void* ptr) {
-    uintptr_t addr = (uintptr_t)ptr;
-    if ((addr & 0xFF0000000000) != 0x400000000000) {
-        return 0;
-    }
-    if ((addr & 0x3F) != 0) {
-        return 0;
-    }
-    return 1;
-}
-
 static inline __m128i _mm_load_si128(const __m128i *ptr) {
-	_Float16* new_ptr = (_Float16*)ptr;
-	//if(is_valid_address(new_ptr) == 0) {
-	//	fprintf(stderr, "GG load ptr %p\n", new_ptr);
-	//}
     __m128i r;
-    simd_load(r.val, new_ptr); 
+    simd_load(r.val, (_Float16 *)ptr);
     return r; 
 }
 static inline void _mm_store_si128(__m128i *ptr, __m128i a) { 
-	//_Float16* new_ptr = (_Float16*)ptr;
-	//if(is_valid_address(new_ptr) == 0) {
-	//	fprintf(stderr, "GG store ptr %p\n", new_ptr);
-	//}
     simd_store(a.val, (_Float16 *)ptr);
 }
 
 static inline int m128i_allzero(__m128i a) {
-    //intv16 xx = a.val;
-    //xx = simd_vbisw(xx, simd_sllx(xx, 8 * 32));
-    //xx = simd_vbisw(xx, simd_sllx(xx, 4 * 32));
-    //xx = simd_vbisw(xx, simd_sllx(xx, 2 * 32));
-    //xx = simd_vbisw(xx, simd_sllx(xx, 1 * 32));
-    //return simd_vextw15(xx) == 0;
-
-    _Float16 val[32];
-    simd_store(a.val, &(val[0]));
-    for(int i = 0; i < 32; i++) {
-        if(fabs(val[i]) > 1e-3) return 0;
-    }
-	return 1;
+	return simd_reduc_smaxh(a.val) == (_Float16)0;
 }
 
 static inline __m128i _mm_slli_si128(__m128i a, int n) {
-    _Float16 val[32];
-    simd_store(a.val, &(val[0]));
-    memmove(&val[n], &val[0], sizeof(int) * (32 - n));
-    for (int i = 0; i < n; i++) val[i] = 0;
     __m128i r;
-    simd_load(r.val, &val[0]);
-    //__m128i r;
-    //r.val = simd_sllx(a.val, n * 32);
+	r.words = simd_vandw(simd_sllx(a.words, n * 16),
+	                    swbwa_ksw_low_half_mask);
 	return r;
 }
 
@@ -88,12 +58,7 @@ static inline __m128i _mm_min_epu8(__m128i a, __m128i b) {
 
 
 static inline uint8_t m128i_max_u8(__m128i a) {
-    _Float16 val[32];
-    simd_store(a.val, &(val[0]));
-	_Float16 max = 0;
-	for (int i = 0; i < 32; i++)
-		if (max < val[i]) max = val[i];
-	return (uint8_t)max;
+	return (uint8_t)simd_reduc_smaxh(a.val);
 }
 
 static inline __m128i _mm_set1_epi8(int8_t n) {

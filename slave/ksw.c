@@ -64,6 +64,19 @@ struct _kswq_t {
 
 enum { SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES = 64 << 10 };
 
+#if SWBWA_ENABLE_FLOAT16_VECTOR && SWBWA_ENABLE_PACKED_INT8
+#error "KSW FP16 and packed-int8 backends are mutually exclusive"
+#endif
+
+#if SWBWA_ENABLE_FLOAT16_VECTOR
+/* FP16 uses 32 physical lanes, but 16 logical lanes preserve KSW semantics. */
+enum { SWBWA_KSW_U8_LANES = 16 };
+#elif SWBWA_ENABLE_PACKED_INT8
+enum { SWBWA_KSW_U8_LANES = 32 };
+#else
+enum { SWBWA_KSW_U8_LANES = 16 };
+#endif
+
 /**
  * Initialize the query data structure
  *
@@ -89,22 +102,17 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 
 	size = size > 1? 2 : 1;
 	p = 8 * (3 - size); // # values per __m128i
-#if SWBWA_ENABLE_PACKED_INT8 || SWBWA_ENABLE_FLOAT16_VECTOR
-    // TODO p << 2 ?
-    p <<= 1;
-#endif
+	if (size == 1) p = SWBWA_KSW_U8_LANES;
 	slen = (qlen + p - 1) / p; // segmented length
 
-	allocation_bytes = sizeof(kswq_t) + 256 + 64 * 4 * slen * (m + 4);
+	allocation_bytes = sizeof(kswq_t) + 63 +
+	                   sizeof(__m128i) * slen * (m + 4);
 	if (prefer_ldm &&
 	    allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES)
 		q = (kswq_t*)ldm_malloc(allocation_bytes);
 	else
 		q = (kswq_t*)malloc(allocation_bytes);
 	assert(q != NULL);
-    //memset(q, 0, sizeof(kswq_t) + 256 + 64 * 4 * slen * (m + 4));
-    //q = (kswq_t*)kswq_fix;
-	//q = (kswq_t*)ldm_malloc(32 << 10); // a single block of memory
 	q->qp = (__m128i*)(((size_t)q + sizeof(kswq_t) + 63) >> 6 << 6); // align memory
 	q->H0 = q->qp + slen * m;
 	q->H1 = q->H0 + slen;
@@ -126,7 +134,6 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 	// An example: p=8, qlen=19, slen=3 and segmentation:
 	//  {{0,3,6,9,12,15,18,-1},{1,4,7,10,13,16,-1,-1},{2,5,8,11,14,17,-1,-1}}
 	if (size == 1) {
-		//int8_t *t = (int8_t*)q->qp;
 #if SWBWA_ENABLE_PACKED_INT8
 		int16_t *t = (int16_t*)q->qp;
 #elif SWBWA_ENABLE_FLOAT16_VECTOR
@@ -136,11 +143,26 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 #endif
 
 		for (a = 0; a < m; ++a) {
-			int i, k, nlen = slen * p;
+			int i, k;
 			const int8_t *ma = mat + a * m;
+#if SWBWA_ENABLE_FLOAT16_VECTOR
+			for (i = 0; i < slen; ++i) {
+				int lane;
+
+				for (lane = 0; lane < 32; ++lane) {
+					k = i + lane * slen;
+					*t++ = lane < p
+					     ? (k >= qlen ? 0 : ma[query[k]]) + q->shift
+					     : 0;
+				}
+			}
+#else
+			int nlen = slen * p;
+
 			for (i = 0; i < slen; ++i)
 				for (k = i; k < nlen; k += slen) // p iterations
 					*t++ = (k >= qlen? 0 : ma[query[k]]) + q->shift;
+#endif
 		}
 	} else {
 		int16_t *t = (int16_t*)q->qp;
@@ -204,11 +226,7 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 #define allzero_16(xx) (m128i_allzero((xx)))
 #endif
 
-#if SWBWA_ENABLE_PACKED_INT8 || SWBWA_ENABLE_FLOAT16_VECTOR
-    const int p_new = 32;
-#else
-    const int p_new = 16;
-#endif
+	const int p_new = SWBWA_KSW_U8_LANES;
 
 	// initialization
 	r = g_defr;
@@ -295,18 +313,32 @@ end_loop16:
 	r.score = gmax + q->shift < 255? gmax : 255;
 	r.te = te;
 	if (r.score != 255) { // get a->qe, the end of query match; find the 2nd best score
-		int max = -1, tmp, low, high, qlen = slen * p_new;
+		int max = -1, tmp, low, high;
+#if !SWBWA_ENABLE_FLOAT16_VECTOR
+		int qlen = slen * p_new;
+#endif
 		//uint8_t *t = (uint8_t*)Hmax;
 #if SWBWA_ENABLE_PACKED_INT8
 		uint16_t *t = (uint16_t*)Hmax;
-#elif SWBWA_ENABLE_FLOAT16_VECTOR
-        _Float16 *t = (_Float16*)Hmax;
-#else
+#elif !SWBWA_ENABLE_FLOAT16_VECTOR
 		int *t = (int*)Hmax;
 #endif
+#if SWBWA_ENABLE_FLOAT16_VECTOR
+		for (i = 0; i < slen; ++i) {
+			int lane;
+			_Float16 *v = (_Float16*)(Hmax + i);
+
+			for (lane = 0; lane < p_new; ++lane) {
+				tmp = i + lane * slen;
+				if ((int)v[lane] > max) max = v[lane], r.qe = tmp;
+				else if ((int)v[lane] == max && tmp < r.qe) r.qe = tmp;
+			}
+		}
+#else
 		for (i = 0; i < qlen; ++i, ++t)
 			if ((int)*t > max) max = *t, r.qe = i / p_new + i % p_new * slen;
 			else if ((int)*t == max && (tmp = i / p_new + i % p_new * slen) < r.qe) r.qe = tmp; 
+#endif
 		//printf("%d,%d\n", max, gmax);
 		if (b) {
 			i = (r.score + q->max - 1) / q->max;

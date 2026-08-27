@@ -1,0 +1,15 @@
+bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+[RUN] variant=baseline dataset=ERR1203383 repeat=1
+scripts/run_cpe_ablation.sh: line 17:  2981 Segmentation fault      (core dumped) "$exe" mem -v 4 -t 1 -1 -o /dev/null -I 170,80,500,1 "$reference" "../data/${dataset}_1.fastq_1" "../data/${dataset}_2.fastq_1" > "$log_dir/${dataset}.run${run}.log" 2>&1
+[7904692 ## 2026-08-26/15:34:57] warning: cpu [22628]: user's mpe task: tid= 0, pid= 2951, exit_code= 1
+bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+[RUN] variant=baseline dataset=ERR1203383 repeat=1
+[7904729 ## 2026-08-26/15:38:49] warning: cpu [22628]: user's mpe task: tid= 0, pid= 2986, exit_code= 1
+bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+[RUN] variant=baseline dataset=ERR1203383 repeat=1
+scripts/run_cpe_ablation.sh: line 36:   530 Segmentation fault      (core dumped) "$exe" mem -v 4 -t 1 -1 -o /dev/null -I 170,80,500,1 "$reference" "$read1" "$read2" > "$log_dir/${dataset}.run${run}.log" 2>&1
+[7904790 ## 2026-08-26/15:43:20] warning: cpu [23294]: user's mpe task: tid= 0, pid= 495, exit_code= 1
+bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+[RUN] variant=baseline dataset=ERR1203383 repeat=1
+scripts/run_cpe_ablation.sh: line 36:  3207 Segmentation fault      (core dumped) "$exe" mem -v 4 -t 1 -1 -o /dev/null -I 170,80,500,1 "$reference" "$read1" "$read2" > "$log_dir/${dataset}.run${run}.log" 2>&1
+[7904809 ## 2026-08-26/15:45:32] warning: cpu [22628]: user's mpe task: tid= 0, pid= 3172, exit_code= 1

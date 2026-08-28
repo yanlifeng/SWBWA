@@ -38,10 +38,45 @@
 
 #if SWBWA_ENABLE_CPE_PROFILE
 static __thread swbwa_matesw_profile_t local_matesw_profile;
+static __thread uint64_t previous_sam_candidates;
+static __thread int has_previous_sam;
+typedef struct {
+	uint32_t qlen;
+	uint32_t tlen;
+	uint32_t slen;
+	uint32_t score_size;
+	uint32_t reverse_qlen;
+	uint32_t reverse_tlen;
+	uint32_t reverse_slen;
+	uint64_t forward_work;
+	uint64_t reverse_work;
+} swbwa_matesw_sam_candidate_t;
+static __thread swbwa_matesw_sam_candidate_t
+	direction0_candidates[SWBWA_MATESW_SAM_PROFILE_CAPACITY];
+static __thread uint64_t direction_candidate_counts[2];
+static __thread int active_sam_direction = -1;
+
+static int matesw_ratio_bin(uint64_t first, uint64_t second)
+{
+	uint64_t larger = first > second ? first : second;
+	uint64_t smaller = first > second ? second : first;
+
+	if (larger == 0) return 0;
+	if (smaller == 0) return SWBWA_MATESW_RATIO_BINS - 1;
+	if (larger * 100 <= smaller * 110) return 0;
+	if (larger * 100 <= smaller * 125) return 1;
+	if (larger * 100 <= smaller * 150) return 2;
+	if (larger <= smaller * 2) return 3;
+	return 4;
+}
 
 void swbwa_matesw_profile_reset(void)
 {
 	memset(&local_matesw_profile, 0, sizeof(local_matesw_profile));
+	previous_sam_candidates = 0;
+	has_previous_sam = 0;
+	direction_candidate_counts[0] = direction_candidate_counts[1] = 0;
+	active_sam_direction = -1;
 }
 
 void swbwa_matesw_profile_commit(swbwa_matesw_profile_t *destination)
@@ -62,6 +97,178 @@ void swbwa_matesw_profile_commit(swbwa_matesw_profile_t *destination)
 			local_matesw_profile.candidate_bins[i];
 	for (i = 0; i < SWBWA_MATESW_RATIO_BINS; ++i)
 		destination->ratio_bins[i] += local_matesw_profile.ratio_bins[i];
+	destination->sam_pe_calls += local_matesw_profile.sam_pe_calls;
+	for (i = 0; i < SWBWA_MATESW_SAM_CANDIDATE_BINS; ++i)
+		destination->sam_pe_candidate_bins[i] +=
+			local_matesw_profile.sam_pe_candidate_bins[i];
+	destination->sam_pe_both_directions +=
+		local_matesw_profile.sam_pe_both_directions;
+	destination->same_read_pairs += local_matesw_profile.same_read_pairs;
+	destination->same_read_paired_candidates +=
+		local_matesw_profile.same_read_paired_candidates;
+	destination->adjacent_read_groups +=
+		local_matesw_profile.adjacent_read_groups;
+	destination->adjacent_read_pairs +=
+		local_matesw_profile.adjacent_read_pairs;
+	destination->adjacent_read_paired_candidates +=
+		local_matesw_profile.adjacent_read_paired_candidates;
+	destination->sam_u8_candidates += local_matesw_profile.sam_u8_candidates;
+	destination->sam_profiled_pairs += local_matesw_profile.sam_profiled_pairs;
+	destination->sam_u8_pairs += local_matesw_profile.sam_u8_pairs;
+	destination->sam_qlen_equal_pairs +=
+		local_matesw_profile.sam_qlen_equal_pairs;
+	destination->sam_tlen_equal_pairs +=
+		local_matesw_profile.sam_tlen_equal_pairs;
+	destination->sam_forward_dimension_equal_pairs +=
+		local_matesw_profile.sam_forward_dimension_equal_pairs;
+	destination->sam_reverse_dimension_equal_pairs +=
+		local_matesw_profile.sam_reverse_dimension_equal_pairs;
+	destination->sam_dimension_equal_pairs +=
+		local_matesw_profile.sam_dimension_equal_pairs;
+	destination->sam_profile_overflow +=
+		local_matesw_profile.sam_profile_overflow;
+	for (i = 0; i < SWBWA_MATESW_RATIO_BINS; ++i) {
+		destination->sam_qlen_ratio_bins[i] +=
+			local_matesw_profile.sam_qlen_ratio_bins[i];
+		destination->sam_tlen_ratio_bins[i] +=
+			local_matesw_profile.sam_tlen_ratio_bins[i];
+		destination->sam_forward_work_ratio_bins[i] +=
+			local_matesw_profile.sam_forward_work_ratio_bins[i];
+		destination->sam_reverse_work_ratio_bins[i] +=
+			local_matesw_profile.sam_reverse_work_ratio_bins[i];
+		destination->sam_total_work_ratio_bins[i] +=
+			local_matesw_profile.sam_total_work_ratio_bins[i];
+	}
+	destination->sam_total_forward_main_steps +=
+		local_matesw_profile.sam_total_forward_main_steps;
+	destination->sam_total_forward_lazy_steps +=
+		local_matesw_profile.sam_total_forward_lazy_steps;
+	destination->sam_total_reverse_main_steps +=
+		local_matesw_profile.sam_total_reverse_main_steps;
+	destination->sam_total_reverse_lazy_steps +=
+		local_matesw_profile.sam_total_reverse_lazy_steps;
+	destination->sam_paired_forward_serial_work +=
+		local_matesw_profile.sam_paired_forward_serial_work;
+	destination->sam_paired_forward_lockstep_work +=
+		local_matesw_profile.sam_paired_forward_lockstep_work;
+	destination->sam_paired_reverse_serial_work +=
+		local_matesw_profile.sam_paired_reverse_serial_work;
+	destination->sam_paired_reverse_lockstep_work +=
+		local_matesw_profile.sam_paired_reverse_lockstep_work;
+}
+
+static void begin_matesw_sam_profile(void)
+{
+	direction_candidate_counts[0] = direction_candidate_counts[1] = 0;
+	active_sam_direction = -1;
+}
+
+static void set_matesw_sam_direction(int direction)
+{
+	assert(direction == 0 || direction == 1);
+	active_sam_direction = direction;
+}
+
+static void record_matesw_sam_candidate(
+	const swbwa_matesw_ksw_work_t *work)
+{
+	uint64_t forward_work = work->forward_main_steps +
+	                        work->forward_lazy_steps;
+	uint64_t reverse_work = work->reverse_main_steps +
+	                        work->reverse_lazy_steps;
+	uint64_t index;
+
+	local_matesw_profile.sam_total_forward_main_steps +=
+		work->forward_main_steps;
+	local_matesw_profile.sam_total_forward_lazy_steps +=
+		work->forward_lazy_steps;
+	local_matesw_profile.sam_total_reverse_main_steps +=
+		work->reverse_main_steps;
+	local_matesw_profile.sam_total_reverse_lazy_steps +=
+		work->reverse_lazy_steps;
+	if (work->score_size == 1) ++local_matesw_profile.sam_u8_candidates;
+	if (active_sam_direction < 0) return;
+
+	index = direction_candidate_counts[active_sam_direction]++;
+	if (active_sam_direction == 0) {
+		swbwa_matesw_sam_candidate_t *candidate;
+
+		if (index >= SWBWA_MATESW_SAM_PROFILE_CAPACITY) {
+			++local_matesw_profile.sam_profile_overflow;
+			return;
+		}
+		candidate = &direction0_candidates[index];
+		candidate->qlen = work->qlen;
+		candidate->tlen = work->tlen;
+		candidate->slen = work->slen;
+		candidate->score_size = work->score_size;
+		candidate->reverse_qlen = work->reverse_qlen;
+		candidate->reverse_tlen = work->reverse_tlen;
+		candidate->reverse_slen = work->reverse_slen;
+		candidate->forward_work = forward_work;
+		candidate->reverse_work = reverse_work;
+		return;
+	}
+
+	if (index < direction_candidate_counts[0]) {
+		swbwa_matesw_sam_candidate_t *first;
+		uint64_t first_total, second_total;
+
+		if (index >= SWBWA_MATESW_SAM_PROFILE_CAPACITY) {
+			++local_matesw_profile.sam_profile_overflow;
+			return;
+		}
+		first = &direction0_candidates[index];
+		first_total = first->forward_work + first->reverse_work;
+		second_total = forward_work + reverse_work;
+		++local_matesw_profile.sam_profiled_pairs;
+		if (first->score_size == 1 && work->score_size == 1)
+			++local_matesw_profile.sam_u8_pairs;
+		if (first->qlen == work->qlen)
+			++local_matesw_profile.sam_qlen_equal_pairs;
+		if (first->tlen == work->tlen)
+			++local_matesw_profile.sam_tlen_equal_pairs;
+		if (first->qlen == work->qlen && first->tlen == work->tlen &&
+		    first->slen == work->slen &&
+		    first->score_size == work->score_size)
+			++local_matesw_profile.sam_forward_dimension_equal_pairs;
+		if (first->reverse_qlen == work->reverse_qlen &&
+		    first->reverse_tlen == work->reverse_tlen &&
+		    first->reverse_slen == work->reverse_slen)
+			++local_matesw_profile.sam_reverse_dimension_equal_pairs;
+		if (first->qlen == work->qlen && first->tlen == work->tlen &&
+		    first->slen == work->slen &&
+		    first->score_size == work->score_size &&
+		    first->reverse_qlen == work->reverse_qlen &&
+		    first->reverse_tlen == work->reverse_tlen &&
+		    first->reverse_slen == work->reverse_slen)
+			++local_matesw_profile.sam_dimension_equal_pairs;
+		++local_matesw_profile.sam_qlen_ratio_bins[
+			matesw_ratio_bin(first->qlen, work->qlen)];
+		++local_matesw_profile.sam_tlen_ratio_bins[
+			matesw_ratio_bin(first->tlen, work->tlen)];
+		++local_matesw_profile.sam_forward_work_ratio_bins[
+			matesw_ratio_bin(first->forward_work, forward_work)];
+		++local_matesw_profile.sam_reverse_work_ratio_bins[
+			matesw_ratio_bin(first->reverse_work, reverse_work)];
+		++local_matesw_profile.sam_total_work_ratio_bins[
+			matesw_ratio_bin(first_total, second_total)];
+		local_matesw_profile.sam_paired_forward_serial_work +=
+			first->forward_work + forward_work;
+		local_matesw_profile.sam_paired_forward_lockstep_work +=
+			first->forward_work > forward_work
+			? first->forward_work : forward_work;
+		local_matesw_profile.sam_paired_reverse_serial_work +=
+			first->reverse_work + reverse_work;
+		local_matesw_profile.sam_paired_reverse_lockstep_work +=
+			first->reverse_work > reverse_work
+			? first->reverse_work : reverse_work;
+	}
+}
+
+static void end_matesw_sam_profile(void)
+{
+	active_sam_direction = -1;
 }
 
 static void record_matesw_pair_opportunity(
@@ -107,6 +314,34 @@ static void record_matesw_pair_opportunity(
 	}
 	if (i < count) local_matesw_profile.paired_work += work[order[i]];
 }
+
+static void record_matesw_sam_opportunity(const int candidates[2])
+{
+	uint64_t total = (uint64_t)candidates[0] + candidates[1];
+	uint64_t pairs = candidates[0] < candidates[1]
+	               ? candidates[0] : candidates[1];
+	int bin = total < SWBWA_MATESW_SAM_CANDIDATE_BINS - 1
+	        ? (int)total : SWBWA_MATESW_SAM_CANDIDATE_BINS - 1;
+
+	++local_matesw_profile.sam_pe_calls;
+	++local_matesw_profile.sam_pe_candidate_bins[bin];
+	if (candidates[0] > 0 && candidates[1] > 0)
+		++local_matesw_profile.sam_pe_both_directions;
+	local_matesw_profile.same_read_pairs += pairs;
+	local_matesw_profile.same_read_paired_candidates += pairs * 2;
+
+	if (has_previous_sam) {
+		pairs = previous_sam_candidates < total
+		      ? previous_sam_candidates : total;
+		++local_matesw_profile.adjacent_read_groups;
+		local_matesw_profile.adjacent_read_pairs += pairs;
+		local_matesw_profile.adjacent_read_paired_candidates += pairs * 2;
+		has_previous_sam = 0;
+	} else {
+		previous_sam_candidates = total;
+		has_previous_sam = 1;
+	}
+}
 #else
 static inline void record_matesw_pair_opportunity(
 	int count, const int *work, const int *orientations)
@@ -114,6 +349,11 @@ static inline void record_matesw_pair_opportunity(
 	(void)count;
 	(void)work;
 	(void)orientations;
+}
+
+static inline void record_matesw_sam_opportunity(const int candidates[2])
+{
+	(void)candidates;
 }
 #endif
 
@@ -236,117 +476,289 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int l_pos, int r_pos, const
 		}
 }
 
-int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], const mem_alnreg_t *a, int l_ms, const uint8_t *ms, mem_alnreg_v *ma)
+typedef struct {
+	uint8_t *seq;
+	uint8_t *ref;
+	int64_t rb;
+	int64_t re;
+	int is_rev;
+} swbwa_matesw_candidate_t;
+
+typedef struct {
+	const mem_opt_t *opt;
+	const bntseq_t *bns;
+	const mem_alnreg_t *anchor;
+	mem_alnreg_v *alignments;
+	int l_ms;
+	uint8_t *rev;
+	int candidate_count;
+	int added;
+	int direction;
+	swbwa_matesw_candidate_t candidates[4];
+} swbwa_matesw_task_t;
+
+static void swbwa_matesw_prepare(swbwa_matesw_task_t *task,
+		const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac,
+		const mem_pestat_t pes[4], const mem_alnreg_t *anchor, int l_ms,
+		const uint8_t *mate_seq, mem_alnreg_v *alignments, int direction)
 {
-	extern int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, uint8_t *query, int n, mem_alnreg_t *a);
-
-
-
 	int64_t l_pac = bns->l_pac;
-	int added = 0, i, r, skip[4], n = 0, rid = -1;
-	uint8_t *rev = 0;
+	int i, r, skip[4];
 #if SWBWA_ENABLE_CPE_PROFILE
-	int candidate_count = 0;
 	int candidate_work[4];
 	int candidate_orientations[4];
 #endif
-	for (r = 0; r < 4; ++r)
-		skip[r] = pes[r].failed? 1 : 0;
-	for (i = 0; i < ma->n; ++i) { // check which orinentation has been found
+
+	memset(task, 0, sizeof(*task));
+	task->opt = opt;
+	task->bns = bns;
+	task->anchor = anchor;
+	task->alignments = alignments;
+	task->l_ms = l_ms;
+	task->direction = direction;
+	for (r = 0; r < 4; ++r) skip[r] = pes[r].failed ? 1 : 0;
+	for (i = 0; i < alignments->n; ++i) {
 		int64_t dist;
-		r = mem_infer_dir(l_pac, a->rb, ma->a[i].rb, &dist);
-		if (dist >= pes[r].low && dist <= pes[r].high)
-			skip[r] = 1;
-	}
 
-	if (skip[0] + skip[1] + skip[2] + skip[3] == 4) {
-		record_matesw_pair_opportunity(0, NULL, NULL);
-		return 0;
+		r = mem_infer_dir(l_pac, anchor->rb, alignments->a[i].rb, &dist);
+		if (dist >= pes[r].low && dist <= pes[r].high) skip[r] = 1;
 	}
-
 	for (r = 0; r < 4; ++r) {
-		int is_rev, is_larger;
-		uint8_t *seq, *ref = 0;
+		int is_rev, is_larger, rid = -1;
+		uint8_t *seq, *ref = NULL;
 		int64_t rb, re;
+		swbwa_matesw_candidate_t *candidate;
+
 		if (skip[r]) continue;
-		is_rev = (r>>1 != (r&1)); // whether to reverse complement the mate
-		is_larger = !(r>>1); // whether the mate has larger coordinate
+		is_rev = (r >> 1 != (r & 1));
+		is_larger = !(r >> 1);
 		if (is_rev) {
-			if (rev == 0) {
-				rev = malloc(l_ms); // this is the reverse complement of $ms
+			if (task->rev == NULL) {
+				task->rev = malloc(l_ms);
 				for (i = 0; i < l_ms; ++i)
-					rev[l_ms - 1 - i] = ms[i] < 4? 3 - ms[i] : 4;
+					task->rev[l_ms - 1 - i] =
+						mate_seq[i] < 4 ? 3 - mate_seq[i] : 4;
 			}
-			seq = rev;
-		} else seq = (uint8_t*)ms;
-		if (!is_rev) {
-			rb = is_larger? a->rb + pes[r].low : a->rb - pes[r].high;
-			re = (is_larger? a->rb + pes[r].high: a->rb - pes[r].low) + l_ms; // if on the same strand, end position should be larger to make room for the seq length
+			seq = task->rev;
 		} else {
-			rb = (is_larger? a->rb + pes[r].low : a->rb - pes[r].high) - l_ms; // similarly on opposite strands
-			re = is_larger? a->rb + pes[r].high: a->rb - pes[r].low;
+			seq = (uint8_t *)mate_seq;
+		}
+		if (!is_rev) {
+			rb = is_larger ? anchor->rb + pes[r].low
+			               : anchor->rb - pes[r].high;
+			re = (is_larger ? anchor->rb + pes[r].high
+			                : anchor->rb - pes[r].low) + l_ms;
+		} else {
+			rb = (is_larger ? anchor->rb + pes[r].low
+			                : anchor->rb - pes[r].high) - l_ms;
+			re = is_larger ? anchor->rb + pes[r].high
+			               : anchor->rb - pes[r].low;
 		}
 		if (rb < 0) rb = 0;
-		if (re > l_pac<<1) re = l_pac<<1;
+		if (re > l_pac << 1) re = l_pac << 1;
 		if (rb < re) {
 			swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_REF_FETCH);
-			ref = bns_fetch_seq(bns, pac, &rb, (rb+re)>>1, &re, &rid);
+			ref = bns_fetch_seq(bns, pac, &rb, (rb + re) >> 1, &re, &rid);
 			swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_REF_FETCH);
 		}
-		if (a->rid == rid && re - rb >= opt->min_seed_len) { // no funny things happening
-			kswr_t aln;
-			mem_alnreg_t b;
-			int tmp, xtra = KSW_XSUBO | KSW_XSTART | (l_ms * opt->a < 250? KSW_XBYTE : 0) | (opt->min_seed_len * opt->a);
-#if SWBWA_ENABLE_CPE_PROFILE
-			assert(candidate_count < 4);
-			candidate_work[candidate_count] =
-				((l_ms + 15) >> 4) * (int)(re - rb);
-			candidate_orientations[candidate_count] = is_rev;
-			++candidate_count;
-#endif
-			swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
-			aln = ksw_align2_matesw(l_ms, seq, re - rb, ref, 5, opt->mat,
-			                          opt->o_del, opt->e_del, opt->o_ins,
-			                          opt->e_ins, xtra, 0);
-			swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
-			memset(&b, 0, sizeof(mem_alnreg_t));
-			if (aln.score >= opt->min_seed_len && aln.qb >= 0) { // something goes wrong if aln.qb < 0
-				b.rid = a->rid;
-				b.is_alt = a->is_alt;
-				b.qb = is_rev? l_ms - (aln.qe + 1) : aln.qb;
-				b.qe = is_rev? l_ms - aln.qb : aln.qe + 1;
-				b.rb = is_rev? (l_pac<<1) - (rb + aln.te + 1) : rb + aln.tb;
-				b.re = is_rev? (l_pac<<1) - (rb + aln.tb) : rb + aln.te + 1;
-				b.score = aln.score;
-				b.csub = aln.score2;
-				b.secondary = -1;
-				b.seedcov = (b.re - b.rb < b.qe - b.qb? b.re - b.rb : b.qe - b.qb) >> 1;
-//				printf("*** %d, [%lld,%lld], %d:%d, (%lld,%lld), (%lld,%lld) == (%lld,%lld)\n", aln.score, rb, re, is_rev, is_larger, a->rb, a->re, ma->a[0].rb, ma->a[0].re, b.rb, b.re);
-				kv_push(mem_alnreg_t, *ma, b); // make room for a new element
-				// move b s.t. ma is sorted
-				for (i = 0; i < ma->n - 1; ++i) // find the insertion point
-					if (ma->a[i].score < b.score) break;
-				tmp = i;
-				for (i = ma->n - 1; i > tmp; --i) ma->a[i] = ma->a[i-1];
-				ma->a[i] = b;
-				added = 1;
-			}
-			++n;
+		if (anchor->rid != rid || re - rb < opt->min_seed_len) {
+			free(ref);
+			continue;
 		}
-		free(ref);
-	}
-	free(rev);
+		assert(task->candidate_count < 4);
+		candidate = &task->candidates[task->candidate_count];
+		candidate->seq = seq;
+		candidate->ref = ref;
+		candidate->rb = rb;
+		candidate->re = re;
+		candidate->is_rev = is_rev;
 #if SWBWA_ENABLE_CPE_PROFILE
-	record_matesw_pair_opportunity(candidate_count, candidate_work,
-									candidate_orientations);
+		candidate_work[task->candidate_count] =
+			((l_ms + 15) >> 4) * (int)(re - rb);
+		candidate_orientations[task->candidate_count] = is_rev;
 #endif
-	if (added) {
-		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_DEDUP);
-		ma->n = mem_sort_dedup_patch(opt, 0, 0, 0, ma->n, ma->a);
-		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_DEDUP);
+		++task->candidate_count;
+	}
+#if SWBWA_ENABLE_CPE_PROFILE
+	record_matesw_pair_opportunity(task->candidate_count, candidate_work,
+	                                candidate_orientations);
+#endif
+}
+
+static void swbwa_matesw_apply(swbwa_matesw_task_t *task, int index,
+		kswr_t aln)
+{
+	swbwa_matesw_candidate_t *candidate = &task->candidates[index];
+	const mem_alnreg_t *anchor = task->anchor;
+	mem_alnreg_v *alignments = task->alignments;
+	mem_alnreg_t b;
+	int64_t l_pac = task->bns->l_pac;
+	int i, insertion;
+
+	if (aln.score < task->opt->min_seed_len || aln.qb < 0) return;
+	memset(&b, 0, sizeof(b));
+	b.rid = anchor->rid;
+	b.is_alt = anchor->is_alt;
+	b.qb = candidate->is_rev ? task->l_ms - (aln.qe + 1) : aln.qb;
+	b.qe = candidate->is_rev ? task->l_ms - aln.qb : aln.qe + 1;
+	b.rb = candidate->is_rev
+	     ? (l_pac << 1) - (candidate->rb + aln.te + 1)
+	     : candidate->rb + aln.tb;
+	b.re = candidate->is_rev
+	     ? (l_pac << 1) - (candidate->rb + aln.tb)
+	     : candidate->rb + aln.te + 1;
+	b.score = aln.score;
+	b.csub = aln.score2;
+	b.secondary = -1;
+	b.seedcov = (b.re - b.rb < b.qe - b.qb ? b.re - b.rb : b.qe - b.qb) >> 1;
+	kv_push(mem_alnreg_t, *alignments, b);
+	for (i = 0; i < alignments->n - 1; ++i)
+		if (alignments->a[i].score < b.score) break;
+	insertion = i;
+	for (i = alignments->n - 1; i > insertion; --i)
+		alignments->a[i] = alignments->a[i - 1];
+	alignments->a[insertion] = b;
+	task->added = 1;
+}
+
+static void swbwa_matesw_run_one(swbwa_matesw_task_t *task, int index)
+{
+	swbwa_matesw_candidate_t *candidate = &task->candidates[index];
+	const mem_opt_t *opt = task->opt;
+	int xtra = KSW_XSUBO | KSW_XSTART |
+	           (task->l_ms * opt->a < 250 ? KSW_XBYTE : 0) |
+	           (opt->min_seed_len * opt->a);
+	kswr_t aln;
+
+#if SWBWA_ENABLE_CPE_PROFILE
+	set_matesw_sam_direction(task->direction);
+#endif
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
+	aln = ksw_align2_matesw(task->l_ms, candidate->seq,
+	                        candidate->re - candidate->rb, candidate->ref,
+	                        5, opt->mat, opt->o_del, opt->e_del, opt->o_ins,
+	                        opt->e_ins, xtra, NULL);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
+#if SWBWA_ENABLE_CPE_PROFILE
+	{
+		swbwa_matesw_ksw_work_t work;
+
+		swbwa_matesw_ksw_work_take(&work);
+		record_matesw_sam_candidate(&work);
+	}
+#endif
+	swbwa_matesw_apply(task, index, aln);
+}
+
+static void swbwa_matesw_run_pair(swbwa_matesw_task_t tasks[2], int index)
+{
+	swbwa_matesw_candidate_t *first = &tasks[0].candidates[index];
+	swbwa_matesw_candidate_t *second = &tasks[1].candidates[index];
+	const mem_opt_t *opt = tasks[0].opt;
+	int xtra = KSW_XSUBO | KSW_XSTART |
+	           (tasks[0].l_ms * opt->a < 250 ? KSW_XBYTE : 0) |
+	           (opt->min_seed_len * opt->a);
+	kswr_t results[2];
+
+	if (tasks[0].l_ms != tasks[1].l_ms) {
+		swbwa_matesw_run_one(&tasks[0], index);
+		swbwa_matesw_run_one(&tasks[1], index);
+		return;
 	}
 
-	return n;
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
+	ksw_align2_matesw_dual_forward(
+		tasks[0].l_ms, first->seq, first->re - first->rb, first->ref,
+		tasks[1].l_ms, second->seq, second->re - second->rb, second->ref,
+		5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins,
+		xtra, results);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
+#if SWBWA_ENABLE_CPE_PROFILE
+	{
+		swbwa_matesw_ksw_work_t work[2];
+
+		swbwa_matesw_ksw_pair_work_take(work);
+		set_matesw_sam_direction(tasks[0].direction);
+		record_matesw_sam_candidate(&work[0]);
+		set_matesw_sam_direction(tasks[1].direction);
+		record_matesw_sam_candidate(&work[1]);
+	}
+#endif
+	swbwa_matesw_apply(&tasks[0], index, results[0]);
+	swbwa_matesw_apply(&tasks[1], index, results[1]);
+}
+
+static void swbwa_matesw_finish(swbwa_matesw_task_t *task)
+{
+	extern int mem_sort_dedup_patch(const mem_opt_t *opt,
+		const bntseq_t *bns, const uint8_t *pac, uint8_t *query,
+		int n, mem_alnreg_t *a);
+	int i;
+
+	for (i = 0; i < task->candidate_count; ++i)
+		free(task->candidates[i].ref);
+	free(task->rev);
+	if (task->added) {
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_DEDUP);
+		task->alignments->n = mem_sort_dedup_patch(
+			task->opt, NULL, NULL, NULL, task->alignments->n,
+			task->alignments->a);
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_DEDUP);
+	}
+}
+
+static int swbwa_mem_matesw_one(const mem_opt_t *opt, const bntseq_t *bns,
+		const uint8_t *pac, const mem_pestat_t pes[4],
+		const mem_alnreg_t *anchor, int l_ms, const uint8_t *mate_seq,
+		mem_alnreg_v *alignments, int direction)
+{
+	swbwa_matesw_task_t task;
+	int i;
+
+	swbwa_matesw_prepare(&task, opt, bns, pac, pes, anchor, l_ms,
+	                     mate_seq, alignments, direction);
+	for (i = 0; i < task.candidate_count; ++i)
+		swbwa_matesw_run_one(&task, i);
+	swbwa_matesw_finish(&task);
+	return task.candidate_count;
+}
+
+int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns,
+		const uint8_t *pac, const mem_pestat_t pes[4],
+		const mem_alnreg_t *anchor, int l_ms, const uint8_t *mate_seq,
+		mem_alnreg_v *alignments)
+{
+	return swbwa_mem_matesw_one(opt, bns, pac, pes, anchor, l_ms,
+	                            mate_seq, alignments, 0);
+}
+
+static int swbwa_mem_matesw_dual(const mem_opt_t *opt, const bntseq_t *bns,
+		const uint8_t *pac, const mem_pestat_t pes[4],
+		const mem_alnreg_t anchors[2], const int mate_lengths[2],
+		const uint8_t *mate_seqs[2], mem_alnreg_v *alignments[2],
+		int candidate_counts[2])
+{
+	swbwa_matesw_task_t tasks[2];
+	int paired, i, total;
+
+	for (i = 0; i < 2; ++i)
+		swbwa_matesw_prepare(&tasks[i], opt, bns, pac, pes, &anchors[i],
+		                     mate_lengths[i], mate_seqs[i], alignments[i], i);
+	paired = tasks[0].candidate_count < tasks[1].candidate_count
+	       ? tasks[0].candidate_count : tasks[1].candidate_count;
+	for (i = 0; i < paired; ++i) swbwa_matesw_run_pair(tasks, i);
+	for (i = paired; i < tasks[0].candidate_count; ++i)
+		swbwa_matesw_run_one(&tasks[0], i);
+	for (i = paired; i < tasks[1].candidate_count; ++i)
+		swbwa_matesw_run_one(&tasks[1], i);
+	total = tasks[0].candidate_count + tasks[1].candidate_count;
+	if (candidate_counts != NULL) {
+		candidate_counts[0] = tasks[0].candidate_count;
+		candidate_counts[1] = tasks[1].candidate_count;
+	}
+	swbwa_matesw_finish(&tasks[0]);
+	swbwa_matesw_finish(&tasks[1]);
+	return total;
 }
 
 int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], bseq1_t s[2], mem_alnreg_v a[2], int id, int *sub, int *n_sub, int z[2], int n_pri[2])
@@ -442,6 +854,9 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	int n = 0, i, j, z[2], o, subo, n_sub, extra_flag = 1, n_pri[2], n_aa[2];
 	kstring_t str;
 	mem_aln_t h[2], g[2], aa[2][2];
+#if SWBWA_ENABLE_CPE_PROFILE
+	int matesw_candidates[2] = { 0, 0 };
+#endif
 
 	str.l = str.m = 0; str.s = 0;
 	memset(h, 0, sizeof(mem_aln_t) * 2);
@@ -450,17 +865,76 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	if (!(opt->flag & MEM_F_NO_RESCUE)) { // then perform SW for the best alignment
 		mem_alnreg_v b[2];
 		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_RESCUE);
+#if SWBWA_ENABLE_CPE_PROFILE
+		begin_matesw_sam_profile();
+#endif
 		kv_init(b[0]); kv_init(b[1]);
 		for (i = 0; i < 2; ++i)
 			for (j = 0; j < a[i].n; ++j)
 				if (a[i].a[j].score >= a[i].a[0].score  - opt->pen_unpaired)
 					kv_push(mem_alnreg_t, b[i], a[i].a[j]);
-		for (i = 0; i < 2; ++i)
-			for (j = 0; j < b[i].n && j < opt->max_matesw; ++j)
-				n += mem_matesw(opt, bns, pac, pes, &b[i].a[j], s[!i].l_seq, (uint8_t*)s[!i].seq, &a[!i]);
+#if SWBWA_ENABLE_MATESW_DUAL_FORWARD
+		{
+			int call_counts[2] = {
+				b[0].n < opt->max_matesw ? b[0].n : opt->max_matesw,
+				b[1].n < opt->max_matesw ? b[1].n : opt->max_matesw
+			};
+			int paired_calls = call_counts[0] < call_counts[1]
+			                 ? call_counts[0] : call_counts[1];
+
+			for (j = 0; j < paired_calls; ++j) {
+				mem_alnreg_t anchors[2] = { b[0].a[j], b[1].a[j] };
+				int mate_lengths[2] = { s[1].l_seq, s[0].l_seq };
+				const uint8_t *mate_seqs[2] = {
+					(uint8_t *)s[1].seq, (uint8_t *)s[0].seq
+				};
+				mem_alnreg_v *mate_alignments[2] = { &a[1], &a[0] };
+				int candidate_counts[2];
+
+				n += swbwa_mem_matesw_dual(
+					opt, bns, pac, pes, anchors, mate_lengths, mate_seqs,
+					mate_alignments, candidate_counts);
+#if SWBWA_ENABLE_CPE_PROFILE
+				matesw_candidates[0] += candidate_counts[0];
+				matesw_candidates[1] += candidate_counts[1];
+#endif
+			}
+			for (i = 0; i < 2; ++i) {
+				for (j = paired_calls; j < call_counts[i]; ++j) {
+					int count = swbwa_mem_matesw_one(
+						opt, bns, pac, pes, &b[i].a[j], s[!i].l_seq,
+						(uint8_t *)s[!i].seq, &a[!i], i);
+
+					n += count;
+#if SWBWA_ENABLE_CPE_PROFILE
+					matesw_candidates[i] += count;
+#endif
+				}
+			}
+		}
+#else
+		for (i = 0; i < 2; ++i) {
+			for (j = 0; j < b[i].n && j < opt->max_matesw; ++j) {
+				int count = swbwa_mem_matesw_one(
+					opt, bns, pac, pes, &b[i].a[j], s[!i].l_seq,
+					(uint8_t *)s[!i].seq, &a[!i], i);
+
+				n += count;
+#if SWBWA_ENABLE_CPE_PROFILE
+				matesw_candidates[i] += count;
+#endif
+			}
+		}
+#endif
 		free(b[0].a); free(b[1].a);
+#if SWBWA_ENABLE_CPE_PROFILE
+		end_matesw_sam_profile();
+#endif
 		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_RESCUE);
 	}
+#if SWBWA_ENABLE_CPE_PROFILE
+	record_matesw_sam_opportunity(matesw_candidates);
+#endif
 	n_pri[0] = mem_mark_primary_se(opt, a[0].n, a[0].a, id<<1|0);
 	n_pri[1] = mem_mark_primary_se(opt, a[1].n, a[1].a, id<<1|1);
 	if (opt->flag & MEM_F_PRIMARY5) {

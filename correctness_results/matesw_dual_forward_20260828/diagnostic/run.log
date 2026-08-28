@@ -1,0 +1,89 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=6 chunk_bytes=363572 file_bytes=363572
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is correctness_results/matesw_dual_forward_20260828/diagnostic/input/R1.fastq
+the input file is correctness_results/matesw_dual_forward_20260828/diagnostic/input/R2.fastq
+the output file is correctness_results/matesw_dual_forward_20260828/diagnostic/out.sam
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 363572 bytes)...
+[M::swbwa_cross_runtime_init] initialized cross-segment runtime in 0.070 sec
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG dual-forward] cpe=65 side=0 dual=29/639/110/26/606 reference=29/639/109/26/606\n[DBG dual-forward] cpe=248 side=1 dual=12/638/21/-1/-1 reference=12/638/79/-1/-1\n[DBG dual-forward] cpe=368 side=1 dual=10/616/70/-1/-1 reference=10/616/89/-1/-1\n[DBG dual-forward] cpe=307 side=0 dual=60/468/130/32/395 reference=60/468/129/32/395\n[DBG dual-forward] cpe=21 side=1 dual=7/52/80/-1/-1 reference=7/52/79/-1/-1\n[DBG dual-forward] cpe=353 side=0 dual=77/648/130/27/563 reference=77/648/129/27/563\n[DBG dual-forward] cpe=307 side=1 dual=7/183/18/-1/-1 reference=7/183/89/-1/-1\n[DBG dual-forward] cpe=353 side=1 dual=98/648/130/-1/-1 reference=98/648/129/-1/-1\n[DBG dual-forward] cpe=285 side=1 dual=6/63/58/-1/-1 reference=6/63/79/-1/-1\n[DBG dual-forward] cpe=316 side=1 dual=11/290/110/-1/-1 reference=11/290/109/-1/-1\n[DBG dual-forward] cpe=257 side=1 dual=9/222/96/-1/-1 reference=9/222/139/-1/-1\n[DBG dual-forward] cpe=206 side=0 dual=44/639/100/23/593 reference=44/639/99/23/593\n[DBG dual-forward] cpe=129 side=0 dual=8/325/146/-1/-1 reference=8/325/129/-1/-1\n[DBG dual-forward] cpe=37 side=0 dual=9/445/24/-1/-1 reference=9/445/89/-1/-1\n[DBG dual-forward] cpe=374 side=0 dual=9/645/57/-1/-1 reference=9/645/109/-1/-1\n[DBG dual-forward] cpe=151 side=1 dual=34/213/120/29/255 reference=34/213/119/29/255\n[DBG dual-forward] cpe=339 side=0 dual=105/481/110/-1/-1 reference=105/481/109/-1/-1\n[DBG dual-forward] cpe=189 side=0 dual=38/529/90/-1/-1 reference=38/529/89/-1/-1\n[DBG dual-forward] cpe=89 side=0 dual=7/87/7/-1/-1 reference=7/87/99/-1/-1\n[DBG dual-forward] cpe=374 side=1 dual=10/465/132/-1/-1 reference=10/465/139/-1/-1\n[DBG dual-forward] cpe=374 side=1 dual=17/622/110/-1/-1 reference=17/622/109/-1/-1\n[DBG dual-forward] cpe=89 side=0 dual=8/332/7/-1/-1 reference=8/332/99/-1/-1\n[DBG dual-forward] cpe=151 side=1 dual=43/409/120/38/311 reference=43/409/119/38/311\n[DBG dual-forward] cpe=26 side=1 dual=51/534/140/37/326 reference=51/534/139/37/326\n[DBG dual-forward] cpe=104 side=0 dual=72/547/130/55/155 reference=72/547/129/55/155\n[DBG dual-forward] cpe=371 side=0 dual=59/535/140/45/211 reference=59/535/139/45/211\n[DBG dual-forward] cpe=58 side=1 dual=54/393/140/29/507 reference=54/393/139/29/507\n[DBG dual-forward] cpe=383 side=1 dual=8/515/70/-1/-1 reference=8/515/79/-1/-1\n[DBG dual-forward] cpe=368 side=1 dual=9/111/70/-1/-1 reference=9/111/89/-1/-1\n[DBG dual-forward] cpe=332 side=1 dual=70/395/130/43/318 reference=70/395/129/43/318\n[DBG dual-forward] cpe=284 side=0 dual=57/279/140/54/171 reference=57/279/139/54/171\n[DBG dual-forward] cpe=110 side=0 dual=32/451/74/29/339 reference=32/451/99/29/339\n[DBG dual-forward] cpe=183 side=0 dual=29/585/70/23/506 reference=29/585/69/23/506\n[DBG dual-forward] cpe=110 side=0 dual=32/377/84/31/257 reference=32/377/99/31/257\n[DBG dual-forward] cpe=110 side=0 dual=34/401/100/32/508 reference=34/401/99/32/508\n[DBG dual-forward] cpe=230 side=0 dual=105/455/140/29/349 reference=105/455/139/29/349\n[DBG dual-forward] cpe=356 side=0 dual=90/644/110/44/258 reference=90/644/109/44/258\n[DBG dual-forward] cpe=54 side=1 dual=75/584/120/-1/-1 reference=75/584/119/-1/-1\n[DBG dual-forward] cpe=272 side=1 dual=12/578/113/-1/-1 reference=12/578/139/-1/-1\n[DBG dual-forward] cpe=272 side=1 dual=8/365/38/-1/-1 reference=8/365/99/-1/-1\n[DBG dual-forward] cpe=332 side=1 dual=75/395/130/24/58 reference=75/395/129/24/58\n[DBG dual-forward] cpe=230 side=1 dual=120/449/130/27/63 reference=120/449/129/27/63\n[DBG dual-forward] cpe=249 side=0 dual=70/461/140/61/123 reference=70/461/139/61/123\n[DBG dual-forward] cpe=133 side=0 dual=10/337/25/-1/-1 reference=10/337/89/-1/-1\nslave pre done
+now n is 2000
+start swbwa_cross_run
+processed 2000
+[M::mem_process_seqs_merge2] Processed 2000 reads in 0.090 CPU sec, 0.673 real sec
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000000 / 000001
+  mode:     non-MPI POSIX
+  path:     correctness_results/matesw_dual_forward_20260828/diagnostic/out.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                            2000
+    submitted SAM bytes                               854042
+    buffered flushes                                       1
+    buffered flush bytes                              854042
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                         0.011211 s  (1 calls, 11211.097 us/call)
+
+  POSIX file writes
+    write system calls                                      1
+    write system-call bytes                            854042
+    POSIX write system calls                     0.011208 s  (1 calls, 11207.947 us/call)
+    POSIX write effective bandwidth                72.670 MiB/s
+
+  Output close timing
+    POSIX close                                  0.000601 s  (1 calls,   601.403 us/call)
+================================================================
+
+
+======================= SWBWA Timing Report =======================
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                     0.703 s
+    stage 1 - allocate and read raw FASTQ blocks              0.010 s
+    stage 2 - align reads and generate SAM records            0.673 s
+    stage 3 - write SAM and release batch data                0.002 s
+      SAM output writes                                         0.002 s
+      batch cleanup and loop overhead (derived)                 0.001 s
+
+  Stage 1 input details
+    batches completed / stage calls                       1 / 2
+    input-buffer and batch allocations                        0.000 s  (4 calls, max 0.000 s)
+    aggregate requested allocation bytes               729320
+    FASTQ fseeko calls                                        0.000 s  (2 calls, max 0.000 s)
+    FASTQ fread calls                                         0.009 s  (2 calls, max 0.005 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.000 s
+    raw FASTQ bytes read                               727144  (0.693 MiB)
+    effective fread bandwidth                         73.351 MiB/s
+    slowest allocation                                 0.000 s  (64 bytes)
+    slowest fread                                      0.005 s  (R1 offset=0, bytes=363572)
+
+  Stage 2 worker details
+    total - active merge worker                               0.673 s
+      part 1 - prepare CPE task and reusable buffers            0.083 s
+      part 2 - CPE FASTQ formatting and input release           0.019 s
+      part 3 - CPE alignment and SAM length pass                0.560 s
+      part 4 - assign slices in the shared SAM buffer           0.001 s
+      part 5 - CPE SAM record generation                        0.009 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: correctness_results/matesw_dual_forward_20260828/diagnostic/SWBWA mem -v 4 -t 1 -1 -o correctness_results/matesw_dual_forward_20260828/diagnostic/out.sam -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa correctness_results/matesw_dual_forward_20260828/diagnostic/input/R1.fastq correctness_results/matesw_dual_forward_20260828/diagnostic/input/R2.fastq

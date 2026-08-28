@@ -1,0 +1,15 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=6 chunk_bytes=117964800 file_bytes=945555584
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is ../data/SRR7963242_1.fastq_1
+the input file is ../data/SRR7963242_2.fastq_1
+the output file is correctness_results/ksw_i16_int32_8_20260828/int32_8/allzero-fix.sam
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+[DBG stage1] slow fread: R1 offset=0 requested=117964800 read=117964800 elapsed=1.168 s
+[DBG stage1] slow fread: R2 offset=0 requested=117964800 read=117964800 elapsed=1.148 s
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+: slave/bwamem.c: 1495: slave_mem_reg2aln: Assertion `a.rid == ar->rid' failed.
+[7929298 ## 2026-08-28/15:28:21] warning: cpu [21757]: user's mpe task: tid= 0, pid= 25688, terminated by sig 6

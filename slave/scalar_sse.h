@@ -91,6 +91,7 @@ static inline __m128i _mm_subs_epu8(__m128i a, __m128i b) {
 # else
 typedef union m128i {
     intv16 val;
+    intv16 words;
 } __m128i;
 
 intv16 v_min = 0;
@@ -506,43 +507,195 @@ static inline __m128i _mm_subs_epu8(__m128i a, __m128i b) {
 #  endif
 # endif
 
-static inline __m128i _mm_adds_epi16(__m128i a, __m128i b) {
-    fprintf(stderr, "TODO\n");
-    exit(0);
-	return a;
+static const intv16 swbwa_i16_low8_mask = {
+	-1, -1, -1, -1, -1, -1, -1, -1,
+	 0,  0,  0,  0,  0,  0,  0,  0
+};
+
+static inline intv16 swbwa_i16_select(intv16 a, intv16 b, intv16 choose_b)
+{
+	intv16 zero = 0;
+	intv16 all_bits = -1;
+	intv16 mask = simd_vsubw(zero, choose_b);
+
+	return simd_vbisw(simd_vandw(mask, b),
+	                  simd_vandw(simd_vxorw(mask, all_bits), a));
 }
 
-static inline __m128i _mm_cmpgt_epi16(__m128i a, __m128i b) {
-    fprintf(stderr, "TODO\n");
-    exit(0);
-	return a;
+static inline intv16 swbwa_i16_max_words(intv16 a, intv16 b)
+{
+	return swbwa_i16_select(a, b, simd_vcmpltw(a, b));
 }
 
-static inline __m128i _mm_max_epi16(__m128i a, __m128i b) {
-    fprintf(stderr, "TODO\n");
-    exit(0);
-	return a;
+static inline intv16 swbwa_i16_min_words(intv16 a, intv16 b)
+{
+	return swbwa_i16_select(b, a, simd_vcmpltw(a, b));
 }
 
-static inline __m128i _mm_set1_epi16(int16_t n) {
-    fprintf(stderr, "TODO\n");
-    exit(0);
+static inline __m128i swbwa_i16_shift_left_lane(__m128i a)
+{
 	__m128i r;
+
+	r.words = simd_vandw(simd_sllx(a.words, 32), swbwa_i16_low8_mask);
 	return r;
 }
 
-static inline int16_t m128i_max_s16(__m128i a) {
-    fprintf(stderr, "TODO\n");
-    exit(0);
-	int16_t max = -32768;
-	return max;
+static inline int swbwa_i16_allzero(__m128i a)
+{
+	intv16 words = a.words;
+
+	words = simd_vbisw(words, simd_sllx(words, 8 * 32));
+	words = simd_vbisw(words, simd_sllx(words, 4 * 32));
+	words = simd_vbisw(words, simd_sllx(words, 2 * 32));
+	words = simd_vbisw(words, simd_sllx(words, 1 * 32));
+	return simd_vextw15(words) == 0;
 }
 
-static inline __m128i _mm_subs_epu16(__m128i a, __m128i b) {
-    fprintf(stderr, "TODO\n");
-    exit(0);
+#if SWBWA_KSW_I16_MODE == SWBWA_KSW_I16_SCALAR_8
+static inline __m128i _mm_adds_epi16(__m128i a, __m128i b)
+{
+	int av[16], bv[16];
+	int i;
+
+	simd_store(a.words, av);
+	simd_store(b.words, bv);
+	for (i = 0; i < 8; ++i) {
+		int64_t sum = (int64_t)av[i] + bv[i];
+
+		if (sum > 32767) sum = 32767;
+		if (sum < -32768) sum = -32768;
+		av[i] = (int)sum;
+	}
+	for (; i < 16; ++i) av[i] = 0;
+	simd_load(a.words, av);
 	return a;
 }
+
+static inline __m128i _mm_cmpgt_epi16(__m128i a, __m128i b)
+{
+	int av[16], bv[16];
+	int i;
+
+	simd_store(a.words, av);
+	simd_store(b.words, bv);
+	for (i = 0; i < 8; ++i) av[i] = av[i] > bv[i] ? -1 : 0;
+	for (; i < 16; ++i) av[i] = 0;
+	simd_load(a.words, av);
+	return a;
+}
+
+static inline __m128i _mm_max_epi16(__m128i a, __m128i b)
+{
+	int av[16], bv[16];
+	int i;
+
+	simd_store(a.words, av);
+	simd_store(b.words, bv);
+	for (i = 0; i < 8; ++i)
+		if (av[i] < bv[i]) av[i] = bv[i];
+	for (; i < 16; ++i) av[i] = 0;
+	simd_load(a.words, av);
+	return a;
+}
+
+static inline __m128i _mm_set1_epi16(int16_t n)
+{
+	int values[16] = { 0 };
+	__m128i r;
+	int i;
+
+	for (i = 0; i < 8; ++i) values[i] = n;
+	simd_load(r.words, values);
+	return r;
+}
+
+static inline int16_t m128i_max_s16(__m128i a)
+{
+	int values[16];
+	int max = -32768;
+	int i;
+
+	simd_store(a.words, values);
+	for (i = 0; i < 8; ++i)
+		if (max < values[i]) max = values[i];
+	return (int16_t)max;
+}
+
+static inline __m128i _mm_subs_epu16(__m128i a, __m128i b)
+{
+	int av[16], bv[16];
+	int i;
+
+	simd_store(a.words, av);
+	simd_store(b.words, bv);
+	for (i = 0; i < 8; ++i) {
+		int value = av[i] - bv[i];
+
+		av[i] = value > 0 ? value : 0;
+	}
+	for (; i < 16; ++i) av[i] = 0;
+	simd_load(a.words, av);
+	return a;
+}
+#else
+static inline __m128i _mm_adds_epi16(__m128i a, __m128i b)
+{
+	intv16 lower = -32768;
+	intv16 upper = 32767;
+
+	a.words = simd_vaddw(a.words, b.words);
+	a.words = swbwa_i16_max_words(a.words, lower);
+	a.words = swbwa_i16_min_words(a.words, upper);
+	a.words = simd_vandw(a.words, swbwa_i16_low8_mask);
+	return a;
+}
+
+static inline __m128i _mm_cmpgt_epi16(__m128i a, __m128i b)
+{
+	intv16 zero = 0;
+
+	a.words = simd_vsubw(zero, simd_vcmpltw(b.words, a.words));
+	a.words = simd_vandw(a.words, swbwa_i16_low8_mask);
+	return a;
+}
+
+static inline __m128i _mm_max_epi16(__m128i a, __m128i b)
+{
+	a.words = swbwa_i16_max_words(a.words, b.words);
+	a.words = simd_vandw(a.words, swbwa_i16_low8_mask);
+	return a;
+}
+
+static inline __m128i _mm_set1_epi16(int16_t n)
+{
+	__m128i r;
+
+	r.words = simd_vandw((intv16)n, swbwa_i16_low8_mask);
+	return r;
+}
+
+static inline int16_t m128i_max_s16(__m128i a)
+{
+	int values[16];
+	int max = -32768;
+	int i;
+
+	simd_store(a.words, values);
+	for (i = 0; i < 8; ++i)
+		if (max < values[i]) max = values[i];
+	return (int16_t)max;
+}
+
+static inline __m128i _mm_subs_epu16(__m128i a, __m128i b)
+{
+	intv16 zero = 0;
+
+	a.words = simd_vsubw(a.words, b.words);
+	a.words = swbwa_i16_max_words(a.words, zero);
+	a.words = simd_vandw(a.words, swbwa_i16_low8_mask);
+	return a;
+}
+#endif
 
 
 #endif

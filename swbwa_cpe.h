@@ -2,6 +2,7 @@
 #define SWBWA_CPE_H
 
 #include "swbwa_config.h"
+#include "swbwa_matesw_profile.h"
 
 #define SWBWA_CPE_CSR_COPY_BYTES (2UL << 20)
 #define SWBWA_CPE_PRIVATE_BASE   0x400000000000UL
@@ -25,6 +26,7 @@ typedef struct {
     const mem_pestat_t *pes;
     int *sequence_ids;
     long *profile_counters;
+    swbwa_matesw_profile_t *matesw_profile;
 
     volatile int *completion_flags;
     void *relocated_gp;

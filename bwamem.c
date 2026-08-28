@@ -1821,6 +1821,7 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     para->sam_lengths = checked_malloc_array(n, sizeof(*para->sam_lengths), "CPE SAM lengths");
     para->pes = pes0;
     para->profile_counters = swbwa_cpe_profile_counters();
+    para->matesw_profile = swbwa_cpe_matesw_profile();
     para->fastq_buffer[0] = block_buffer;
     para->fastq_buffer[1] = block_buffer2;
     para->fastq_size[0] = block_size;

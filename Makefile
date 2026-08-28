@@ -11,7 +11,7 @@ AR  = ar
 # HOST_MALLOC_STATS:   0 | 1 (requires HOST_MALLOC_WRAPPER=1)
 # CPE_PROFILE:         0 | 1
 # CPE_PROFILE_CG:      CG sampled by LWPF when CPE_PROFILE=1 (0..5)
-# FLOAT16_VECTOR:      0 | 1 (FP16 implementation of the CPE KSW u8 backend)
+# KSW_U8_MODE:         int32_16 | float16_16 | float16_32 (default: int32_16)
 # USE_MPI:       0 | 1
 # MPI-only options:
 #   MPI_INPUT_MODE: static | dynamic
@@ -23,7 +23,7 @@ HOST_MALLOC_WRAPPER ?= 1
 HOST_MALLOC_STATS   ?= 0
 CPE_PROFILE         ?= 0
 CPE_PROFILE_CG      ?= $(if $(filter single,$(EXEC_MODE)),0,5)
-FLOAT16_VECTOR      ?= 1
+KSW_U8_MODE         ?= int32_16
 LWPF3_DIR            ?= /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/lwpf3
 
 USE_MPI              ?= 1
@@ -42,6 +42,7 @@ endif
 VALID_EXEC_MODES     := single cgs cgs_cross
 VALID_CPE_ALLOCATORS := system pool
 VALID_BOOLEAN_VALUES := 0 1
+VALID_KSW_U8_MODES    := int32_16 float16_16 float16_32
 VALID_MPI_INPUT_MODES := static dynamic
 VALID_OUTPUT_MODES   := split single_unordered discard
 
@@ -60,8 +61,8 @@ endif
 ifeq ($(filter $(CPE_PROFILE),$(VALID_BOOLEAN_VALUES)),)
 $(error CPE_PROFILE must be 0 or 1)
 endif
-ifeq ($(filter $(FLOAT16_VECTOR),$(VALID_BOOLEAN_VALUES)),)
-$(error FLOAT16_VECTOR must be 0 or 1)
+ifeq ($(filter $(KSW_U8_MODE),$(VALID_KSW_U8_MODES)),)
+$(error KSW_U8_MODE must be one of: $(VALID_KSW_U8_MODES))
 endif
 ifeq ($(CPE_PROFILE),1)
 ifeq ($(filter $(CPE_PROFILE_CG),0 1 2 3 4 5),)
@@ -105,6 +106,9 @@ MPI_INPUT_MODE_VALUE_dynamic := SWBWA_MPI_INPUT_DYNAMIC
 OUTPUT_MODE_VALUE_split            := SWBWA_OUTPUT_SPLIT
 OUTPUT_MODE_VALUE_single_unordered := SWBWA_OUTPUT_SINGLE_UNORDERED
 OUTPUT_MODE_VALUE_discard          := SWBWA_OUTPUT_DISCARD
+KSW_U8_MODE_VALUE_int32_16         := SWBWA_KSW_U8_INT32_16
+KSW_U8_MODE_VALUE_float16_16       := SWBWA_KSW_U8_FLOAT16_16
+KSW_U8_MODE_VALUE_float16_32       := SWBWA_KSW_U8_FLOAT16_32
 
 SWBWA_CPPFLAGS := \
 	-DSWBWA_EXEC_MODE=$(EXEC_MODE_VALUE_$(EXEC_MODE)) \
@@ -114,7 +118,7 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_ENABLE_CPE_MALLOC_WRAPPER=$(CPE_MALLOC_WRAPPER_$(CPE_ALLOCATOR)) \
 	-DSWBWA_ENABLE_CPE_PROFILE=$(CPE_PROFILE) \
 	-DSWBWA_CPE_PROFILE_CG=$(CPE_PROFILE_CG) \
-	-DSWBWA_ENABLE_FLOAT16_VECTOR=$(FLOAT16_VECTOR) \
+	-DSWBWA_KSW_U8_MODE=$(KSW_U8_MODE_VALUE_$(KSW_U8_MODE)) \
 	-DSWBWA_USE_MPI=$(USE_MPI)
 
 ifeq ($(USE_MPI),1)
@@ -176,7 +180,7 @@ print-config:
 	@echo "HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER)"
 	@echo "HOST_MALLOC_STATS=$(HOST_MALLOC_STATS)"
 	@echo "CPE_PROFILE=$(CPE_PROFILE)"
-	@echo "FLOAT16_VECTOR=$(FLOAT16_VECTOR)"
+	@echo "KSW_U8_MODE=$(KSW_U8_MODE)"
 ifeq ($(CPE_PROFILE),1)
 	@echo "CPE_PROFILE_CG=$(CPE_PROFILE_CG)"
 	@echo "LWPF3_DIR=$(LWPF3_DIR)"

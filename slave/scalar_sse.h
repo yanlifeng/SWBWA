@@ -13,11 +13,13 @@ typedef union m128i {
     intv16 words;
 } __m128i;
 
+#if SWBWA_KSW_U8_MODE == SWBWA_KSW_U8_FLOAT16_16
 /* Keep the original KSW stripe width while using native FP16 arithmetic. */
 static const intv16 swbwa_ksw_low_half_mask = {
     -1, -1, -1, -1, -1, -1, -1, -1,
      0,  0,  0,  0,  0,  0,  0,  0
 };
+#endif
 
 static inline __m128i _mm_set1_epi32(int32_t n) {
 	assert(n >= 0 && n <= 255);
@@ -40,9 +42,13 @@ static inline int m128i_allzero(__m128i a) {
 }
 
 static inline __m128i _mm_slli_si128(__m128i a, int n) {
-    __m128i r;
+	__m128i r;
+#if SWBWA_KSW_U8_MODE == SWBWA_KSW_U8_FLOAT16_16
 	r.words = simd_vandw(simd_sllx(a.words, n * 16),
 	                    swbwa_ksw_low_half_mask);
+#else
+	r.words = simd_sllx(a.words, n * 16);
+#endif
 	return r;
 }
 

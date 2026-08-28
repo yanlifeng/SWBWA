@@ -36,6 +36,87 @@
 #include "ksw.h"
 #include <slave.h>
 
+#if SWBWA_ENABLE_CPE_PROFILE
+static __thread swbwa_matesw_profile_t local_matesw_profile;
+
+void swbwa_matesw_profile_reset(void)
+{
+	memset(&local_matesw_profile, 0, sizeof(local_matesw_profile));
+}
+
+void swbwa_matesw_profile_commit(swbwa_matesw_profile_t *destination)
+{
+	int i;
+
+	if (destination == NULL) return;
+	destination->invocations += local_matesw_profile.invocations;
+	destination->candidates += local_matesw_profile.candidates;
+	destination->pairs += local_matesw_profile.pairs;
+	destination->paired_candidates += local_matesw_profile.paired_candidates;
+	destination->same_orientation_pairs +=
+		local_matesw_profile.same_orientation_pairs;
+	destination->serial_work += local_matesw_profile.serial_work;
+	destination->paired_work += local_matesw_profile.paired_work;
+	for (i = 0; i < SWBWA_MATESW_CANDIDATE_BINS; ++i)
+		destination->candidate_bins[i] +=
+			local_matesw_profile.candidate_bins[i];
+	for (i = 0; i < SWBWA_MATESW_RATIO_BINS; ++i)
+		destination->ratio_bins[i] += local_matesw_profile.ratio_bins[i];
+}
+
+static void record_matesw_pair_opportunity(
+	int count, const int *work, const int *orientations)
+{
+	int order[4];
+	int i;
+
+	assert(count >= 0 && count <= 4);
+	++local_matesw_profile.invocations;
+	++local_matesw_profile.candidate_bins[count];
+	local_matesw_profile.candidates += count;
+	for (i = 0; i < count; ++i) {
+		int j;
+
+		order[i] = i;
+		local_matesw_profile.serial_work += work[i];
+		for (j = i; j > 0 && work[order[j - 1]] < work[order[j]]; --j) {
+			int tmp = order[j - 1];
+			order[j - 1] = order[j];
+			order[j] = tmp;
+		}
+	}
+	for (i = 0; i + 1 < count; i += 2) {
+		uint64_t larger = work[order[i]];
+		uint64_t smaller = work[order[i + 1]];
+
+		++local_matesw_profile.pairs;
+		local_matesw_profile.paired_candidates += 2;
+		local_matesw_profile.paired_work += larger;
+		if (orientations[order[i]] == orientations[order[i + 1]])
+			++local_matesw_profile.same_orientation_pairs;
+		if (larger * 100 <= smaller * 110)
+			++local_matesw_profile.ratio_bins[0];
+		else if (larger * 100 <= smaller * 125)
+			++local_matesw_profile.ratio_bins[1];
+		else if (larger * 100 <= smaller * 150)
+			++local_matesw_profile.ratio_bins[2];
+		else if (larger <= smaller * 2)
+			++local_matesw_profile.ratio_bins[3];
+		else
+			++local_matesw_profile.ratio_bins[4];
+	}
+	if (i < count) local_matesw_profile.paired_work += work[order[i]];
+}
+#else
+static inline void record_matesw_pair_opportunity(
+	int count, const int *work, const int *orientations)
+{
+	(void)count;
+	(void)work;
+	(void)orientations;
+}
+#endif
+
 #if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
 #endif
@@ -164,6 +245,11 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	int64_t l_pac = bns->l_pac;
 	int added = 0, i, r, skip[4], n = 0, rid = -1;
 	uint8_t *rev = 0;
+#if SWBWA_ENABLE_CPE_PROFILE
+	int candidate_count = 0;
+	int candidate_work[4];
+	int candidate_orientations[4];
+#endif
 	for (r = 0; r < 4; ++r)
 		skip[r] = pes[r].failed? 1 : 0;
 	for (i = 0; i < ma->n; ++i) { // check which orinentation has been found
@@ -173,7 +259,10 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 			skip[r] = 1;
 	}
 
-	if (skip[0] + skip[1] + skip[2] + skip[3] == 4) return 0; // consistent pair exist; no need to perform SW
+	if (skip[0] + skip[1] + skip[2] + skip[3] == 4) {
+		record_matesw_pair_opportunity(0, NULL, NULL);
+		return 0;
+	}
 
 	for (r = 0; r < 4; ++r) {
 		int is_rev, is_larger;
@@ -208,6 +297,13 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 			kswr_t aln;
 			mem_alnreg_t b;
 			int tmp, xtra = KSW_XSUBO | KSW_XSTART | (l_ms * opt->a < 250? KSW_XBYTE : 0) | (opt->min_seed_len * opt->a);
+#if SWBWA_ENABLE_CPE_PROFILE
+			assert(candidate_count < 4);
+			candidate_work[candidate_count] =
+				((l_ms + 15) >> 4) * (int)(re - rb);
+			candidate_orientations[candidate_count] = is_rev;
+			++candidate_count;
+#endif
 			swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_KSW_ALIGN);
 			aln = ksw_align2_matesw(l_ms, seq, re - rb, ref, 5, opt->mat,
 			                          opt->o_del, opt->e_del, opt->o_ins,
@@ -240,6 +336,10 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		free(ref);
 	}
 	free(rev);
+#if SWBWA_ENABLE_CPE_PROFILE
+	record_matesw_pair_opportunity(candidate_count, candidate_work,
+									candidate_orientations);
+#endif
 	if (added) {
 		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_DEDUP);
 		ma->n = mem_sort_dedup_patch(opt, 0, 0, 0, ma->n, ma->a);

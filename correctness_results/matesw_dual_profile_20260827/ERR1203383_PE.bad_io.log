@@ -1,0 +1,23 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=6 chunk_bytes=117964800 file_bytes=223555584
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is ../data/ERR1203383_1.fastq_1
+the input file is ../data/ERR1203383_2.fastq_1
+the output file is /dev/null
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964800 bytes)...
+[DBG stage1] slow fread: R1 offset=0 requested=117964800 read=117964800 elapsed=2.097 s
+[DBG stage1] slow fread: R2 offset=0 requested=117964800 read=117964800 elapsed=51.583 s
+[M::swbwa_cross_runtime_init] initialized cross-segment runtime in 0.070 sec
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 1057218
+start swbwa_cross_run
+processed 1057218
+[M::mem_process_seqs_merge2] Processed 1057218 reads in 0.170 CPU sec, 1.902 real sec
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 105591588 bytes)...
+[7917822 ## 2026-08-27/16:19:52] receive request of kill job(bkill).

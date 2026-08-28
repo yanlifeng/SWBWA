@@ -333,6 +333,7 @@ void worker12_s_pre_fast_cross(void) {
 	void *worker_context;
 
 	swbwa_cpe_profile_enter(para->profile_counters);
+	swbwa_matesw_profile_reset();
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_WORKER_ALIGNMENT);
 	worker_context = worker12_context_init(para->worker_data);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
@@ -362,6 +363,8 @@ void worker12_s_pre_fast_cross(void) {
 	                  para->sequence_ids);
 #endif
 	worker12_context_destroy(worker_context);
+	swbwa_matesw_profile_commit(
+		para->matesw_profile == NULL ? NULL : &para->matesw_profile[_MYID]);
 
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_WORKER_ALIGNMENT);
     swbwa_cpe_profile_exit(para->profile_counters);
@@ -499,6 +502,7 @@ void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
 	void *worker_context;
 
 	swbwa_cpe_profile_enter(para->profile_counters);
+	swbwa_matesw_profile_reset();
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_WORKER_ALIGNMENT);
 	worker_context = worker12_context_init(para->worker_data);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
@@ -528,6 +532,8 @@ void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
 	                  para->sequence_ids);
 #endif
 	worker12_context_destroy(worker_context);
+	swbwa_matesw_profile_commit(
+		para->matesw_profile == NULL ? NULL : &para->matesw_profile[_MYID]);
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_WORKER_ALIGNMENT);
     swbwa_cpe_profile_exit(para->profile_counters);
     swbwa_finish_standard_task(para);

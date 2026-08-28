@@ -69,8 +69,7 @@ enum { SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES = 64 << 10 };
 #endif
 
 #if SWBWA_ENABLE_FLOAT16_VECTOR
-/* FP16 uses 32 physical lanes, but 16 logical lanes preserve KSW semantics. */
-enum { SWBWA_KSW_U8_LANES = 16 };
+enum { SWBWA_KSW_U8_LANES = SWBWA_KSW_U8_LOGICAL_LANES };
 #elif SWBWA_ENABLE_PACKED_INT8
 enum { SWBWA_KSW_U8_LANES = 32 };
 #else

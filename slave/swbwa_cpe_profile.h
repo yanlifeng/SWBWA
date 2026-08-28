@@ -2,6 +2,7 @@
 #define SWBWA_SLAVE_CPE_PROFILE_H
 
 #include "../swbwa_config.h"
+#include "../swbwa_matesw_profile.h"
 
 enum swbwa_cpe_profile_region {
     SWBWA_CPE_PROFILE_WORKER_ALIGNMENT,
@@ -134,6 +135,9 @@ static inline void swbwa_cpe_profile_stop(
     if (swbwa_cpe_profile_active()) lwpf_stop(region);
 }
 
+void swbwa_matesw_profile_reset(void);
+void swbwa_matesw_profile_commit(swbwa_matesw_profile_t *destination);
+
 #else
 
 static inline void swbwa_cpe_profile_enter(long *counters)
@@ -156,6 +160,16 @@ static inline void swbwa_cpe_profile_stop(
     enum swbwa_cpe_profile_region region)
 {
     (void)region;
+}
+
+static inline void swbwa_matesw_profile_reset(void)
+{
+}
+
+static inline void swbwa_matesw_profile_commit(
+    swbwa_matesw_profile_t *destination)
+{
+    (void)destination;
 }
 
 #endif

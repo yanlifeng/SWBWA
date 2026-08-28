@@ -1,0 +1,85 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[CPE input] bytes_per_cg=19660800 cg_count=6 chunk_bytes=3675576 file_bytes=3675576
+malloc bwt->bwt 3107576584, 0x580000486040
+malloc bwt->sa 1553788264, 0x5800b9823b60
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x580116285940
+the input file is correctness_results/ksw_i16_int32_8_20260828/tiny/R1.fastq
+the input file is correctness_results/ksw_i16_int32_8_20260828/tiny/R2.fastq
+the output file is correctness_results/ksw_i16_int32_8_20260828/tiny/clamp-assert.sam
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 3675576 bytes)...
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+slave pre done
+now n is 20000
+processed 20000
+[M::mem_process_seqs_merge2] Processed 20000 reads in 4.840 CPU sec, 4.839 real sec
+
+====================== SWBWA Output Debug =====================
+  MPI rank: 000000 / 000001
+  mode:     non-MPI POSIX
+  path:     correctness_results/ksw_i16_int32_8_20260828/tiny/clamp-assert.sam
+
+  Output volume
+    output buffer capacity                           67108864
+    swbwa_output_write calls                           20000
+    submitted SAM bytes                              9605704
+    buffered flushes                                       1
+    buffered flush bytes                             9605704
+    direct oversized writes                                0
+    direct oversized bytes                                 0
+
+  Buffering
+    buffered flush total                         0.214049 s  (1 calls, 214049.159 us/call)
+
+  POSIX file writes
+    write system calls                                      1
+    write system-call bytes                           9605704
+    POSIX write system calls                     0.214046 s  (1 calls, 214046.359 us/call)
+    POSIX write effective bandwidth                42.798 MiB/s
+
+  Output close timing
+    POSIX close                                  0.000271 s  (1 calls,   271.251 us/call)
+================================================================
+
+
+======================= SWBWA Timing Report =======================
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                     5.142 s
+    stage 1 - allocate and read raw FASTQ blocks              0.064 s
+    stage 2 - align reads and generate SAM records            4.840 s
+    stage 3 - write SAM and release batch data                0.024 s
+      SAM output writes                                         0.017 s
+      batch cleanup and loop overhead (derived)                 0.007 s
+
+  Stage 1 input details
+    batches completed / stage calls                       1 / 2
+    input-buffer and batch allocations                        0.000 s  (4 calls, max 0.000 s)
+    aggregate requested allocation bytes              7353328
+    FASTQ fseeko calls                                        0.000 s  (2 calls, max 0.000 s)
+    FASTQ fread calls                                         0.064 s  (2 calls, max 0.034 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               0.000 s
+    raw FASTQ bytes read                              7351152  (7.011 MiB)
+    effective fread bandwidth                        110.166 MiB/s
+    slowest allocation                                 0.000 s  (64 bytes)
+    slowest fread                                      0.034 s  (R1 offset=0, bytes=3675576)
+
+  Stage 2 worker details
+    total - active merge worker                               4.839 s
+      part 1 - prepare CPE task and reusable buffers            0.013 s
+      part 2 - CPE FASTQ formatting and input release           0.001 s
+      part 3 - CPE alignment and SAM length pass                4.822 s
+      part 4 - assign slices in the shared SAM buffer           0.002 s
+      part 5 - CPE SAM record generation                        0.001 s
+      part 6 - release temporary worker data                    0.000 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -v 4 -t 1 -1 -A 2 -o correctness_results/ksw_i16_int32_8_20260828/tiny/clamp-assert.sam -I 170,80,500,1 ../data/GRCh38.d1.vd1.fa correctness_results/ksw_i16_int32_8_20260828/tiny/R1.fastq correctness_results/ksw_i16_int32_8_20260828/tiny/R2.fastq

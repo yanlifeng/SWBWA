@@ -137,6 +137,8 @@ static inline void swbwa_cpe_profile_stop(
 
 void swbwa_matesw_profile_reset(void);
 void swbwa_matesw_profile_commit(swbwa_matesw_profile_t *destination);
+void swbwa_matesw_ksw_work_take(swbwa_matesw_ksw_work_t *work);
+void swbwa_matesw_ksw_pair_work_take(swbwa_matesw_ksw_work_t work[2]);
 
 #else
 

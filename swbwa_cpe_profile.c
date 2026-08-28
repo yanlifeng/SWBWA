@@ -14,6 +14,18 @@ enum { SWBWA_LWPF_CPE_COUNT = 64 };
 
 static swbwa_matesw_profile_t matesw_profiles[SWBWA_CPE_COUNT];
 
+static void print_ratio_bins(FILE *output, const char *label,
+                             const uint64_t bins[SWBWA_MATESW_RATIO_BINS],
+                             uint64_t total)
+{
+    fprintf(output,
+            "  %-30s <=1.10=%" PRIu64 " (%.2f%%)"
+            " <=1.25=%" PRIu64 " <=1.50=%" PRIu64
+            " <=2.00=%" PRIu64 " >2.00=%" PRIu64 "\n",
+            label, bins[0], total == 0 ? 0.0 : 100.0 * bins[0] / total,
+            bins[1], bins[2], bins[3], bins[4]);
+}
+
 void swbwa_cpe_profile_init(void)
 {
     evt_conf_t *config = &lwpf_evt_config_SWBWA;
@@ -82,6 +94,62 @@ void swbwa_cpe_profile_report(FILE *output)
                 matesw_profiles[i].candidate_bins[j];
         for (j = 0; j < SWBWA_MATESW_RATIO_BINS; ++j)
             total.ratio_bins[j] += matesw_profiles[i].ratio_bins[j];
+        total.sam_pe_calls += matesw_profiles[i].sam_pe_calls;
+        for (j = 0; j < SWBWA_MATESW_SAM_CANDIDATE_BINS; ++j)
+            total.sam_pe_candidate_bins[j] +=
+                matesw_profiles[i].sam_pe_candidate_bins[j];
+        total.sam_pe_both_directions +=
+            matesw_profiles[i].sam_pe_both_directions;
+        total.same_read_pairs += matesw_profiles[i].same_read_pairs;
+        total.same_read_paired_candidates +=
+            matesw_profiles[i].same_read_paired_candidates;
+        total.adjacent_read_groups += matesw_profiles[i].adjacent_read_groups;
+        total.adjacent_read_pairs += matesw_profiles[i].adjacent_read_pairs;
+        total.adjacent_read_paired_candidates +=
+            matesw_profiles[i].adjacent_read_paired_candidates;
+        total.sam_u8_candidates += matesw_profiles[i].sam_u8_candidates;
+        total.sam_profiled_pairs += matesw_profiles[i].sam_profiled_pairs;
+        total.sam_u8_pairs += matesw_profiles[i].sam_u8_pairs;
+        total.sam_qlen_equal_pairs +=
+            matesw_profiles[i].sam_qlen_equal_pairs;
+        total.sam_tlen_equal_pairs +=
+            matesw_profiles[i].sam_tlen_equal_pairs;
+        total.sam_forward_dimension_equal_pairs +=
+            matesw_profiles[i].sam_forward_dimension_equal_pairs;
+        total.sam_reverse_dimension_equal_pairs +=
+            matesw_profiles[i].sam_reverse_dimension_equal_pairs;
+        total.sam_dimension_equal_pairs +=
+            matesw_profiles[i].sam_dimension_equal_pairs;
+        total.sam_profile_overflow +=
+            matesw_profiles[i].sam_profile_overflow;
+        for (j = 0; j < SWBWA_MATESW_RATIO_BINS; ++j) {
+            total.sam_qlen_ratio_bins[j] +=
+                matesw_profiles[i].sam_qlen_ratio_bins[j];
+            total.sam_tlen_ratio_bins[j] +=
+                matesw_profiles[i].sam_tlen_ratio_bins[j];
+            total.sam_forward_work_ratio_bins[j] +=
+                matesw_profiles[i].sam_forward_work_ratio_bins[j];
+            total.sam_reverse_work_ratio_bins[j] +=
+                matesw_profiles[i].sam_reverse_work_ratio_bins[j];
+            total.sam_total_work_ratio_bins[j] +=
+                matesw_profiles[i].sam_total_work_ratio_bins[j];
+        }
+        total.sam_total_forward_main_steps +=
+            matesw_profiles[i].sam_total_forward_main_steps;
+        total.sam_total_forward_lazy_steps +=
+            matesw_profiles[i].sam_total_forward_lazy_steps;
+        total.sam_total_reverse_main_steps +=
+            matesw_profiles[i].sam_total_reverse_main_steps;
+        total.sam_total_reverse_lazy_steps +=
+            matesw_profiles[i].sam_total_reverse_lazy_steps;
+        total.sam_paired_forward_serial_work +=
+            matesw_profiles[i].sam_paired_forward_serial_work;
+        total.sam_paired_forward_lockstep_work +=
+            matesw_profiles[i].sam_paired_forward_lockstep_work;
+        total.sam_paired_reverse_serial_work +=
+            matesw_profiles[i].sam_paired_reverse_serial_work;
+        total.sam_paired_reverse_lockstep_work +=
+            matesw_profiles[i].sam_paired_reverse_lockstep_work;
     }
 
     pair_ratio_total = total.pairs;
@@ -126,6 +194,149 @@ void swbwa_cpe_profile_report(FILE *output)
             total.paired_work == 0 ? 0.0
                                    : 50.0 * total.serial_work /
                                          total.paired_work);
+    fprintf(output,
+            "\nCross-call dual-alignment opportunities\n"
+            "  mem_sam_pe calls:              %" PRIu64 "\n"
+            "  KSW candidates per PE:         0=%" PRIu64
+            " 1=%" PRIu64 " 2=%" PRIu64 " 3=%" PRIu64
+            " 4=%" PRIu64 " 5+=%" PRIu64 "\n"
+            "  both mate directions active:   %" PRIu64 " (%.2f%%)\n"
+            "  same-PE direction pairs:       %" PRIu64
+            " (%" PRIu64 " candidates, %.2f%% coverage)\n"
+            "  adjacent-PE groups:            %" PRIu64 "\n"
+            "  adjacent-PE pairs:             %" PRIu64
+            " (%" PRIu64 " candidates, %.2f%% coverage)\n"
+            "  note: same-PE pairs preserve ordering independently in the\n"
+            "        two mate directions. Adjacent-PE pairs group consecutive\n"
+            "        mem_sam_pe calls executed by each CPE; both are count-only\n"
+            "        upper bounds before qlen/tlen compatibility filtering.\n",
+            total.sam_pe_calls, total.sam_pe_candidate_bins[0],
+            total.sam_pe_candidate_bins[1],
+            total.sam_pe_candidate_bins[2],
+            total.sam_pe_candidate_bins[3],
+            total.sam_pe_candidate_bins[4],
+            total.sam_pe_candidate_bins[5],
+            total.sam_pe_both_directions,
+            total.sam_pe_calls == 0 ? 0.0
+                                    : 100.0 * total.sam_pe_both_directions /
+                                          total.sam_pe_calls,
+            total.same_read_pairs,
+            total.same_read_paired_candidates,
+            total.candidates == 0 ? 0.0
+                                  : 100.0 * total.same_read_paired_candidates /
+                                        total.candidates,
+            total.adjacent_read_groups, total.adjacent_read_pairs,
+            total.adjacent_read_paired_candidates,
+            total.candidates == 0 ? 0.0
+                                  : 100.0 *
+                                        total.adjacent_read_paired_candidates /
+                                        total.candidates);
+    {
+        uint64_t forward_work = total.sam_total_forward_main_steps +
+                                total.sam_total_forward_lazy_steps;
+        uint64_t reverse_work = total.sam_total_reverse_main_steps +
+                                total.sam_total_reverse_lazy_steps;
+        uint64_t paired_serial = total.sam_paired_forward_serial_work +
+                                 total.sam_paired_reverse_serial_work;
+        uint64_t paired_lockstep = total.sam_paired_forward_lockstep_work +
+                                   total.sam_paired_reverse_lockstep_work;
+        uint64_t projected_work = forward_work + reverse_work -
+                                  paired_serial + paired_lockstep;
+
+        fprintf(output,
+                "\nSame-PE length and measured DP-work compatibility\n"
+                "  profiled ordered pairs:        %" PRIu64
+                " (%.2f%% of count-based pairs)\n"
+                "  u8 candidates / pairs:         %" PRIu64
+                " / %" PRIu64 "\n"
+                "  exact forward qlen pairs:      %" PRIu64 " (%.2f%%)\n"
+                "  exact forward tlen pairs:      %" PRIu64 " (%.2f%%)\n"
+                "  exact forward dimensions:      %" PRIu64 " (%.2f%%)\n"
+                "  exact reverse dimensions:      %" PRIu64 " (%.2f%%)\n"
+                "  exact both-pass dimensions:    %" PRIu64 " (%.2f%%)\n"
+                "  dropped profile candidates:    %" PRIu64 "\n",
+                total.sam_profiled_pairs,
+                total.same_read_pairs == 0 ? 0.0
+                    : 100.0 * total.sam_profiled_pairs /
+                      total.same_read_pairs,
+                total.sam_u8_candidates, total.sam_u8_pairs,
+                total.sam_qlen_equal_pairs,
+                total.sam_profiled_pairs == 0 ? 0.0
+                    : 100.0 * total.sam_qlen_equal_pairs /
+                      total.sam_profiled_pairs,
+                total.sam_tlen_equal_pairs,
+                total.sam_profiled_pairs == 0 ? 0.0
+                    : 100.0 * total.sam_tlen_equal_pairs /
+                      total.sam_profiled_pairs,
+                total.sam_forward_dimension_equal_pairs,
+                total.sam_profiled_pairs == 0 ? 0.0
+                    : 100.0 * total.sam_forward_dimension_equal_pairs /
+                      total.sam_profiled_pairs,
+                total.sam_reverse_dimension_equal_pairs,
+                total.sam_profiled_pairs == 0 ? 0.0
+                    : 100.0 * total.sam_reverse_dimension_equal_pairs /
+                      total.sam_profiled_pairs,
+                total.sam_dimension_equal_pairs,
+                total.sam_profiled_pairs == 0 ? 0.0
+                    : 100.0 * total.sam_dimension_equal_pairs /
+                      total.sam_profiled_pairs,
+                total.sam_profile_overflow);
+        print_ratio_bins(output, "qlen ratio max/min:",
+                         total.sam_qlen_ratio_bins,
+                         total.sam_profiled_pairs);
+        print_ratio_bins(output, "tlen ratio max/min:",
+                         total.sam_tlen_ratio_bins,
+                         total.sam_profiled_pairs);
+        print_ratio_bins(output, "forward work ratio max/min:",
+                         total.sam_forward_work_ratio_bins,
+                         total.sam_profiled_pairs);
+        print_ratio_bins(output, "reverse work ratio max/min:",
+                         total.sam_reverse_work_ratio_bins,
+                         total.sam_profiled_pairs);
+        print_ratio_bins(output, "total DP work ratio max/min:",
+                         total.sam_total_work_ratio_bins,
+                         total.sam_profiled_pairs);
+        fprintf(output,
+                "\n  Measured vector-step work (main + Lazy-F)\n"
+                "    all forward:                 %" PRIu64
+                " + %" PRIu64 " (Lazy-F %.2f%%)\n"
+                "    all reverse:                 %" PRIu64
+                " + %" PRIu64 " (Lazy-F %.2f%%)\n"
+                "    paired forward:              serial=%" PRIu64
+                " lockstep=%" PRIu64 " (%.3fx)\n"
+                "    paired reverse:              serial=%" PRIu64
+                " lockstep=%" PRIu64 " (%.3fx)\n"
+                "    all candidate DP projected:  original=%" PRIu64
+                " lockstep=%" PRIu64 " (%.3fx)\n"
+                "  note: pairs are matched in original call order across the\n"
+                "        two independent mate directions. Work counts striped\n"
+                "        main-loop and actual Lazy-F vector steps; it excludes\n"
+                "        query-profile construction and implementation overhead.\n",
+                total.sam_total_forward_main_steps,
+                total.sam_total_forward_lazy_steps,
+                forward_work == 0 ? 0.0
+                    : 100.0 * total.sam_total_forward_lazy_steps /
+                      forward_work,
+                total.sam_total_reverse_main_steps,
+                total.sam_total_reverse_lazy_steps,
+                reverse_work == 0 ? 0.0
+                    : 100.0 * total.sam_total_reverse_lazy_steps /
+                      reverse_work,
+                total.sam_paired_forward_serial_work,
+                total.sam_paired_forward_lockstep_work,
+                total.sam_paired_forward_lockstep_work == 0 ? 0.0
+                    : (double)total.sam_paired_forward_serial_work /
+                      total.sam_paired_forward_lockstep_work,
+                total.sam_paired_reverse_serial_work,
+                total.sam_paired_reverse_lockstep_work,
+                total.sam_paired_reverse_lockstep_work == 0 ? 0.0
+                    : (double)total.sam_paired_reverse_serial_work /
+                      total.sam_paired_reverse_lockstep_work,
+                forward_work + reverse_work, projected_work,
+                projected_work == 0 ? 0.0
+                    : (double)(forward_work + reverse_work) /
+                      projected_work);
+    }
     fputs("=============================================================\n",
           output);
 }

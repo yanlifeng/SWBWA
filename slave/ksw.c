@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
+#include <string.h>
 #if defined __SSE2__
 #include <emmintrin.h>
 #elif defined __ARM_NEON
@@ -52,6 +53,13 @@
 
 #include <slave.h>
 
+#if defined __SSE2__ || defined __ARM_NEON
+#define SWBWA_KSW_I16_SHIFT_LEFT_ONE(value) _mm_slli_si128((value), 2)
+#else
+#define SWBWA_KSW_I16_SHIFT_LEFT_ONE(value) \
+	swbwa_i16_shift_left_lane(value)
+#endif
+
 const kswr_t g_defr = { 0, -1, -1, -1, -1, -1, -1 };
 
 struct _kswq_t {
@@ -63,6 +71,53 @@ struct _kswq_t {
 };
 
 enum { SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES = 64 << 10 };
+
+#if SWBWA_ENABLE_CPE_PROFILE
+enum {
+	SWBWA_MATESW_KSW_FORWARD = 0,
+	SWBWA_MATESW_KSW_REVERSE = 1
+};
+
+static __thread swbwa_matesw_ksw_work_t last_matesw_ksw_work;
+static __thread swbwa_matesw_ksw_work_t *active_matesw_ksw_work;
+static __thread int active_matesw_ksw_phase;
+
+void swbwa_matesw_ksw_work_take(swbwa_matesw_ksw_work_t *work)
+{
+	*work = last_matesw_ksw_work;
+}
+
+static void record_matesw_ksw_work(int rows, int slen,
+		uint64_t lazy_steps)
+{
+	swbwa_matesw_ksw_work_t *work = active_matesw_ksw_work;
+
+	if (work == NULL) return;
+	if (active_matesw_ksw_phase == SWBWA_MATESW_KSW_FORWARD) {
+		work->forward_rows = rows;
+		work->forward_main_steps = (uint64_t)rows * slen;
+		work->forward_lazy_steps = lazy_steps;
+	} else {
+		work->reverse_rows = rows;
+		work->reverse_main_steps = (uint64_t)rows * slen;
+		work->reverse_lazy_steps = lazy_steps;
+	}
+}
+
+static void finish_matesw_ksw_work(swbwa_matesw_ksw_work_t *work)
+{
+	last_matesw_ksw_work = *work;
+	active_matesw_ksw_work = NULL;
+}
+
+static __thread swbwa_matesw_ksw_work_t last_matesw_pair_work[2];
+
+void swbwa_matesw_ksw_pair_work_take(swbwa_matesw_ksw_work_t work[2])
+{
+	work[0] = last_matesw_pair_work[0];
+	work[1] = last_matesw_pair_work[1];
+}
+#endif
 
 #if SWBWA_ENABLE_FLOAT16_VECTOR && SWBWA_ENABLE_PACKED_INT8
 #error "KSW FP16 and packed-int8 backends are mutually exclusive"
@@ -164,6 +219,25 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 #endif
 		}
 	} else {
+	#if !defined __SSE2__ && !defined __ARM_NEON
+		int32_t *t = (int32_t*)q->qp;
+		for (a = 0; a < m; ++a) {
+			int i;
+			const int8_t *ma = mat + a * m;
+
+			for (i = 0; i < slen; ++i) {
+				int lane;
+
+				for (lane = 0; lane < 16; ++lane) {
+					int k = i + lane * slen;
+
+					*t++ = lane < p
+					     ? (k >= qlen ? 0 : ma[query[k]])
+					     : 0;
+				}
+			}
+		}
+	#else
 		int16_t *t = (int16_t*)q->qp;
 		for (a = 0; a < m; ++a) {
 			int i, k, nlen = slen * p;
@@ -172,6 +246,7 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 				for (k = i; k < nlen; k += slen) // p iterations
 					*t++ = (k >= qlen? 0 : ma[query[k]]);
 		}
+	#endif
 	}
 	return q;
 }
@@ -203,6 +278,9 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 	uint64_t *b;
 	__m128i zero, oe_del, e_del, oe_ins, e_ins, shift, *H0, *H1, *E, *Hmax;
 	kswr_t r;
+#if SWBWA_ENABLE_CPE_PROFILE
+	uint64_t profile_lazy_steps = 0;
+#endif
 
 #if defined __SSE2__
 #define __max_16(ret, xx) do { \
@@ -249,6 +327,10 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 	for (i = 0; i < tlen; ++i) {
 		int j, k, imax;
 		__m128i e, h, t, f = zero, max = zero, *S = q->qp + target[i] * slen; // s is the 1st score vector
+#if SWBWA_ENABLE_CPE_PROFILE
+		uint64_t profile_row_lazy_steps =
+			(uint64_t)SWBWA_KSW_U8_LANES * slen;
+#endif
 		h = _mm_load_si128(H0 + slen - 1); // h={2,5,8,11,14,17,-1,-1} in the above example
 		h = _mm_slli_si128(h, 1); // h=H(i-1,-1); << instead of >> because x64 is little-endian
 		for (j = 0; LIKELY(j < slen); ++j) {
@@ -286,10 +368,18 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 				_mm_store_si128(H1 + j, h);
 				h = _mm_subs_epu8(h, oe_ins);
 				f = _mm_subs_epu8(f, e_ins);
-				if (UNLIKELY(allzero_16(_mm_subs_epu8(f, h)))) goto end_loop16;
+				if (UNLIKELY(allzero_16(_mm_subs_epu8(f, h)))) {
+#if SWBWA_ENABLE_CPE_PROFILE
+					profile_row_lazy_steps = (uint64_t)k * slen + j + 1;
+#endif
+					goto end_loop16;
+				}
 			}
 		}
 end_loop16:
+#if SWBWA_ENABLE_CPE_PROFILE
+		profile_lazy_steps += profile_row_lazy_steps;
+#endif
 		//int k;for (k=0;k<16;++k)printf("%d ", ((uint8_t*)&max)[k]);printf("\n");
 		__max_16(imax, max); // imax is the maximum number in max
 		if (imax >= minsc) { // write the b array; this condition adds branching unfornately
@@ -309,6 +399,10 @@ end_loop16:
 		}
 		S = H1; H1 = H0; H0 = S; // swap H0 and H1
 	}
+#if SWBWA_ENABLE_CPE_PROFILE
+	record_matesw_ksw_work(i < tlen ? i + 1 : tlen, slen,
+	                       profile_lazy_steps);
+#endif
 	r.score = gmax + q->shift < 255? gmax : 255;
 	r.te = te;
 	if (r.score != 255) { // get a->qe, the end of query match; find the 2nd best score
@@ -378,7 +472,7 @@ kswr_t ksw_i16(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_de
 
 #else
 #define __max_8(ret, xx) (ret) = m128i_max_s16((xx))
-#define allzero_0f_8(xx) (m128i_allzero((xx)))
+#define allzero_0f_8(xx) (swbwa_i16_allzero((xx)))
 #endif
 
 	// initialization
@@ -403,7 +497,7 @@ kswr_t ksw_i16(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_de
 		int j, k, imax;
 		__m128i e, t, h, f = zero, max = zero, *S = q->qp + target[i] * slen; // s is the 1st score vector
 		h = _mm_load_si128(H0 + slen - 1); // h={2,5,8,11,14,17,-1,-1} in the above example
-		h = _mm_slli_si128(h, 2);
+		h = SWBWA_KSW_I16_SHIFT_LEFT_ONE(h);
 		for (j = 0; LIKELY(j < slen); ++j) {
 			h = _mm_adds_epi16(h, _mm_load_si128(S++));
 			e = _mm_load_si128(E + j);
@@ -421,7 +515,7 @@ kswr_t ksw_i16(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_de
 			h = _mm_load_si128(H0 + j);
 		}
 		for (k = 0; LIKELY(k < 16); ++k) {
-			f = _mm_slli_si128(f, 2);
+			f = SWBWA_KSW_I16_SHIFT_LEFT_ONE(f);
 			for (j = 0; LIKELY(j < slen); ++j) {
 				h = _mm_load_si128(H1 + j);
 				h = _mm_max_epi16(h, f);
@@ -452,11 +546,30 @@ end_loop8:
 	}
 	r.score = gmax; r.te = te;
 	{
-		int max = -1, tmp, low, high, qlen = slen * 8;
+		int max = -1, low, high;
+	#if !defined __SSE2__ && !defined __ARM_NEON
+		for (i = 0, r.qe = -1; i < slen; ++i) {
+			int lane;
+			int values[16];
+
+			simd_store(Hmax[i].words, values);
+			for (lane = 0; lane < 8; ++lane) {
+				int query_pos = i + lane * slen;
+				int score = values[lane];
+
+				if (score > max)
+					max = score, r.qe = query_pos;
+				else if (score == max && query_pos < r.qe)
+					r.qe = query_pos;
+			}
+		}
+	#else
+		int tmp, qlen = slen * 8;
 		uint16_t *t = (uint16_t*)Hmax;
 		for (i = 0, r.qe = -1; i < qlen; ++i, ++t)
 			if ((int)*t > max) max = *t, r.qe = i / 8 + i % 8 * slen;
 			else if ((int)*t == max && (tmp = i / 8 + i % 8 * slen) < r.qe) r.qe = tmp; 
+	#endif
 		if (b) {
 			i = (r.score + q->max - 1) / q->max;
 			low = te - i; high = te + i;
@@ -471,11 +584,411 @@ end_loop8:
 	return r;
 }
 
+#if SWBWA_ENABLE_MATESW_DUAL_FORWARD && \
+    SWBWA_KSW_U8_MODE == SWBWA_KSW_U8_INT32_16
+enum {
+	SWBWA_KSW_PAIR_QUERY_LENGTH = 150,
+	SWBWA_KSW_PAIR_LANES = 16
+};
+
+typedef union {
+	float16v32 values;
+	intv16 words;
+} swbwa_ksw_pair_vec_t;
+
+typedef struct {
+	int slen;
+	uint8_t shift;
+	uint8_t max;
+	float16v32 *qp;
+	float16v32 *H0;
+	float16v32 *H1;
+	float16v32 *E;
+	float16v32 *Hmax;
+	size_t allocation_bytes;
+	int in_ldm;
+} swbwa_ksw_pair_q_t;
+
+static const intv16 swbwa_ksw_pair_low_mask = {
+	-1, -1, -1, -1, -1, -1, -1, -1,
+	 0,  0,  0,  0,  0,  0,  0,  0
+};
+
+static const intv16 swbwa_ksw_pair_shift_mask = {
+	-1, -1, -1, -1, -1, -1, -1, -1,
+	-65536, -1, -1, -1, -1, -1, -1, -1
+};
+
+static inline float16v32 ksw_pair_blend(float16v32 old_value,
+		float16v32 new_value,
+		int use_low, int use_high)
+{
+	swbwa_ksw_pair_vec_t old_bits, new_bits, result;
+	intv16 mask;
+	intv16 all_bits = -1;
+
+	if (use_low && use_high) return new_value;
+	if (!use_low && !use_high) return old_value;
+	mask = use_low ? swbwa_ksw_pair_low_mask
+	               : simd_vxorw(swbwa_ksw_pair_low_mask, all_bits);
+	old_bits.values = old_value;
+	new_bits.values = new_value;
+	result.words = simd_vbisw(simd_vandw(new_bits.words, mask),
+	                          simd_vandw(old_bits.words,
+	                                      simd_vxorw(mask, all_bits)));
+	return result.values;
+}
+
+static inline float16v32 ksw_pair_shift(float16v32 value)
+{
+	swbwa_ksw_pair_vec_t shifted;
+
+	shifted.values = value;
+	shifted.words = simd_vandw(simd_sllx(shifted.words, 16),
+	                           swbwa_ksw_pair_shift_mask);
+	return shifted.values;
+}
+
+static inline int ksw_pair_zero_mask(float16v32 value)
+{
+	swbwa_ksw_pair_vec_t bits, low, high;
+	intv16 all_bits = -1;
+
+	bits.values = value;
+	low.words = simd_vandw(bits.words, swbwa_ksw_pair_low_mask);
+	high.words = simd_vandw(
+		bits.words, simd_vxorw(swbwa_ksw_pair_low_mask, all_bits));
+	return (simd_reduc_smaxh(low.values) == (_Float16)0 ? 1 : 0) |
+	       (simd_reduc_smaxh(high.values) == (_Float16)0 ? 2 : 0);
+}
+
+static inline void ksw_pair_max_values(float16v32 value, int maxima[2])
+{
+	swbwa_ksw_pair_vec_t bits, low, high;
+	intv16 all_bits = -1;
+
+	bits.values = value;
+	low.words = simd_vandw(bits.words, swbwa_ksw_pair_low_mask);
+	high.words = simd_vandw(
+		bits.words, simd_vxorw(swbwa_ksw_pair_low_mask, all_bits));
+	maxima[0] = (int)simd_reduc_smaxh(low.values);
+	maxima[1] = (int)simd_reduc_smaxh(high.values);
+}
+
+static swbwa_ksw_pair_q_t *ksw_qinit_u8_pair(int qlen,
+		const uint8_t *query0,
+		const uint8_t *query1, int m, const int8_t *mat, int prefer_ldm)
+{
+	swbwa_ksw_pair_q_t *q;
+	size_t allocation_bytes;
+	int tmp;
+	int a, i, lane;
+	_Float16 profile[32] __attribute__((aligned(64)));
+
+	q = NULL;
+	allocation_bytes = sizeof(*q) + 63 +
+	                   sizeof(float16v32) *
+	                   ((qlen + SWBWA_KSW_PAIR_LANES - 1) /
+	                    SWBWA_KSW_PAIR_LANES) * (m + 4);
+	if (prefer_ldm &&
+	    allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES)
+		q = (swbwa_ksw_pair_q_t *)ldm_malloc(allocation_bytes);
+	else
+		q = (swbwa_ksw_pair_q_t *)malloc(allocation_bytes);
+	assert(q != NULL);
+	q->slen = (qlen + SWBWA_KSW_PAIR_LANES - 1) /
+	          SWBWA_KSW_PAIR_LANES;
+	q->allocation_bytes = allocation_bytes;
+	q->in_ldm = prefer_ldm &&
+	            allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES;
+	q->qp = (float16v32 *)(((uintptr_t)q + sizeof(*q) + 63) >> 6 << 6);
+	q->H0 = q->qp + q->slen * m;
+	q->H1 = q->H0 + q->slen;
+	q->E = q->H1 + q->slen;
+	q->Hmax = q->E + q->slen;
+	tmp = m * m;
+	q->shift = 127;
+	q->max = 0;
+	for (a = 0; a < tmp; ++a) {
+		if (mat[a] < (int8_t)q->shift) q->shift = mat[a];
+		if (mat[a] > (int8_t)q->max) q->max = mat[a];
+	}
+	q->shift = 256 - q->shift;
+
+	for (a = 0; a < m; ++a) {
+		const int8_t *ma = mat + a * m;
+
+		for (i = 0; i < q->slen; ++i) {
+			for (lane = 0; lane < SWBWA_KSW_PAIR_LANES; ++lane) {
+				int k = i + lane * q->slen;
+
+				profile[lane] =
+					(_Float16)((k >= qlen ? 0 : ma[query0[k]]) + q->shift);
+				profile[SWBWA_KSW_PAIR_LANES + lane] =
+					(_Float16)((k >= qlen ? 0 : ma[query1[k]]) + q->shift);
+			}
+			simd_load(q->qp[a * q->slen + i], profile);
+		}
+	}
+	return q;
+}
+
+static void ksw_pair_qdestroy(swbwa_ksw_pair_q_t *q)
+{
+	if (q->in_ldm)
+		ldm_free(q, q->allocation_bytes);
+	else
+		free(q);
+}
+
+static void ksw_pair_append_peak(uint64_t **peaks, int *count, int *capacity,
+		int row, int score)
+{
+	if (*count == 0 || (int32_t)(*peaks)[*count - 1] + 1 != row) {
+		if (*count == *capacity) {
+			*capacity = *capacity ? *capacity << 1 : 8;
+			*peaks = (uint64_t *)realloc(*peaks,
+			                              sizeof(**peaks) * *capacity);
+		}
+		(*peaks)[(*count)++] = (uint64_t)score << 32 | row;
+	} else if ((int)((*peaks)[*count - 1] >> 32) < score) {
+		(*peaks)[*count - 1] = (uint64_t)score << 32 | row;
+	}
+}
+
+static void ksw_pair_finish_result(swbwa_ksw_pair_q_t *q, int which,
+		int gmax, int te,
+		uint64_t *peaks, int peak_count, kswr_t *result)
+{
+	int i;
+	int best = -1;
+	_Float16 values[32] __attribute__((aligned(64)));
+
+	*result = g_defr;
+	result->score = gmax + q->shift < 255 ? gmax : 255;
+	result->te = te;
+	if (result->score == 255) return;
+
+	/* Match ksw_u8's physical-lane scan and tie order exactly. */
+	for (i = 0; i < q->slen * SWBWA_KSW_U8_LANES; ++i) {
+		int lane = i % SWBWA_KSW_U8_LANES;
+		int query_pos = i / SWBWA_KSW_U8_LANES + lane * q->slen;
+		int score;
+
+		if (lane == 0)
+			simd_store(q->Hmax[i / SWBWA_KSW_U8_LANES], values);
+		score = (int)values[which * SWBWA_KSW_PAIR_LANES + lane];
+		if (score > best || (score == best && query_pos < result->qe))
+			best = score, result->qe = query_pos;
+	}
+	if (result->score != 255 && peak_count > 0) {
+		int radius = (result->score + q->max - 1) / q->max;
+		int range_low = te - radius;
+		int range_high = te + radius;
+
+		for (i = 0; i < peak_count; ++i) {
+			int end = (int32_t)peaks[i];
+			int score = peaks[i] >> 32;
+
+			if ((end < range_low || end > range_high) &&
+			    score > result->score2)
+				result->score2 = score, result->te2 = end;
+		}
+	}
+}
+
+static void ksw_u8_dual_forward(swbwa_ksw_pair_q_t *q, int tlen,
+		const uint8_t *target0, const uint8_t *target1, int o_del,
+		int e_del, int o_ins, int e_ins, int xtra, kswr_t results[2]
+#if SWBWA_ENABLE_CPE_PROFILE
+		, swbwa_matesw_ksw_work_t work[2]
+#endif
+		)
+{
+	int i, j, k;
+	int active[2] = { 1, 1 };
+	int gmax[2] = { 0, 0 };
+	int te[2] = { -1, -1 };
+	int minsc = (xtra & KSW_XSUBO) ? xtra & 0xffff : 0x10000;
+	int endsc = (xtra & KSW_XSTOP) ? xtra & 0xffff : 0x10000;
+	int peak_count[2] = { 0, 0 };
+	int peak_capacity[2] = { 0, 0 };
+	uint64_t *peaks[2] = { NULL, NULL };
+	float16v32 v_oe_del = (_Float16)(o_del + e_del);
+	float16v32 v_e_del = (_Float16)e_del;
+	float16v32 v_oe_ins = (_Float16)(o_ins + e_ins);
+	float16v32 v_e_ins = (_Float16)e_ins;
+	float16v32 v_shift = (_Float16)q->shift;
+	float16v32 zero = (_Float16)0;
+	float16v32 limit = (_Float16)255;
+	float16v32 *H0 = q->H0, *H1 = q->H1, *E = q->E;
+	int slen = q->slen;
+
+	for (i = 0; i < slen; ++i) {
+		H0[i] = zero;
+		E[i] = zero;
+		q->Hmax[i] = zero;
+	}
+	for (i = 0; i < tlen; ++i) {
+		int row_active[2] = { active[0], active[1] };
+		int lazy_done[2] = { !active[0], !active[1] };
+		int maxima[2];
+		float16v32 h, e, t, f, row_max;
+		float16v32 *score_profile1 = q->qp + target1[i] * slen;
+
+#if SWBWA_ENABLE_CPE_PROFILE
+		uint64_t row_lazy_steps[2] = {
+			(uint64_t)SWBWA_KSW_U8_LANES * slen,
+			(uint64_t)SWBWA_KSW_U8_LANES * slen
+		};
+		for (j = 0; j < 2; ++j)
+			if (row_active[j]) {
+				++work[j].forward_rows;
+				work[j].forward_main_steps += slen;
+			}
+#endif
+		h = ksw_pair_shift(H0[slen - 1]);
+		f = zero;
+		row_max = zero;
+		for (j = 0; j < slen; ++j) {
+			float16v32 score = ksw_pair_blend(
+				q->qp[target0[i] * slen + j], score_profile1[j], 0, 1);
+
+			h = simd_sminh(simd_vaddh(h, score), limit);
+			h = simd_smaxh(simd_vsubh(h, v_shift), zero);
+			e = E[j];
+			h = simd_smaxh(h, e);
+			h = simd_smaxh(h, f);
+			row_max = simd_smaxh(row_max, h);
+			H1[j] = h;
+			e = simd_smaxh(simd_vsubh(e, v_e_del), zero);
+			t = simd_smaxh(simd_vsubh(h, v_oe_del), zero);
+			e = simd_smaxh(e, t);
+			E[j] = e;
+			f = simd_smaxh(simd_vsubh(f, v_e_ins), zero);
+			t = simd_smaxh(simd_vsubh(h, v_oe_ins), zero);
+			f = simd_smaxh(f, t);
+			h = H0[j];
+		}
+		for (k = 0; k < SWBWA_KSW_U8_LANES; ++k) {
+			f = ksw_pair_shift(f);
+			for (j = 0; j < slen; ++j) {
+				int zero_mask;
+				float16v32 previous_h;
+				float16v32 updated_h;
+
+				h = H1[j];
+				previous_h = h;
+				updated_h = simd_smaxh(previous_h, f);
+				h = ksw_pair_blend(previous_h, updated_h,
+				                   !lazy_done[0], !lazy_done[1]);
+				H1[j] = h;
+				h = simd_smaxh(simd_vsubh(h, v_oe_ins), zero);
+				f = simd_smaxh(simd_vsubh(f, v_e_ins), zero);
+				zero_mask = ksw_pair_zero_mask(
+					simd_smaxh(simd_vsubh(f, h), zero));
+				if (!lazy_done[0] && (zero_mask & 1)) {
+					lazy_done[0] = 1;
+#if SWBWA_ENABLE_CPE_PROFILE
+					row_lazy_steps[0] = (uint64_t)k * slen + j + 1;
+#endif
+				}
+				if (!lazy_done[1] && (zero_mask & 2)) {
+					lazy_done[1] = 1;
+#if SWBWA_ENABLE_CPE_PROFILE
+					row_lazy_steps[1] = (uint64_t)k * slen + j + 1;
+#endif
+				}
+				if (lazy_done[0] && lazy_done[1]) goto dual_lazy_done;
+			}
+		}
+dual_lazy_done:
+#if SWBWA_ENABLE_CPE_PROFILE
+		for (j = 0; j < 2; ++j)
+			if (row_active[j])
+				work[j].forward_lazy_steps += row_lazy_steps[j];
+#endif
+		ksw_pair_max_values(row_max, maxima);
+		for (j = 0; j < 2; ++j) {
+			if (!row_active[j]) continue;
+			if (maxima[j] >= minsc)
+				ksw_pair_append_peak(&peaks[j], &peak_count[j],
+				                     &peak_capacity[j], i, maxima[j]);
+			if (maxima[j] > gmax[j]) {
+				int p;
+
+				gmax[j] = maxima[j];
+				te[j] = i;
+				for (p = 0; p < slen; ++p)
+					q->Hmax[p] = ksw_pair_blend(
+						q->Hmax[p], H1[p], j == 0, j == 1);
+				if (gmax[j] + q->shift >= 255 || gmax[j] >= endsc)
+					active[j] = 0;
+			}
+		}
+		if (!active[0] && !active[1]) break;
+		{
+			float16v32 *swap = H1;
+			H1 = H0;
+			H0 = swap;
+		}
+	}
+	for (i = 0; i < 2; ++i) {
+		ksw_pair_finish_result(q, i, gmax[i], te[i], peaks[i],
+		                       peak_count[i], &results[i]);
+		free(peaks[i]);
+	}
+}
+#endif
+
 static inline void revseq(int l, uint8_t *s)
 {
 	int i, t;
 	for (i = 0; i < l>>1; ++i)
 		t = s[i], s[i] = s[l - 1 - i], s[l - 1 - i] = t;
+}
+
+static kswr_t ksw_align2_find_start(kswr_t r, int size, uint8_t *query,
+		int tlen, uint8_t *target, int m, const int8_t *mat, int o_del,
+		int e_del, int o_ins, int e_ins, int xtra, int profile_matesw)
+{
+	kswq_t *q;
+	kswr_t rr;
+	kswr_t (*func)(kswq_t*, int, const uint8_t*, int, int, int, int, int);
+
+	if ((xtra & KSW_XSTART) == 0 ||
+	    ((xtra & KSW_XSUBO) && r.score < (xtra & 0xffff)))
+		return r;
+
+	revseq(r.qe + 1, query);
+	revseq(r.te + 1, target);
+	if (profile_matesw)
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_REVERSE);
+	q = ksw_qinit_impl(size, r.qe + 1, query, m, mat, profile_matesw);
+#if SWBWA_ENABLE_CPE_PROFILE
+	if (profile_matesw && active_matesw_ksw_work != NULL) {
+		active_matesw_ksw_work->reverse_qlen = r.qe + 1;
+		active_matesw_ksw_work->reverse_tlen = tlen;
+		active_matesw_ksw_work->reverse_slen = q->slen;
+		active_matesw_ksw_phase = SWBWA_MATESW_KSW_REVERSE;
+	}
+#endif
+	if (profile_matesw)
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_REVERSE);
+
+	func = q->size == 2 ? ksw_i16 : ksw_u8;
+	if (profile_matesw)
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_DP_REVERSE);
+	rr = func(q, tlen, target, o_del, e_del, o_ins, e_ins,
+	          KSW_XSTOP | r.score);
+	if (profile_matesw)
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_DP_REVERSE);
+	revseq(r.qe + 1, query);
+	revseq(r.te + 1, target);
+	ksw_qdestroy(q);
+	if (r.score == rr.score)
+		r.tb = r.te - rr.te, r.qb = r.qe - rr.qe;
+	return r;
 }
 
 static kswr_t ksw_align2_impl(int qlen, uint8_t *query, int tlen,
@@ -484,8 +997,19 @@ static kswr_t ksw_align2_impl(int qlen, uint8_t *query, int tlen,
 {
 	int size;
 	kswq_t *q;
-	kswr_t r, rr;
+	kswr_t r;
 	kswr_t (*func)(kswq_t*, int, const uint8_t*, int, int, int, int, int);
+#if SWBWA_ENABLE_CPE_PROFILE
+	swbwa_matesw_ksw_work_t work;
+
+	if (profile_matesw) {
+		memset(&work, 0, sizeof(work));
+		work.qlen = qlen;
+		work.tlen = tlen;
+		active_matesw_ksw_work = &work;
+		active_matesw_ksw_phase = SWBWA_MATESW_KSW_FORWARD;
+	}
+#endif
 	if (profile_matesw)
 		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_FORWARD);
 	q = (qry && *qry)? *qry : ksw_qinit_impl((xtra&KSW_XBYTE)? 1 : 2,
@@ -496,6 +1020,12 @@ static kswr_t ksw_align2_impl(int qlen, uint8_t *query, int tlen,
 	if (qry && *qry == 0) *qry = q;
 	func = q->size == 2? ksw_i16 : ksw_u8;
 	size = q->size;
+#if SWBWA_ENABLE_CPE_PROFILE
+	if (profile_matesw) {
+		work.slen = q->slen;
+		work.score_size = size;
+	}
+#endif
 	if (profile_matesw)
 		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_DP_FORWARD);
 	r = func(q, tlen, target, o_del, e_del, o_ins, e_ins, xtra);
@@ -504,26 +1034,13 @@ static kswr_t ksw_align2_impl(int qlen, uint8_t *query, int tlen,
 	if (qry == 0) ksw_qdestroy(q);
 	//if (qry == 0) ldm_free(q, 32 << 10);
 
-	if ((xtra&KSW_XSTART) == 0 || ((xtra&KSW_XSUBO) && r.score < (xtra&0xffff))) return r;
+	r = ksw_align2_find_start(r, size, query, tlen, target, m, mat,
+	                          o_del, e_del, o_ins, e_ins, xtra,
+	                          profile_matesw);
 
-	revseq(r.qe + 1, query); revseq(r.te + 1, target); // +1 because qe/te points to the exact end, not the position after the end
-
-	if (profile_matesw)
-		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_REVERSE);
-	q = ksw_qinit_impl(size, r.qe + 1, query, m, mat, profile_matesw);
-	if (profile_matesw)
-		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_REVERSE);
-
-	if (profile_matesw)
-		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_DP_REVERSE);
-	rr = func(q, tlen, target, o_del, e_del, o_ins, e_ins, KSW_XSTOP | r.score);
-	if (profile_matesw)
-		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_DP_REVERSE);
-	revseq(r.qe + 1, query); revseq(r.te + 1, target);
-	ksw_qdestroy(q);
-	//ldm_free(q, 32 << 10);
-	if (r.score == rr.score)
-		r.tb = r.te - rr.te, r.qb = r.qe - rr.qe;
+#if SWBWA_ENABLE_CPE_PROFILE
+	if (profile_matesw) finish_matesw_ksw_work(&work);
+#endif
 
 	return r;
 }
@@ -542,6 +1059,81 @@ kswr_t ksw_align2_matesw(int qlen, uint8_t *query, int tlen,
 {
 	return ksw_align2_impl(qlen, query, tlen, target, m, mat, o_del,
 			e_del, o_ins, e_ins, xtra, qry, 1);
+}
+
+void ksw_align2_matesw_dual_forward(
+		int qlen0, uint8_t *query0, int tlen0, uint8_t *target0,
+		int qlen1, uint8_t *query1, int tlen1, uint8_t *target1,
+		int m, const int8_t *mat, int o_del, int e_del, int o_ins,
+		int e_ins, int xtra, kswr_t results[2])
+{
+#if SWBWA_ENABLE_MATESW_DUAL_FORWARD && \
+    SWBWA_KSW_U8_MODE == SWBWA_KSW_U8_INT32_16
+	swbwa_ksw_pair_q_t *q;
+#if SWBWA_ENABLE_CPE_PROFILE
+	swbwa_matesw_ksw_work_t work[2];
+#endif
+
+	if ((xtra & KSW_XBYTE) && qlen0 == SWBWA_KSW_PAIR_QUERY_LENGTH &&
+	    qlen0 == qlen1 && tlen0 == tlen1) {
+#if SWBWA_ENABLE_CPE_PROFILE
+		int i;
+
+		memset(work, 0, sizeof(work));
+		for (i = 0; i < 2; ++i) {
+			work[i].qlen = qlen0;
+			work[i].tlen = tlen0;
+			work[i].slen = (qlen0 + SWBWA_KSW_PAIR_LANES - 1) /
+			               SWBWA_KSW_PAIR_LANES;
+			work[i].score_size = 1;
+		}
+#endif
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_FORWARD);
+		q = ksw_qinit_u8_pair(qlen0, query0, query1, m, mat, 1);
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_QUERY_INIT_FORWARD);
+		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_KSW_DP_FORWARD);
+		ksw_u8_dual_forward(q, tlen0, target0, target1, o_del, e_del,
+		                    o_ins, e_ins, xtra, results
+#if SWBWA_ENABLE_CPE_PROFILE
+		                    , work
+#endif
+		                    );
+		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_DP_FORWARD);
+		ksw_pair_qdestroy(q);
+
+#if SWBWA_ENABLE_CPE_PROFILE
+		active_matesw_ksw_work = &work[0];
+#endif
+		results[0] = ksw_align2_find_start(results[0], 1, query0, tlen0,
+		                                    target0, m, mat, o_del, e_del,
+		                                    o_ins, e_ins, xtra, 1);
+#if SWBWA_ENABLE_CPE_PROFILE
+		active_matesw_ksw_work = &work[1];
+#endif
+		results[1] = ksw_align2_find_start(results[1], 1, query1, tlen1,
+		                                    target1, m, mat, o_del, e_del,
+		                                    o_ins, e_ins, xtra, 1);
+#if SWBWA_ENABLE_CPE_PROFILE
+		last_matesw_pair_work[0] = work[0];
+		last_matesw_pair_work[1] = work[1];
+		active_matesw_ksw_work = NULL;
+#endif
+		return;
+	}
+#endif
+
+	results[0] = ksw_align2_matesw(qlen0, query0, tlen0, target0, m,
+	                                mat, o_del, e_del, o_ins, e_ins,
+	                                xtra, NULL);
+#if SWBWA_ENABLE_CPE_PROFILE
+	last_matesw_pair_work[0] = last_matesw_ksw_work;
+#endif
+	results[1] = ksw_align2_matesw(qlen1, query1, tlen1, target1, m,
+	                                mat, o_del, e_del, o_ins, e_ins,
+	                                xtra, NULL);
+#if SWBWA_ENABLE_CPE_PROFILE
+	last_matesw_pair_work[1] = last_matesw_ksw_work;
+#endif
 }
 
 kswr_t ksw_align(int qlen, uint8_t *query, int tlen, uint8_t *target, int m, const int8_t *mat, int gapo, int gape, int xtra, kswq_t **qry)

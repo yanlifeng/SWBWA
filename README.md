@@ -8,6 +8,16 @@ A high-accuracy and high-performance short read aligner optimized for the next-g
 
 - Achieves up to **330×** speedup over the unoptimized single-thread version, and **1.2–1.4×** faster than [bwamem](https://github.com/lh3/bwa) on a dual-socket 48-core x86 server with nearly identical results.
 
+## Directory layout
+
+- `src/host/`：主核 C/C++ 源代码，包括比对流程、MPI 输入输出和主核辅助模块。
+- `src/slave/`：从核源代码、CPE kernel 和从核专用头文件。
+- `include/`：主核公共头文件、配置头文件和生成的 CPE 布局头文件。
+- `tools/`：跨段构建使用的地址和 TLS 信息提取脚本。
+- `tests/`：不参与默认构建的 MPI/RMA 和运行时诊断程序。
+- `scripts/`：正确性检查、性能测试和结果分析脚本。
+- `logs/`、`correctness_results/`：运行日志、正确性结果和测试说明。
+
 ## Build
 
 SWBWA can only support the next-generation Sunway platform.

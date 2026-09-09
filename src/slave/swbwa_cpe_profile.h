@@ -1,8 +1,8 @@
 #ifndef SWBWA_SLAVE_CPE_PROFILE_H
 #define SWBWA_SLAVE_CPE_PROFILE_H
 
-#include "../swbwa_config.h"
-#include "../swbwa_matesw_profile.h"
+#include "swbwa_config.h"
+#include "swbwa_matesw_profile.h"
 
 enum swbwa_cpe_profile_region {
     SWBWA_CPE_PROFILE_WORKER_ALIGNMENT,

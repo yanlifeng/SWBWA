@@ -43,14 +43,10 @@
 #include "kvec.h"
 #include "ksort.h"
 #include "utils.h"
-#include "../swbwa_config.h"
+#include "swbwa_config.h"
 
 #include <slave.h>
 #include <crts.h>
-
-#include "../utils.h"
-
-
 
 #if SWBWA_ENABLE_CPE_MALLOC_WRAPPER
 #  include "malloc_wrap.h"

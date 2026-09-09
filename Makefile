@@ -147,10 +147,13 @@ endif
 OPTFLAGS  ?= -O2
 WARNFLAGS ?= -Wall -Wno-unused-function
 DBGFLAGS  ?= -g
+INCLUDE_DIR := include
+CONFIG_HEADER := $(INCLUDE_DIR)/swbwa_config.h
+DEPFLAGS := -MMD -MP
 
-CPPFLAGS += -include swbwa_config.h $(SWBWA_CPPFLAGS)
+CPPFLAGS += -include $(CONFIG_HEADER) $(SWBWA_CPPFLAGS)
 DFLAGS   += -DHAVE_PTHREAD
-INCLUDES += -I.
+INCLUDES += -I$(INCLUDE_DIR)
 ifeq ($(CPE_PROFILE),1)
 INCLUDES += -I$(LWPF3_DIR)
 endif
@@ -183,9 +186,11 @@ APP_OBJS := $(addprefix $(HOST_DIR)/, \
 	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o swbwa_mpi.o \
 	swbwa_output.o swbwa_cpe_profile.o)
 
-SLAVE_DIR     := slave
+SLAVE_DIR     := src/slave
 SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
 SLAVE_OBJECTS := $(SLAVE_SOURCES:.c=.o)
+DEPFILES      := $(LIB_OBJS:.o=.d) $(APP_OBJS:.o=.d) \
+	$(HOST_DIR)/main.d $(SLAVE_OBJECTS:.o=.d)
 
 .PHONY: all clean depend print-config
 .SUFFIXES:
@@ -212,14 +217,14 @@ endif
 	@echo "MPI_LINK_VARIANT=$(MPI_LINK_VARIANT)"
 
 # Compile rules
-$(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c swbwa_config.h
-	$(CC) $(SLAVE_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
+$(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c $(CONFIG_HEADER)
+	$(CC) $(SLAVE_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-$(HOST_DIR)/%.o: $(HOST_DIR)/%.c swbwa_config.h
-	$(CC) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
+$(HOST_DIR)/%.o: $(HOST_DIR)/%.c $(CONFIG_HEADER)
+	$(CC) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-$(HOST_DIR)/%.o: $(HOST_DIR)/%.cpp swbwa_config.h
-	$(CXX) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
+$(HOST_DIR)/%.o: $(HOST_DIR)/%.cpp $(CONFIG_HEADER)
+	$(CXX) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
 # Link and archive rules
 $(PROG): libbwa.a $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS)
@@ -259,60 +264,10 @@ libbwa.a: $(LIB_OBJS)
 
 # Maintenance
 clean:
-	rm -f gmon.out a.out $(PROG) *.a $(HOST_DIR)/*.o $(SLAVE_DIR)/*.o
+	rm -f gmon.out a.out $(PROG) *.a $(HOST_DIR)/*.o $(HOST_DIR)/*.d \
+		$(SLAVE_DIR)/*.o $(SLAVE_DIR)/*.d
 
 depend:
-	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) -- *.c )
+	@echo "Dependency files are generated automatically during compilation."
 
-# DO NOT DELETE THIS LINE -- make depend depends on it.
-
-QSufSort.o: QSufSort.h
-bamlite.o: bamlite.h malloc_wrap.h
-bntseq.o: bntseq.h utils.h kseq.h malloc_wrap.h khash.h
-bwa.o: bntseq.h bwa.h bwt.h ksw.h utils.h kstring.h malloc_wrap.h kvec.h
-bwa.o: kseq.h
-bwamem.o: kstring.h malloc_wrap.h bwamem.h bwt.h bntseq.h bwa.h ksw.h kvec.h
-bwamem.o: ksort.h utils.h kbtree.h swbwa_config.h swbwa_cpe.h swbwa_cpe_layout.h
-bwamem.o: swbwa_mpi.h swbwa_runtime.h
-bwamem_extra.o: bwa.h bntseq.h bwt.h bwamem.h kstring.h malloc_wrap.h
-bwamem_pair.o: kstring.h malloc_wrap.h bwamem.h bwt.h bntseq.h bwa.h kvec.h
-bwamem_pair.o: utils.h ksw.h
-bwape.o: bwtaln.h bwt.h kvec.h malloc_wrap.h bntseq.h utils.h bwase.h bwa.h
-bwape.o: ksw.h khash.h
-bwase.o: bwase.h bntseq.h bwt.h bwtaln.h utils.h kstring.h malloc_wrap.h
-bwase.o: bwa.h ksw.h
-bwaseqio.o: bwtaln.h bwt.h utils.h bamlite.h malloc_wrap.h kseq.h
-bwashm.o: bwa.h bntseq.h bwt.h
-bwt.o: utils.h bwt.h kvec.h malloc_wrap.h
-bwt_gen.o: QSufSort.h malloc_wrap.h
-bwt_lite.o: bwt_lite.h malloc_wrap.h
-bwtaln.o: bwtaln.h bwt.h bwtgap.h utils.h bwa.h bntseq.h malloc_wrap.h
-bwtgap.o: bwtgap.h bwt.h bwtaln.h malloc_wrap.h
-bwtindex.o: bntseq.h bwa.h bwt.h utils.h rle.h rope.h malloc_wrap.h
-bwtsw2_aux.o: bntseq.h bwt_lite.h utils.h bwtsw2.h bwt.h kstring.h
-bwtsw2_aux.o: malloc_wrap.h bwa.h ksw.h kseq.h ksort.h
-bwtsw2_chain.o: bwtsw2.h bntseq.h bwt_lite.h bwt.h malloc_wrap.h ksort.h
-bwtsw2_core.o: bwt_lite.h bwtsw2.h bntseq.h bwt.h kvec.h malloc_wrap.h
-bwtsw2_core.o: khash.h ksort.h
-bwtsw2_main.o: bwt.h bwtsw2.h bntseq.h bwt_lite.h utils.h bwa.h
-bwtsw2_pair.o: utils.h bwt.h bntseq.h bwtsw2.h bwt_lite.h kstring.h
-bwtsw2_pair.o: malloc_wrap.h ksw.h
-example.o: bwamem.h bwt.h bntseq.h bwa.h kseq.h malloc_wrap.h
-fastmap.o: bwa.h bntseq.h bwt.h bwamem.h kvec.h malloc_wrap.h utils.h kseq.h
-fastmap.o: swbwa_config.h swbwa_cpe.h swbwa_runtime.h
-is.o: malloc_wrap.h
-kopen.o: malloc_wrap.h
-kstring.o: kstring.h malloc_wrap.h
-ksw.o: ksw.h neon_sse.h scalar_sse.h malloc_wrap.h
-main.o: kstring.h malloc_wrap.h utils.h
-malloc_wrap.o: malloc_wrap.h
-maxk.o: bwa.h bntseq.h bwt.h bwamem.h kseq.h malloc_wrap.h
-pemerge.o: ksw.h kseq.h malloc_wrap.h kstring.h bwa.h bntseq.h bwt.h utils.h
-rle.o: rle.h
-rope.o: rle.h rope.h
-utils.o: utils.h ksort.h malloc_wrap.h kseq.h
-fastmap.o: swbwa_mpi.h swbwa_output.h
-main.o: swbwa_mpi.h
-swbwa_mpi.o: swbwa_config.h swbwa_mpi.h
-swbwa_output.o: swbwa_config.h swbwa_mpi.h swbwa_output.h
-utils.o: swbwa_mpi.h
+-include $(DEPFILES)

@@ -6,8 +6,8 @@
 
 #include "bwt.h"
 #include "bwamem.h"
-#include "../swbwa_config.h"
-#include "../swbwa_cpe.h"
+#include "swbwa_config.h"
+#include "swbwa_cpe.h"
 #include "swbwa_cpe_profile.h"
 
 #include "malloc_wrap.h"

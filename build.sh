@@ -6,7 +6,7 @@ set -euo pipefail
 # Cross-segment builds intentionally keep the two-pass layout discovery.
 
 readonly executable=SWBWA
-readonly layout_header=swbwa_cpe_layout.h
+readonly layout_header=include/swbwa_cpe_layout.h
 
 write_layout_header()
 {
@@ -15,6 +15,7 @@ write_layout_header()
     local data_start=$3
     local data_size=$4
 
+    mkdir -p "$(dirname "${layout_header}")"
     cat > "${layout_header}" <<EOF
 #ifndef SWBWA_CPE_LAYOUT_H
 #define SWBWA_CPE_LAYOUT_H
@@ -55,6 +56,6 @@ data_size=$(swreadelf -l "./${executable}" | sed -n '12p' | awk '{print $2}')
 write_layout_header "${text_start}" "${text_size}" "${data_start}" "${data_size}"
 build_swbwa "$jobs" "$@"
 
-python3 xlink.py "${executable}"
+python3 tools/xlink.py "${executable}"
 swreadelf -r "${executable}" > "${executable}.relocations"
-python3 get_tls.py "${executable}.relocations"
+python3 tools/get_tls.py "${executable}.relocations"

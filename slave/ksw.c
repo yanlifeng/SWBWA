@@ -1149,15 +1149,46 @@ typedef struct {
 	int32_t h, e;
 } eh_t;
 
+/* Reuse the two short-lived buffers used by scalar chain extension. */
+typedef struct {
+	eh_t *eh;
+	int8_t *qp;
+	size_t eh_capacity;
+	size_t qp_capacity;
+} swbwa_extend2_scratch_t;
+
+static __thread swbwa_extend2_scratch_t swbwa_extend2_scratch;
+
+static void swbwa_extend2_scratch_reserve(int qlen, int m)
+{
+	size_t eh_bytes = ((size_t)qlen + 1) * sizeof(eh_t);
+	size_t qp_bytes = (size_t)qlen * (size_t)m;
+
+	if (swbwa_extend2_scratch.eh_capacity < eh_bytes) {
+		swbwa_extend2_scratch.eh =
+			(eh_t *)realloc(swbwa_extend2_scratch.eh, eh_bytes);
+		assert(swbwa_extend2_scratch.eh != NULL);
+		swbwa_extend2_scratch.eh_capacity = eh_bytes;
+	}
+	if (swbwa_extend2_scratch.qp_capacity < qp_bytes) {
+		swbwa_extend2_scratch.qp =
+			(int8_t *)realloc(swbwa_extend2_scratch.qp, qp_bytes);
+		assert(swbwa_extend2_scratch.qp != NULL);
+		swbwa_extend2_scratch.qp_capacity = qp_bytes;
+	}
+}
+
 int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w, int end_bonus, int zdrop, int h0, int *_qle, int *_tle, int *_gtle, int *_gscore, int *_max_off)
 {
 	eh_t *eh; // score array
 	int8_t *qp; // query profile
 	int i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end, max, max_i, max_j, max_ins, max_del, max_ie, gscore, max_off;
 	assert(h0 > 0);
-	// allocate memory
-	qp = malloc(qlen * m);
-	eh = calloc(qlen + 1, 8);
+	/* Allocate once per CPE thread, then clear only the live score state. */
+	swbwa_extend2_scratch_reserve(qlen, m);
+	qp = swbwa_extend2_scratch.qp;
+	eh = swbwa_extend2_scratch.eh;
+	memset(eh, 0, ((size_t)qlen + 1) * sizeof(*eh));
 	// generate the query profile
 	for (k = i = 0; k < m; ++k) {
 		const int8_t *p = &mat[k * m];
@@ -1241,7 +1272,6 @@ int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target,
 		end = j + 2 < qlen? j + 2 : qlen;
 		//beg = 0; end = qlen; // uncomment this line for debugging
 	}
-	free(eh); free(qp);
 	if (_qle) *_qle = max_j + 1;
 	if (_tle) *_tle = max_i + 1;
 	if (_gtle) *_gtle = max_ie + 1;

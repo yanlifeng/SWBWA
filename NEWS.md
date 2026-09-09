@@ -1,3 +1,48 @@
+SWBWA development history
+-------------------------
+
+This repository started from BWA and was progressively extended for the
+Sunway heterogeneous platform. The following milestones summarize the
+post-BWA development work:
+
+ * 2024-03-04: added the first CPE slave implementation and moved the
+   alignment worker onto the heterogeneous execution path.
+ * 2024-09-02--2024-10-31: fixed MPE allocator/auxiliary-address issues,
+   introduced CPE parallel SAM work, added initial KSW vectorization,
+   BWT prefetch/LDM tuning, and changed the host pipeline to overlap I/O
+   and computation.
+ * 2024-10-24: added the first MPI prototype and evaluated a simulated
+   32-way int16 KSW path.
+ * 2024-12-19: added cross-segment code/data placement for the big-share
+   execution mode to reduce instruction-cache and private-space pressure.
+ * 2025-02-18--2025-02-19: improved MPE SAM allocation and moved the CPE
+   allocator support toward cross-segment memory.
+ * 2025-02-22--2025-03-07: added CPE FASTQ formatting and single-end
+   support, including paired/single input handling.
+ * 2026-07-06--2026-07-14: unified the build-time configuration and
+   malloc wrappers, cleaned compiler diagnostics, and preserved CPE
+   formatting/output order with prefix-based buffer slices.
+ * 2026-07-18--2026-07-30: added MPI-partitioned FASTQ I/O, static and
+   dynamic rank scheduling, exact record indexing, and the corresponding
+   validation diagnostics.
+ * 2026-08-10--2026-08-18: stabilized CPE batching, added MPI progress
+   during CPE execution, and streamlined dynamic I/O and seed handling.
+ * 2026-08-24--2026-08-25: added large-data validation, CPE/LWPF profiling,
+   dynamic tail refinement, and discard-mode profiling for isolating
+   alignment cost from SAM output cost.
+ * 2026-08-26--2026-08-28: optimized CPE alignment hot paths with LDM,
+   added the chain seed arena, explicit u8/i16 KSW backends, experimental
+   FP16 backends, and the guarded same-PE mate-rescue fast path.
+ * 2026-09-09: reused scalar KSW extension scratch buffers and reorganized
+   the source, test, script, and result directories.
+
+The current implementation keeps the exact int32-based KSW path as the
+default, while retaining FP16 and other SIMD variants as compile-time
+experimental backends. MPI split output is the preferred mode for studying
+compute balance; single_unordered output is intended for parallel-I/O/RMA
+experiments and does not guarantee SAM record order.
+
+
 Release 0.7.17 (23 October 2017)
 --------------------------------
 

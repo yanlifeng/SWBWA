@@ -1,3 +1,137 @@
+SWBWA development history (post-BWA)
+=====================================
+
+The entries below record the main Sunway-specific development milestones
+after the original BWA code base. Hashes are the corresponding repository
+commits.
+
+2026-09-09
+----------
+0a08920  docs: clarify repository result layout
+2ac0f20  refactor: organize source and test directories
+029631b  refactor: organize host sources and standalone tests
+4258ae4  chore: organize results and unify build run entrypoints
+7d536cc  perf: reuse scalar KSW extension scratch buffers
+
+2026-08-28
+----------
+953b2e3  perf: pair mate rescue and implement i16 SIMD KSW
+d6e1582  perf: select explicit CPE KSW u8 backends
+
+2026-08-27
+----------
+f2134d9  perf: add FP16 KSW backend and CPE chain arena
+
+2026-08-26
+----------
+7c3ebe6  perf: optimize CPE alignment hot paths with LDM
+
+2026-08-25
+----------
+3129ab3  perf: refine MPI dynamic scheduling and discard profiling
+
+2026-08-24
+----------
+30d8722  perf: refine MPI tail scheduling
+fc658b8  test: add large-data validation and CPE profiling
+
+2026-08-18
+----------
+96f89ed  perf: streamline MPI dynamic I/O and seed pruning
+
+2026-08-17
+----------
+4fb1ff5  feat: progress MPI during CPE execution
+
+2026-08-10
+----------
+9c75c49  feat: stabilize CPE batching and add validation diagnostics
+
+2026-07-30
+----------
+2fbbdff  refactor: simplify CPE input and MPI scheduling
+
+2026-07-28
+----------
+61221c2  feat: add dynamic MPI FASTQ scheduling
+
+2026-07-18
+----------
+3dc7e31  feat: add MPI-partitioned alignment I/O
+
+2026-07-14
+----------
+ba6372a  feat: preserve CPE FASTQ input order
+
+2026-07-13
+----------
+16c440a  fix: clean up compiler diagnostics
+
+2026-07-10
+----------
+ed8771f  refactor: unify SWBWA execution configuration
+
+2026-07-06
+----------
+e93157e  clean up SWBWA config and malloc wrappers
+
+2025-05-07
+----------
+2aac9ce  update README, remove debug info, add SWBWA tag
+
+2025-03-07
+----------
+56eee98  add SE support
+
+2025-02-22
+----------
+56c94e1  cpe FASTQ format
+
+2025-02-19
+----------
+ae19adc  move cpe_malloc from priv to cross, use zkw_malloc, faster
+
+2025-02-18
+----------
+7a509f8  better malloc for MPE_sam, fix slave dynamic_task val bug
+
+2024-12-19
+----------
+f5d3aca  opt bigshare icache by copying .text1 and cpe private address to cross segment
+
+2024-10-31
+----------
+075572a  do pre-opt for bwt_sa, change pthread to std::thread to mask IO/compute
+
+2024-10-24
+----------
+42ebe3b  add mpi version, add simulative 32-way int16 ksw-vertorization, but not faster than 16-way int32
+
+2024-10-10
+----------
+2229422  try batch for seme2, try DMA rather than GLD, put L2 and cnt_table on LDM
+
+2024-10-09
+----------
+18ff816  reduce extra cal, use prefetch, use LDM to optimize bwt_extend
+
+2024-09-15
+----------
+e542b3a  add intv16 slave KSW vectorization, fast worker2 SAM operation, and more LWPF3
+
+2024-09-04
+----------
+6b332e8  simple CPE parallelization for worker2
+
+2024-09-02
+----------
+35475e8  fix MPE malloc/free bug caused by auxiliary address error, fix NaN in bwamem_pair
+
+2024-03-04
+----------
+d57be25  sample slave in worker1 and add initial timing instrumentation
+
+
 ------------------------------------------------------------------------
 r1605 | lh3 | 2010-12-29 20:20:20 -0500 (Wed, 29 Dec 2010) | 3 lines
 Changed paths:

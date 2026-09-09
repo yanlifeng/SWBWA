@@ -80,7 +80,7 @@ static int usage()
 "Note: To use BWA, you need to first index the genome with `bwa index'.\n"
 "      There are three alignment algorithms in BWA: `mem', `bwasw', and\n"
 "      `aln/samse/sampe'. If you are not sure which to use, try `bwa mem'\n"
-"      first. Please `man ./bwa.1' for the manual.\n\n");
+"      first. See README.md for basic usage.\n\n");
 	return 1;
 }
 

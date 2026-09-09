@@ -31,7 +31,7 @@ for mode in "${MODES[@]}"; do
     mkdir -p "$mode_dir"
 
     echo "[BUILD] KSW_U8_MODE=$mode"
-    ./build_cross.sh "$BUILD_JOBS" \
+    ./build.sh "$BUILD_JOBS" \
         EXEC_MODE=cgs_cross \
         CPE_ALLOCATOR=pool \
         HOST_MALLOC_WRAPPER=1 \

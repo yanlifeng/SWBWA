@@ -1,0 +1,117 @@
+# ksw_extend2 distribution: correctness_results/ksw_extend2_profile_p2_20260831/ERR1203383_PE.tsv
+calls=451066 samples=7048 sample_fraction=0.015625
+total_dp_cells=221984606 total_rows=11862913 avg_cells_per_call=492.13
+qlen          min=1        p50=25       p90=40       p99=55       max=56       mean=24.95
+tlen          min=2        p50=49       p90=78       p99=105      max=578      mean=48.13
+requested_w   min=100      p50=100      p90=100      p99=100      max=100      mean=100.00
+effective_w   min=1        p50=25       p90=40       p99=55       max=56       mean=24.95
+rows          min=2        p50=18       p90=55       p99=79       max=111      mean=25.77
+dp_cells      min=2        p50=219      p90=1350     p99=2109     max=3309     mean=477.42
+pack8 consecutive sampled calls: groups=881 max/min median=19.129 p90=349.667
+pack8 utilization: median=0.374 p10=0.239; groups max/min<=1.25: 0.0%; <=1.50: 0.0%
+pack8 after ideal offline work sorting: utilization median=1.000 max/min median=1.000
+
+Interpretation:
+- dp_cells is the actual number of band cells visited by the scalar extension call.
+- consecutive pack8 is a no-reordering baseline; samples are recorded in multi-thread completion order.
+- sorted pack8 is an upper bound; it is not a valid online scheduling strategy by itself.
+
+========================================================================
+
+# ksw_extend2 distribution: correctness_results/ksw_extend2_profile_p2_20260831/ERR1203383_SE.tsv
+calls=214440 samples=3351 sample_fraction=0.015627
+total_dp_cells=104366290 total_rows=5602190 avg_cells_per_call=486.69
+qlen          min=1        p50=26       p90=39       p99=55       max=56       mean=25.42
+tlen          min=2        p50=49       p90=76       p99=107      max=477      mean=49.09
+requested_w   min=100      p50=100      p90=100      p99=100      max=100      mean=100.00
+effective_w   min=1        p50=26       p90=39       p99=55       max=56       mean=25.42
+rows          min=2        p50=18       p90=57       p99=78       max=111      mean=26.17
+dp_cells      min=2        p50=222      p90=1362     p99=2077     max=3270     mean=484.02
+pack8 consecutive sampled calls: groups=418 max/min median=17.153 p90=297.500
+pack8 utilization: median=0.374 p10=0.250; groups max/min<=1.25: 0.0%; <=1.50: 0.0%
+pack8 after ideal offline work sorting: utilization median=0.997 max/min median=1.006
+
+Interpretation:
+- dp_cells is the actual number of band cells visited by the scalar extension call.
+- consecutive pack8 is a no-reordering baseline; samples are recorded in multi-thread completion order.
+- sorted pack8 is an upper bound; it is not a valid online scheduling strategy by itself.
+
+========================================================================
+
+# ksw_extend2 distribution: correctness_results/ksw_extend2_profile_p2_20260831/SRR2496709_PE.tsv
+calls=710528 samples=11102 sample_fraction=0.015625
+total_dp_cells=578638455 total_rows=23510511 avg_cells_per_call=814.38
+qlen          min=1        p50=41       p90=68       p99=80       max=81       mean=41.29
+tlen          min=2        p50=85       p90=131      p99=155      max=243      mean=84.16
+requested_w   min=100      p50=100      p90=100      p99=100      max=100      mean=100.00
+effective_w   min=1        p50=41       p90=68       p99=80       max=81       mean=41.29
+rows          min=2        p50=24       p90=77       p99=119      max=161      mean=33.26
+dp_cells      min=2        p50=362      p90=2420     p99=4599     max=6311     mean=825.27
+pack8 consecutive sampled calls: groups=1387 max/min median=23.492 p90=383.500
+pack8 utilization: median=0.381 p10=0.220; groups max/min<=1.25: 4.3%; <=1.50: 5.0%
+pack8 after ideal offline work sorting: utilization median=1.000 max/min median=1.000
+
+Interpretation:
+- dp_cells is the actual number of band cells visited by the scalar extension call.
+- consecutive pack8 is a no-reordering baseline; samples are recorded in multi-thread completion order.
+- sorted pack8 is an upper bound; it is not a valid online scheduling strategy by itself.
+
+========================================================================
+
+# ksw_extend2 distribution: correctness_results/ksw_extend2_profile_p2_20260831/SRR2496709_SE.tsv
+calls=339599 samples=5307 sample_fraction=0.015627
+total_dp_cells=257183173 total_rows=10714123 avg_cells_per_call=757.31
+qlen          min=1        p50=40       p90=67       p99=80       max=81       mean=40.69
+tlen          min=2        p50=83       p90=129      p99=155      max=383      mean=82.83
+requested_w   min=100      p50=100      p90=100      p99=100      max=100      mean=100.00
+effective_w   min=1        p50=40       p90=67       p99=80       max=81       mean=40.69
+rows          min=2        p50=23       p90=73       p99=117      max=155      mean=31.61
+dp_cells      min=2        p50=355      p90=2199     p99=4502     max=6236     mean=758.32
+pack8 consecutive sampled calls: groups=663 max/min median=21.947 p90=339.500
+pack8 utilization: median=0.374 p10=0.225; groups max/min<=1.25: 2.9%; <=1.50: 4.8%
+pack8 after ideal offline work sorting: utilization median=0.998 max/min median=1.004
+
+Interpretation:
+- dp_cells is the actual number of band cells visited by the scalar extension call.
+- consecutive pack8 is a no-reordering baseline; samples are recorded in multi-thread completion order.
+- sorted pack8 is an upper bound; it is not a valid online scheduling strategy by itself.
+
+========================================================================
+
+# ksw_extend2 distribution: correctness_results/ksw_extend2_profile_p2_20260831/SRR7963242_PE.tsv
+calls=4273042 samples=50000 sample_fraction=0.011701
+total_dp_cells=12152281410 total_rows=290816091 avg_cells_per_call=2843.94
+qlen          min=1        p50=62       p90=111      p99=129      max=131      mean=60.41
+tlen          min=0        p50=128      p90=219      p99=253      max=1189     mean=120.43
+requested_w   min=100      p50=100      p90=100      p99=100      max=100      mean=100.00
+effective_w   min=1        p50=62       p90=100      p99=100      max=100      mean=57.86
+rows          min=0        p50=50       p90=153      p99=205      max=232      mean=67.96
+dp_cells      min=0        p50=1216     p90=8420     p99=11509    max=13594    mean=2841.26
+pack8 consecutive sampled calls: groups=6250 max/min median=71.991 p90=3469.500
+pack8 utilization: median=0.339 p10=0.217; groups max/min<=1.25: 0.0%; <=1.50: 0.0%
+pack8 after ideal offline work sorting: utilization median=1.000 max/min median=1.000
+
+Interpretation:
+- dp_cells is the actual number of band cells visited by the scalar extension call.
+- consecutive pack8 is a no-reordering baseline; samples are recorded in multi-thread completion order.
+- sorted pack8 is an upper bound; it is not a valid online scheduling strategy by itself.
+
+========================================================================
+
+# ksw_extend2 distribution: correctness_results/ksw_extend2_profile_p2_20260831/SRR7963242_SE.tsv
+calls=1682797 samples=26294 sample_fraction=0.015625
+total_dp_cells=5337376551 total_rows=121291518 avg_cells_per_call=3171.73
+qlen          min=1        p50=66       p90=110      p99=129      max=131      mean=59.75
+tlen          min=0        p50=133      p90=215      p99=253      max=655      mean=119.62
+requested_w   min=100      p50=100      p90=100      p99=100      max=100      mean=100.00
+effective_w   min=1        p50=66       p90=100      p99=100      max=100      mean=57.53
+rows          min=0        p50=53       p90=154      p99=197      max=232      mean=71.27
+dp_cells      min=0        p50=1314     p90=8950     p99=11169    max=13769    mean=3122.00
+pack8 consecutive sampled calls: groups=3286 max/min median=69.149 p90=3893.500
+pack8 utilization: median=0.358 p10=0.222; groups max/min<=1.25: 0.0%; <=1.50: 0.0%
+pack8 after ideal offline work sorting: utilization median=1.000 max/min median=1.000
+
+Interpretation:
+- dp_cells is the actual number of band cells visited by the scalar extension call.
+- consecutive pack8 is a no-reordering baseline; samples are recorded in multi-thread completion order.
+- sorted pack8 is an upper bound; it is not a valid online scheduling strategy by itself.

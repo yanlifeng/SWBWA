@@ -1,0 +1,11 @@
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+[M::process] read 66668 sequences (5000100 bp)...
+[M::process] read 66668 sequences (5000100 bp)...
+[M::mem_process_seqs] Processed 66668 reads in 4.055 CPU sec, 0.137 real sec
+[M::process] read 66664 sequences (4999800 bp)...
+[M::mem_process_seqs] Processed 66668 reads in 4.134 CPU sec, 0.137 real sec
+[M::mem_process_seqs] Processed 66664 reads in 4.877 CPU sec, 0.157 real sec
+[main] Version: 0.7.18-r1243-dirty
+[main] CMD: ./bwa mem -t 32 -K 5000000 -I 170,80,500,1 -o /dev/null /home/bigssd/ylf_data/BWA_index/GRCh38.d1.vd1.fa profile_runs/input/ERR1203383_1.fastq profile_runs/input/ERR1203383_2.fastq
+[main] Real time: 3.239 sec; CPU: 15.697 sec

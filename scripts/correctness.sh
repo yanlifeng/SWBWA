@@ -840,9 +840,9 @@ build_configuration()
         echo "[BUILD] MPI_INPUT_MODE=$mpi_input OUTPUT_MODE=$output_mode EXACT=1"
     fi
     if [[ "$exec_mode" == cgs_cross ]]; then
-        [[ -x ./build_cross.sh ]] || die "build_cross.sh is not executable"
-        echo "[BUILD] DRIVER=build_cross.sh (two-pass CPE layout build)"
-        ./build_cross.sh "$BUILD_JOBS" "${make_args[@]}" \
+        [[ -x ./build.sh ]] || die "build.sh is not executable"
+        echo "[BUILD] DRIVER=build.sh (two-pass CPE layout build)"
+        ./build.sh "$BUILD_JOBS" "${make_args[@]}" \
             2>&1 | tee "$build_log"
     else
         echo "[BUILD] DRIVER=make"

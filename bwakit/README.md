@@ -102,7 +102,6 @@ bwa.kit
 |       `-- (...)
 |
 `-- doc                        BWA documentations
-    |-- bwa.1                  Manpage
     |-- NEWS.md                Release Notes
     |-- README.md              GitHub README page
     `-- README-alt.md          Documentation for ALT mapping

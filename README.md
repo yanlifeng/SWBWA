@@ -16,7 +16,7 @@ A high-accuracy and high-performance short read aligner optimized for the next-g
 - `tools/`：跨段构建使用的地址和 TLS 信息提取脚本。
 - `tests/`：不参与默认构建的 MPI/RMA 和运行时诊断程序。
 - `scripts/`：正确性检查、性能测试和结果分析脚本。
-- `logs/`、`correctness_results/`：运行日志、正确性结果和测试说明。
+- `correctness_results/`：运行日志、正确性结果和测试说明。
 
 ## Build
 

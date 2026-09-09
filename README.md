@@ -1,31 +1,30 @@
 # SWBWA
 
-A high-accuracy and high-performance short read aligner optimized for the next-generation Sunway platform.
+SWBWA is a high-accuracy, high-performance short-read aligner optimized for the next-generation Sunway platform and based on BWA-MEM.
 
 ## Features
 
-- Redesigned a parallel framework tailored for Sunway’s heterogeneous architecture, with software prefetching and memory access optimizations in bigshare mode.
-
-- Achieves up to **330×** speedup over the unoptimized single-thread version, and **1.2–1.4×** faster than [bwamem](https://github.com/lh3/bwa) on a dual-socket 48-core x86 server with nearly identical results.
+- A parallel framework redesigned for Sunway's heterogeneous architecture, with software prefetching and memory-access optimizations for bigshare mode.
+- Up to **330x** speedup over the unoptimized single-threaded version, and **1.2-1.4x** faster than [bwamem](https://github.com/lh3/bwa) on a dual-socket 48-core x86 server, with nearly identical results.
 
 ## Directory layout
 
-- `src/host/`：主核 C/C++ 源代码，包括比对流程、MPI 输入输出和主核辅助模块。
-- `src/slave/`：从核源代码、CPE kernel 和从核专用头文件。
-- `include/`：主核公共头文件、配置头文件和生成的 CPE 布局头文件。
-- `tools/`：跨段构建使用的地址和 TLS 信息提取脚本。
-- `tests/`：不参与默认构建的 MPI/RMA 和运行时诊断程序。
-- `scripts/`：正确性检查、性能测试和结果分析脚本。
-- `correctness_results/`：运行日志、正确性结果和测试说明。
+- `src/host/`: MPE C/C++ source code, including the alignment pipeline, MPI input/output, and host-side helpers.
+- `src/slave/`: CPE source code and headers used only by the slave side.
+- `include/`: public headers, configuration headers, and the generated CPE layout header.
+- `tools/`: scripts for extracting addresses and TLS information during cross-segment builds.
+- `tests/`: MPI/RMA and runtime diagnostic programs excluded from the default build.
+- `scripts/`: correctness checks, performance tests, and result-analysis scripts.
+- `correctness_results/`: run logs, correctness results, and experiment notes.
 
 ## Build
 
-SWBWA can only support the next-generation Sunway platform.
+SWBWA supports only the next-generation Sunway platform.
 
-### Dependency
+### Dependencies
 
-- sw9gcc (7.1.0 or newer)  
-- zlib
+- `sw9gcc` (7.1.0 or newer)
+- `zlib`
 
 ### Compilation
 
@@ -37,15 +36,13 @@ make -j4
 
 ### Build configuration
 
-The default build uses single-CG execution, CPE FASTQ formatting, the system
-CPE allocator, dynamic MPI input, and unordered single-file MPI output:
+The default build uses single-CG execution, CPE FASTQ formatting, the system CPE allocator, dynamic MPI input, and unordered single-file MPI output:
 
 ```bash
 make print-config
 ```
 
-FASTQ formatting is always performed on the CPEs; there is no separate
-formatting-mode switch.
+FASTQ formatting is always performed on the CPEs; there is no separate formatting-mode switch.
 
 The supported build variables are:
 
@@ -60,25 +57,13 @@ The supported build variables are:
 | `OUTPUT_MODE` | `split`, `single_unordered`, `discard` | `single_unordered` |
 | `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
 
-The three `MPI_*`/`OUTPUT_MODE` options are only defined and validated when
-`USE_MPI=1`; they have no effect in a non-MPI build.
+`MPI_INPUT_MODE`, `OUTPUT_MODE`, and `MPI_EXACT_READ_INDEX` are only effective when `USE_MPI=1`; they are ignored in non-MPI builds.
 
-`MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the
-complete FASTQ once before alignment to build exact record prefixes.
+`MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the complete FASTQ once before alignment to build exact record prefixes.
 
-Dynamic MPI input keeps the configured large chunks for the first part of the
-FASTQ. In the final 10% it uses chunks one quarter that size, and the final two
-rank waves use chunks one quarter of the medium-tail size. This preserves large
-CPE batches while reducing the last indivisible unit of work. Set
-`SWBWA_MPI_TAIL_PERCENT=0` to disable all tail refinement, or set
-`SWBWA_MPI_FINE_TAIL_WAVES=0` to retain the 10% medium tail without the final
-fine region. Tail percentages from 0 through 100 and fine-tail wave counts from
-0 through 1024 are accepted.
+Dynamic MPI input uses the configured large chunks for the first 90% of the FASTQ. In the final 10% it uses chunks one quarter that size, and the final two rank waves use chunks one quarter of the medium-tail size. Set `SWBWA_MPI_TAIL_PERCENT=0` to disable tail refinement, or set `SWBWA_MPI_FINE_TAIL_WAVES=0` to keep the 10% medium tail without the final fine region.
 
-`OUTPUT_MODE=discard` is a profiling mode: it creates no SAM file. By default
-it hashes each non-empty SAM blob submitted through the output interface and
-prints per-rank order-independent sum and XOR fingerprints. Set
-`SWBWA_DISCARD_HASH=0` only when measuring the hash overhead itself.
+`OUTPUT_MODE=discard` is a profiling mode: it creates no SAM file. By default it hashes each non-empty SAM blob submitted through the output interface and prints per-rank order-independent sum and XOR fingerprints. Set `SWBWA_DISCARD_HASH=0` only when measuring hash overhead itself.
 
 For example:
 
@@ -87,20 +72,17 @@ make clean
 make -j4 EXEC_MODE=cgs CPE_ALLOCATOR=system
 ```
 
-Run `make clean` before changing build modes because Make does not track
-compiler flag changes in existing object files.
+Run `make clean` before changing build modes because Make does not track compiler-flag changes in existing object files.
 
-After source changes, regenerate the linked CPE layout and relocation data for
-cross-segment execution:
+After source changes, regenerate the linked CPE layout and relocation data for cross-segment execution:
 
 ```bash
 ./build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=system
 ```
 
-`build.sh` 的第一个参数是并行编译数，后面直接传 Make 变量。`cgs_cross`
-会自动完成占位布局构建、ELF 段地址提取、布局头文件生成和第二遍构建；切换模式后建议先执行 `make clean`。
+The first argument to `build.sh` is the number of parallel compilation jobs; subsequent arguments are passed directly as Make variables. The script performs the placeholder build, extracts ELF segment addresses, generates the layout header, performs the second build, and generates cross-segment relocation data.
 
-常用配置示例：
+Common configuration examples:
 
 ```bash
 ./build.sh 8 EXEC_MODE=single CPE_ALLOCATOR=system USE_MPI=0
@@ -110,7 +92,7 @@ cross-segment execution:
     MPI_INPUT_MODE=dynamic OUTPUT_MODE=single_unordered
 ```
 
-## Simple usage
+## Basic usage
 
 ### Index the reference
 
@@ -122,19 +104,19 @@ SWBWA is compatible with index files generated by [bwamem](https://github.com/lh
 
 ### Align reads
 
-- Single-end:
+Single-end reads:
 
 ```bash
 ./SWBWA mem ref.fa reads.fq -o aln.sam
 ```
 
-- Paired-end:
+Paired-end reads:
 
 ```bash
 ./SWBWA mem ref.fa read1.fq read2.fq -o aln.sam
 ```
 
-MPI 作业中每个 rank 独立读取自己的 FASTQ 区间，不由 rank 0 全量读入：
+In an MPI job, each rank reads its own FASTQ range; rank 0 does not load the entire input into memory:
 
 ```bash
 bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
@@ -143,12 +125,9 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
   ref.fa read1.fq read2.fq
 ```
 
-`OUTPUT_MODE=split` 为每个 rank 生成独立输出，`single_unordered` 通过 MPI
-RMA 原子申请单文件区间但不保证记录顺序，`discard` 不写 SAM、用于 stage2
-性能测试。`MPI_EXACT_READ_INDEX=1` 会在正式处理前扫描 FASTQ 建立精确 read
-前缀，适合正确性验证；性能测试可设为 `0`。
+`OUTPUT_MODE=split` creates one output file per rank. `single_unordered` uses MPI RMA to atomically reserve ranges in one output file, but does not guarantee record order. `discard` writes no SAM and is useful for measuring stage 2 performance.
 
-统一运行入口只负责提交作业，不负责重新编译：
+The unified run entry point only submits jobs; it does not rebuild the program:
 
 ```bash
 ./run.sh single -- ./SWBWA mem -t 1 -o out.sam ref.fa reads.fq
@@ -157,13 +136,12 @@ RMA 原子申请单文件区间但不保证记录顺序，`discard` 不写 SAM�
   ./SWBWA mem -t 1 -K 5000000 -o out.sam ref.fa reads.fq
 ```
 
-测试脚本和结果目录约定见 [`scripts/README.md`](scripts/README.md) 与
-[`correctness_results/README.md`](correctness_results/README.md)。
+See [`scripts/README.md`](scripts/README.md) and [`correctness_results/README.md`](correctness_results/README.md) for testing scripts and result-directory conventions.
 
-## Options
-
-For more help information, please refer to:
+## Getting help
 
 ```bash
 ./SWBWA mem
 ```
+
+This command displays the complete parameter reference.

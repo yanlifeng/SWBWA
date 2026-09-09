@@ -150,6 +150,7 @@ DBGFLAGS  ?= -g
 
 CPPFLAGS += -include swbwa_config.h $(SWBWA_CPPFLAGS)
 DFLAGS   += -DHAVE_PTHREAD
+INCLUDES += -I.
 ifeq ($(CPE_PROFILE),1)
 INCLUDES += -I$(LWPF3_DIR)
 endif
@@ -169,16 +170,18 @@ endif
 # Targets and objects
 PROG := SWBWA
 
-LIB_OBJS := \
+HOST_DIR := src/host
+
+LIB_OBJS := $(addprefix $(HOST_DIR)/, \
 	utils.o kthread.o kstring.o ksw.o bwt.o bntseq.o bwa.o bwamem.o \
 	bwamem_pair.o bwamem_extra.o malloc_wrap.o QSufSort.o bwt_gen.o \
-	rope.o rle.o is.o bwtindex.o
+	rope.o rle.o is.o bwtindex.o)
 
-APP_OBJS := \
+APP_OBJS := $(addprefix $(HOST_DIR)/, \
 	bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o \
 	kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o \
 	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o swbwa_mpi.o \
-	swbwa_output.o swbwa_cpe_profile.o
+	swbwa_output.o swbwa_cpe_profile.o)
 
 SLAVE_DIR     := slave
 SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
@@ -212,20 +215,20 @@ endif
 $(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c swbwa_config.h
 	$(CC) $(SLAVE_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-%.o: %.c swbwa_config.h
+$(HOST_DIR)/%.o: $(HOST_DIR)/%.c swbwa_config.h
 	$(CC) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
-%.o: %.cpp swbwa_config.h
+$(HOST_DIR)/%.o: $(HOST_DIR)/%.cpp swbwa_config.h
 	$(CXX) $(HOST_ARCH_FLAGS) -c $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
 # Link and archive rules
-$(PROG): libbwa.a $(APP_OBJS) main.o $(SLAVE_OBJECTS)
+$(PROG): libbwa.a $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS)
 
 ifeq ($(USE_MPI),1)
 	@set -e; \
 	link_cmd="$$( \
 		$(CXX) -show $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) \
-		$(APP_OBJS) main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS) \
+		$(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS) \
 		| sed 's#/single_static#/multi_static#g' \
 	)"; \
 	case "$$link_cmd" in \
@@ -245,18 +248,18 @@ ifeq ($(USE_MPI),1)
 	echo "$$link_cmd"; \
 	eval "$$link_cmd"
 else
-	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS)
+	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS)
 endif
 
-bwamem-lite: libbwa.a example.o
-	$(CC) $(CFLAGS) $(LDFLAGS) example.o -o $@ -L. -lbwa $(LIBS)
+bwamem-lite: libbwa.a $(HOST_DIR)/example.o
+	$(CC) $(CFLAGS) $(LDFLAGS) $(HOST_DIR)/example.o -o $@ -L. -lbwa $(LIBS)
 
 libbwa.a: $(LIB_OBJS)
 	$(AR) -csru $@ $(LIB_OBJS)
 
 # Maintenance
 clean:
-	rm -f gmon.out *.o a.out $(PROG) *~ *.a $(SLAVE_DIR)/*.o
+	rm -f gmon.out a.out $(PROG) *.a $(HOST_DIR)/*.o $(SLAVE_DIR)/*.o
 
 depend:
 	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) -- *.c )

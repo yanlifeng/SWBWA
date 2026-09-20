@@ -351,6 +351,12 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 			h = _mm_max_epu8(h, f); // h=H'(i,j)
 			max = _mm_max_epu8(max, h); // set max
 			_mm_store_si128(H1 + j, h); // save to H'(i,j)
+#if SWBWA_KSW_FUSED_GAP_UPDATE && !defined(__SSE2__) && \
+    !defined(__ARM_NEON) && SWBWA_KSW_U8_MODE == SWBWA_KSW_U8_INT32_16
+			t = swbwa_ksw_gap_update_words(e, e_del, h, oe_del);
+			_mm_store_si128(E + j, t);
+			f = swbwa_ksw_gap_update_words(f, e_ins, h, oe_ins);
+#else
 			// now compute E'(i+1,j)
 			e = _mm_subs_epu8(e, e_del); // e=E'(i,j) - e_del
 			t = _mm_subs_epu8(h, oe_del); // h=H'(i,j) - o_del - e_del
@@ -360,6 +366,7 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 			f = _mm_subs_epu8(f, e_ins);
 			t = _mm_subs_epu8(h, oe_ins); // h=H'(i,j) - o_ins - e_ins
 			f = _mm_max_epu8(f, t);
+#endif
 			// get H'(i-1,j) and prepare for the next j
 			h = _mm_load_si128(H0 + j); // h=H'(i-1,j)
 		}
@@ -509,6 +516,12 @@ kswr_t ksw_i16(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_de
 			h = _mm_max_epi16(h, f);
 			max = _mm_max_epi16(max, h);
 			_mm_store_si128(H1 + j, h);
+#if SWBWA_KSW_FUSED_GAP_UPDATE && !defined(__SSE2__) && \
+    !defined(__ARM_NEON) && SWBWA_KSW_I16_MODE == SWBWA_KSW_I16_INT32_8
+			t = swbwa_ksw_i16_gap_update(e, e_del, h, oe_del);
+			_mm_store_si128(E + j, t);
+			f = swbwa_ksw_i16_gap_update(f, e_ins, h, oe_ins);
+#else
 			e = _mm_subs_epu16(e, e_del);
 			t = _mm_subs_epu16(h, oe_del);
 			e = _mm_max_epi16(e, t);
@@ -516,6 +529,7 @@ kswr_t ksw_i16(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_de
 			f = _mm_subs_epu16(f, e_ins);
 			t = _mm_subs_epu16(h, oe_ins);
 			f = _mm_max_epi16(f, t);
+#endif
 			h = _mm_load_si128(H0 + j);
 		}
 		for (k = 0; LIKELY(k < 16); ++k) {
@@ -1181,18 +1195,75 @@ static void swbwa_extend2_scratch_reserve(int qlen, int m)
 	}
 }
 
+#ifndef SWBWA_KSW_EXTEND2_QP_UNROLL
+#define SWBWA_KSW_EXTEND2_QP_UNROLL SWBWA_ENABLE_CPE_KERNEL_OPT
+#endif
+
+#if SWBWA_KSW_EXTEND2_QP_UNROLL != 0 && SWBWA_KSW_EXTEND2_QP_UNROLL != 1
+#error "SWBWA_KSW_EXTEND2_QP_UNROLL must be 0 or 1"
+#endif
+
+/* Bounded per-call EH + QP placement; zero preserves heap scratch reuse. */
+#ifndef SWBWA_KSW_EXTEND2_LDM_MAX_BYTES
+#define SWBWA_KSW_EXTEND2_LDM_MAX_BYTES (SWBWA_ENABLE_CPE_KERNEL_OPT ? 4096 : 0)
+#endif
+#if SWBWA_KSW_EXTEND2_LDM_MAX_BYTES < 0 || SWBWA_KSW_EXTEND2_LDM_MAX_BYTES > 8192
+#error "SWBWA_KSW_EXTEND2_LDM_MAX_BYTES must be between 0 and 8192"
+#endif
+
 int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w, int end_bonus, int zdrop, int h0, int *_qle, int *_tle, int *_gtle, int *_gscore, int *_max_off)
 {
 	eh_t *eh; // score array
 	int8_t *qp; // query profile
 	int i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end, max, max_i, max_j, max_ins, max_del, max_ie, gscore, max_off;
+#if SWBWA_KSW_EXTEND2_LDM_MAX_BYTES > 0
+	void *ldm_scratch = NULL;
+	size_t ldm_bytes = 0;
+#endif
 	assert(h0 > 0);
-	/* Allocate once per CPE thread, then clear only the live score state. */
-	swbwa_extend2_scratch_reserve(qlen, m);
-	qp = swbwa_extend2_scratch.qp;
-	eh = swbwa_extend2_scratch.eh;
+#if SWBWA_KSW_EXTEND2_LDM_MAX_BYTES > 0
+	/* Bound the products before forming a single allocation. No LDM
+	 * pointer enters the persistent heap scratch or escapes this call. */
+	if (qlen > 0 && m > 0 &&
+	    (size_t)qlen < SWBWA_KSW_EXTEND2_LDM_MAX_BYTES / sizeof(*eh)) {
+		size_t eh_bytes = ((size_t)qlen + 1) * sizeof(*eh);
+		size_t remaining = SWBWA_KSW_EXTEND2_LDM_MAX_BYTES - eh_bytes;
+
+		if ((size_t)qlen <= remaining / (size_t)m) {
+			ldm_bytes = eh_bytes + (size_t)qlen * (size_t)m;
+			ldm_scratch = swbwa_ldm_alloc(ldm_bytes, 8);
+		}
+	}
+	if (ldm_scratch != NULL) {
+		eh = (eh_t *)ldm_scratch;
+		qp = (int8_t *)(eh + qlen + 1);
+	} else
+#endif
+	{
+		/* Allocate once per CPE thread, then clear only live score state. */
+		swbwa_extend2_scratch_reserve(qlen, m);
+		qp = swbwa_extend2_scratch.qp;
+		eh = swbwa_extend2_scratch.eh;
+	}
 	memset(eh, 0, ((size_t)qlen + 1) * sizeof(*eh));
 	// generate the query profile
+#if SWBWA_KSW_EXTEND2_QP_UNROLL
+	if (m == 5) {
+		int8_t *qp1 = qp + qlen, *qp2 = qp1 + qlen;
+		int8_t *qp3 = qp2 + qlen, *qp4 = qp3 + qlen;
+
+		/* Share each query load without changing the row-major profile. */
+		for (j = 0; j < qlen; ++j) {
+			int base = query[j];
+
+			qp[j] = mat[base];
+			qp1[j] = mat[5 + base];
+			qp2[j] = mat[10 + base];
+			qp3[j] = mat[15 + base];
+			qp4[j] = mat[20 + base];
+		}
+	} else
+#endif
 	for (k = i = 0; k < m; ++k) {
 		const int8_t *p = &mat[k * m];
 		for (j = 0; j < qlen; ++j) qp[i++] = p[query[j]];
@@ -1280,6 +1351,9 @@ int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target,
 	if (_gtle) *_gtle = max_ie + 1;
 	if (_gscore) *_gscore = gscore;
 	if (_max_off) *_max_off = max_off;
+#if SWBWA_KSW_EXTEND2_LDM_MAX_BYTES > 0
+	if (ldm_scratch != NULL) swbwa_ldm_release(ldm_scratch, ldm_bytes);
+#endif
 	return max;
 }
 

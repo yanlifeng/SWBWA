@@ -24,6 +24,14 @@
 #error "SWBWA_USE_MPI must be 0 or 1"
 #endif
 
+/* Make selects the supported default; standalone compilation stays off. */
+#ifndef SWBWA_ENABLE_CPE_KERNEL_OPT
+#define SWBWA_ENABLE_CPE_KERNEL_OPT 0
+#endif
+#if SWBWA_ENABLE_CPE_KERNEL_OPT != 0 && SWBWA_ENABLE_CPE_KERNEL_OPT != 1
+#error "SWBWA_ENABLE_CPE_KERNEL_OPT must be 0 or 1"
+#endif
+
 #define SWBWA_MPI_INPUT_STATIC  1
 #define SWBWA_MPI_INPUT_DYNAMIC 2
 
@@ -44,6 +52,7 @@
 #if SWBWA_MPI_EXACT_READ_INDEX != 0 && SWBWA_MPI_EXACT_READ_INDEX != 1
 #error "SWBWA_MPI_EXACT_READ_INDEX must be 0 or 1"
 #endif
+#endif /* SWBWA_USE_MPI */
 
 #define SWBWA_OUTPUT_SPLIT             1
 #define SWBWA_OUTPUT_SINGLE_UNORDERED  2
@@ -59,6 +68,10 @@
 #error "invalid SWBWA_OUTPUT_MODE"
 #endif
 
+#if !SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#error "single_unordered output requires SWBWA_USE_MPI=1"
+#endif
+
 /* Zero hashes each complete SAM blob; a positive limit is profiling only. */
 #ifndef SWBWA_DISCARD_HASH_BYTES
 #define SWBWA_DISCARD_HASH_BYTES 0
@@ -66,7 +79,6 @@
 #if SWBWA_DISCARD_HASH_BYTES < 0
 #error "SWBWA_DISCARD_HASH_BYTES must be non-negative"
 #endif
-#endif /* SWBWA_USE_MPI */
 
 #define SWBWA_EXEC_SINGLE_CG  1
 #define SWBWA_EXEC_CGS        2

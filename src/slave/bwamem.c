@@ -44,6 +44,7 @@
 #include "ksort.h"
 #include "utils.h"
 #include "swbwa_config.h"
+#include "swbwa_discard_digest.h"
 
 #include <slave.h>
 #include <crts.h>
@@ -145,12 +146,22 @@ mem_opt_t *mem_opt_init()
 #define intv_lt(a, b) ((a).info < (b).info)
 KSORT_INIT(mem_intv, bwtintv_t, intv_lt)
 
+#ifndef SWBWA_CHAIN_REUSE_SMEM_LDM
+#define SWBWA_CHAIN_REUSE_SMEM_LDM SWBWA_ENABLE_CPE_KERNEL_OPT
+#endif
+#if SWBWA_CHAIN_REUSE_SMEM_LDM != 0 && SWBWA_CHAIN_REUSE_SMEM_LDM != 1
+#error "SWBWA_CHAIN_REUSE_SMEM_LDM must be 0 or 1"
+#endif
+
 typedef struct {
 	bwtintv_v mem, mem1;
 	bwtintv_v heap_tmpv[2], ldm_tmpv[2], *tmpv[2];
 	bwtintv_t *ldm_tmp_storage;
-	unsigned char *ldm_chain_arena;
+	unsigned char *chain_arena;
 	size_t chain_arena_used;
+#if SWBWA_CHAIN_REUSE_SMEM_LDM
+	size_t chain_arena_capacity;
+#endif
 } smem_aux_t;
 
 /* Overridable so a build can move individual scratch buffers out of LDM. */
@@ -181,9 +192,25 @@ static smem_aux_t *smem_aux_init(int use_ldm)
 			                    SWBWA_SMEM_LDM_TMP_CAPACITY;
 		}
 	}
-	if (use_ldm && SWBWA_CHAIN_LDM_ARENA_BYTES > 0)
-		a->ldm_chain_arena =
-			swbwa_ldm_alloc(SWBWA_CHAIN_LDM_ARENA_BYTES, 2);
+	if (use_ldm && SWBWA_CHAIN_LDM_ARENA_BYTES > 0) {
+#if SWBWA_CHAIN_REUSE_SMEM_LDM
+		a->chain_arena_capacity = SWBWA_CHAIN_LDM_ARENA_BYTES;
+		/* Collection exports value copies in mem/mem1, not scratch pointers.
+		 * Chain seeds are allocated after collection and consumed before
+		 * the next read reuses the two temporary vectors. */
+		if (a->ldm_tmp_storage != NULL) {
+			size_t bytes = 2 * (size_t)SWBWA_SMEM_LDM_TMP_CAPACITY *
+			               sizeof(bwtintv_t);
+
+			a->chain_arena = (unsigned char*)a->ldm_tmp_storage;
+			if (bytes < a->chain_arena_capacity)
+				a->chain_arena_capacity = bytes;
+		}
+#endif
+		if (a->chain_arena == NULL)
+			a->chain_arena =
+				swbwa_ldm_alloc(SWBWA_CHAIN_LDM_ARENA_BYTES, 2);
+	}
 	return a;
 }
 
@@ -193,15 +220,31 @@ static void smem_aux_destroy(smem_aux_t *a)
 	free(a->heap_tmpv[1].a);
 	free(a->mem.a);
 	free(a->mem1.a);
+#if SWBWA_CHAIN_REUSE_SMEM_LDM
+	/* The SMEM allocation is the sole owner of an overlaid arena. */
+	if (a->chain_arena == (unsigned char*)a->ldm_tmp_storage)
+		a->chain_arena = NULL;
+#endif
 	if (a->ldm_tmp_storage != NULL) {
 		size_t bytes = 2 * SWBWA_SMEM_LDM_TMP_CAPACITY *
 		               sizeof(bwtintv_t);
 
 		swbwa_ldm_release(a->ldm_tmp_storage, bytes);
 	}
-	if (a->ldm_chain_arena != NULL)
-		swbwa_ldm_release(a->ldm_chain_arena, SWBWA_CHAIN_LDM_ARENA_BYTES);
+	if (a->chain_arena != NULL) {
+		swbwa_ldm_release(a->chain_arena, SWBWA_CHAIN_LDM_ARENA_BYTES);
+	}
 	free(a);
+}
+
+static size_t smem_chain_arena_capacity(const smem_aux_t *a)
+{
+#if SWBWA_CHAIN_REUSE_SMEM_LDM
+	return a->chain_arena_capacity;
+#else
+	(void)a;
+	return SWBWA_CHAIN_LDM_ARENA_BYTES;
+#endif
 }
 
 static int smem_chain_arena_owns(const smem_aux_t *a, const void *ptr)
@@ -209,24 +252,24 @@ static int smem_chain_arena_owns(const smem_aux_t *a, const void *ptr)
 	uintptr_t p = (uintptr_t)ptr;
 	uintptr_t begin;
 
-	if (a == NULL || a->ldm_chain_arena == NULL) return 0;
-	begin = (uintptr_t)a->ldm_chain_arena;
-	return p >= begin && p < begin + SWBWA_CHAIN_LDM_ARENA_BYTES;
+	if (a == NULL || a->chain_arena == NULL) return 0;
+	begin = (uintptr_t)a->chain_arena;
+	return p >= begin && p - begin < smem_chain_arena_capacity(a);
 }
 
 static void *smem_chain_alloc(smem_aux_t *a, size_t bytes, int clear)
 {
 	void *ptr = NULL;
 
-	if (a != NULL && a->ldm_chain_arena != NULL) {
+	if (a != NULL && a->chain_arena != NULL) {
 		size_t aligned_bytes;
+		size_t capacity = smem_chain_arena_capacity(a);
 
 		assert(bytes <= SIZE_MAX - 7);
 		aligned_bytes = (bytes + 7) & ~(size_t)7;
-		if (a->chain_arena_used <= SWBWA_CHAIN_LDM_ARENA_BYTES &&
-		    aligned_bytes <= SWBWA_CHAIN_LDM_ARENA_BYTES -
-		                     a->chain_arena_used) {
-			ptr = a->ldm_chain_arena + a->chain_arena_used;
+		if (a->chain_arena_used <= capacity &&
+		    aligned_bytes <= capacity - a->chain_arena_used) {
+			ptr = a->chain_arena + a->chain_arena_used;
 			a->chain_arena_used += aligned_bytes;
 		}
 	}
@@ -2077,16 +2120,24 @@ void worker12_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, cha
     if (!(w->opt->flag&MEM_F_PE)) {
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+            swbwa_digest_finish(w->seqs[i].sam, cpe_sams[i], (size_t)sam_lens[i]);
+#else
             memcpy(w->seqs[i].sam, cpe_sams[i], sam_lens[i] * sizeof(char));
             w->seqs[i].sam[sam_lens[i]] = '\0';
+#endif
             if(cpe_sams[i]) free(cpe_sams[i]);
         }
     } else {
         for(int sid = l_pos; sid < r_pos; sid++) {
             int i = sid;
             for(int id = 0; id < 2; id++) {
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+                swbwa_digest_finish(w->seqs[i<<1|id].sam, cpe_sams[i<<1|id], (size_t)sam_lens[i<<1|id]);
+#else
                 memcpy(w->seqs[i<<1|id].sam, cpe_sams[i<<1|id], sam_lens[i<<1|id] * sizeof(char));
                 w->seqs[i<<1|id].sam[sam_lens[i<<1|id]] = '\0';
+#endif
                 if(cpe_sams[i<<1|id]) free(cpe_sams[i<<1|id]);
             }
         }

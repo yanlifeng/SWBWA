@@ -1,0 +1,21 @@
+#ifndef SWBWA_HOST_PREP_H
+#define SWBWA_HOST_PREP_H
+
+#include "swbwa_config.h"
+
+/* MPE preparation options; individual overrides use EXTRA_CPPFLAGS. */
+#ifndef SWBWA_HOST_PREP_REUSE
+#define SWBWA_HOST_PREP_REUSE SWBWA_ENABLE_CPE_KERNEL_OPT
+#endif
+#ifndef SWBWA_HOST_PREP_CPE_TERMINATORS
+#define SWBWA_HOST_PREP_CPE_TERMINATORS SWBWA_ENABLE_CPE_KERNEL_OPT
+#endif
+
+#if SWBWA_HOST_PREP_REUSE != 0 && SWBWA_HOST_PREP_REUSE != 1
+#error "SWBWA_HOST_PREP_REUSE must be 0 or 1"
+#endif
+#if SWBWA_HOST_PREP_CPE_TERMINATORS != 0 && SWBWA_HOST_PREP_CPE_TERMINATORS != 1
+#error "SWBWA_HOST_PREP_CPE_TERMINATORS must be 0 or 1"
+#endif
+
+#endif

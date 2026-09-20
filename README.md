@@ -52,18 +52,95 @@ The supported build variables are:
 | `CPE_ALLOCATOR` | `system`, `pool` | `system` |
 | `HOST_MALLOC_WRAPPER` | `0`, `1` | `1` |
 | `HOST_MALLOC_STATS` | `0`, `1` | `0` |
+| `CPE_KERNEL_OPT` | `0`, `1` | `1` for non-MPI `cgs_cross + pool`; `0` otherwise |
+| `CPE_DISCARD_DIGEST` | `0`, `1` | `1` for non-MPI `cgs_cross + pool` with `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`; `0` otherwise |
 | `USE_MPI` | `0`, `1` | `1` |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
-| `OUTPUT_MODE` | `split`, `single_unordered`, `discard` | `single_unordered` |
+| `OUTPUT_MODE` | `split`, `single_unordered`, `discard` | `single_unordered` with MPI; `split` otherwise |
 | `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
 
-`MPI_INPUT_MODE`, `OUTPUT_MODE`, and `MPI_EXACT_READ_INDEX` are only effective when `USE_MPI=1`; they are ignored in non-MPI builds.
+`MPI_INPUT_MODE` and `MPI_EXACT_READ_INDEX` are only effective when `USE_MPI=1`. `OUTPUT_MODE=discard` is also supported without MPI; non-MPI `split` retains the ordinary single-file writer. `single_unordered` requires MPI.
 
 `MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the complete FASTQ once before alignment to build exact record prefixes.
 
 Dynamic MPI input uses the configured large chunks for the first 90% of the FASTQ. In the final 10% it uses chunks one quarter that size, and the final two rank waves use chunks one quarter of the medium-tail size. Set `SWBWA_MPI_TAIL_PERCENT=0` to disable tail refinement, or set `SWBWA_MPI_FINE_TAIL_WAVES=0` to keep the 10% medium tail without the final fine region.
 
 `OUTPUT_MODE=discard` is a profiling mode: it creates no SAM file. By default it hashes each non-empty SAM blob submitted through the output interface and prints per-rank order-independent sum and XOR fingerprints. Set `SWBWA_DISCARD_HASH=0` only when measuring hash overhead itself.
+
+`CPE_DISCARD_DIGEST` defaults to `1` only when all of
+`EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`
+are selected; it defaults to `0` otherwise. Explicitly set `CPE_DISCARD_DIGEST=0`
+for core-only stage 2 timing comparisons and final-copy validation: the MPE
+hashes the copied final SAM buffer in stage 3.
+The eligible default, `CPE_DISCARD_DIGEST=1`, moves hashing to the CPE copy worker
+in stage 2 part 5 and replaces the final SAM copy with per-read digest metadata
+for overall discard throughput.
+Keep part 3, part 5, and stage 3 separate when reporting this change.
+
+The enabled path requires `EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0`
+and `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`. It fingerprints every **generated SAM blob byte**
+except the terminating NUL, preserving per-read/mate boundaries and
+`calls/bytes/sum/xor` semantics. It does **not** execute or validate the skipped
+final SAM copy; the log identifies `hash_scope=generated_sam final_sam_copy=0`.
+Normal SAM output modes are unchanged. `SWBWA_DISCARD_HASH=0` also disables
+CPE hashing, retaining calls/bytes but not FULL correctness evidence.
+Set the Make variable `CPE_DISCARD_DIGEST`, not a duplicate definition in
+`EXTRA_CPPFLAGS`, and repeat the complete two-pass build after changing it.
+
+Core-only example for single-process, six-CG stage 2 measurements and FULL
+final-copy validation (explicit `CPE_DISCARD_DIGEST=0`):
+
+```bash
+./build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 \
+    OUTPUT_MODE=discard DISCARD_HASH_BYTES=0 CPE_DISCARD_DIGEST=0 CPE_PROFILE=0
+SWBWA_DISCARD_HASH=1 bsub -I -b -q q_share -n 1 -cgsp 64 -mpecg 6 \
+    -share_size 2000 -xmalloc -cross_size 42000 -cache_size 128 -priv_size 16 \
+    ./SWBWA mem -v 4 -t 1 -1 -I 170,80,500,1 -o ignored.sam \
+    ref.fa read1.fq read2.fq
+```
+
+`-1` runs the three stages serially. Compare stage 2 and its CPE part 3
+separately from input and discard-hashing time. Validate all four output
+fields (`calls`, `bytes`, `sum`, `xor`) against the same-input baseline, with
+`enabled=1 hash_prefix_bytes=0`; a prefix-only or disabled hash is not a
+full-output correctness check. These fingerprints are order-independent
+regression checks, not a proof of equality or a replacement for SAM MD5.
+
+For the default discard-throughput configuration, rebuild with the following
+command and use the same run command above. Both `CPE_KERNEL_OPT` and
+`CPE_DISCARD_DIGEST` default to `1` here; FULL checking covers generated SAM
+(`hash_scope=generated_sam`), not the skipped final copy.
+
+```bash
+./build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 \
+    OUTPUT_MODE=discard DISCARD_HASH_BYTES=0 CPE_PROFILE=0
+```
+
+### Exact CPE Kernel Optimizations
+
+`CPE_KERNEL_OPT=1` groups the following changes without changing SIMD lane
+counts, scoring, lazy-F termination, tie comparisons, or read scheduling:
+
+- Reuse the completed SMEM collection's 16 KiB LDM scratch for chain seeds.
+- Place extension EH/QP scratch in LDM when its combined size is at most
+  4096 bytes; retain the existing reusable heap scratch as fallback.
+- Build the five-symbol extension query profile with shared query loads.
+- Fuse integer SIMD gap clamps and use predicate-based XOR selection.
+- Reuse MPE SAM pointer/length scratch and leave terminators to the CPE copy.
+
+The existing 40 KiB tracked LDM budget is unchanged. This switch does not
+enable experimental FP16 lane layouts. Use `CPE_KERNEL_OPT=0` for the kernel
+control build and always repeat the complete `build.sh` workflow for cross
+execution. The single-process discard writer and batch-level output timing
+are independent of this switch.
+
+Portable differential checks use compiler-vector adapters and sanitizers;
+they supplement, but do not replace, full Sunway output validation:
+
+```bash
+bash tests/run_host_checks.sh
+bash tests/run_cpe_kernel_checks.sh
+```
 
 For example:
 

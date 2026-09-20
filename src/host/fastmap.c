@@ -46,6 +46,7 @@
 #include "swbwa_runtime.h"
 #include "swbwa_mpi.h"
 #include "swbwa_output.h"
+#include "swbwa_discard_digest.h"
 #include "swbwa_cpe_profile.h"
 
 #include <athread.h>
@@ -566,16 +567,20 @@ static void *process(void *shared, int step, void *_data)
 		return data;
 	} else if (step == 2) {
         double t0 = GetTime();
+		double write_start = GetTime();
 		for (i = 0; i < data->n_seqs; ++i) {
-            double t1 = GetTime();
 			if (data->seqs[i].sam) {
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+                if (swbwa_output_write_digest(data->seqs[i].sam) != 0)
+#else
                 if (swbwa_output_write(data->seqs[i].sam,
                                        strlen(data->seqs[i].sam)) != 0)
+#endif
                     err_fatal(__func__, "failed to write SAM output: %s",
                               strerror(errno));
             }
-            t_step3_1 += GetTime() - t1;
 		}
+		t_step3_1 += GetTime() - write_start;
 		free(data->seqs); free(data);
         t_step3 += GetTime() - t0;
 		return 0;

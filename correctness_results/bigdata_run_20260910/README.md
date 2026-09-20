@@ -42,7 +42,7 @@
 | cgs_cross_pool | small_SRR7963242 | 172.52 | 220.99 (**-21.9%**) | 49.95 | 55.64 (**-10.2%**) |
 | cgs_cross_pool | SRR2496709 | 59.08 | 69.62 (**-15.1%**) | 26.33 | 29.02 (**-9.3%**) |
 
-历史参照：`correctness_results/bigdata_results/timing_summary.tsv`（2026-08-21 采集）。本次实测的 CPE 比对阶段（stage2）相较历史基线普遍快 5%~24%，与 `DEVELOPMENT_HANDOFF_ZH.md` 中记录的 LDM/worker context/chain arena/KSW query profile 等优化的累计效果一致。完整 stage1/stage2/stage3 明细见 `nonmpi_timing_20260910.tsv`。
+历史参照：`correctness_results/bigdata_results/timing_summary.tsv`（2026-08-21 采集）。本次实测的 CPE 比对阶段（stage2）相较历史基线普遍快 5%~24%，与 LDM/worker context/chain arena/KSW query profile 等优化的累计效果一致。完整 stage1/stage2/stage3 明细见 `nonmpi_timing_20260910.tsv`。
 
 ### MPI dynamic（6 rank，min-max 范围，单位秒）
 

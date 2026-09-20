@@ -150,7 +150,7 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 
 测试脚本和结果目录约定见 [`scripts/README.md`](scripts/README.md) 与 [`correctness_results/README.md`](correctness_results/README.md)。
 
-在神威远程平台上实际跑测试（SSH 连接、代码同步、`bsub` 运行约束、正确性验证，以及使用 agent 时的安全与资源纪律）见 [`TESTING_GUIDE_ZH.md`](TESTING_GUIDE_ZH.md)；项目背景、优化脉络与实验结论见 [`DEVELOPMENT_HANDOFF_ZH.md`](DEVELOPMENT_HANDOFF_ZH.md)。
+远程登录地址、账号、凭据和私人运维说明请在仓库之外保存，不要提交到 Git。实验脚本所需的远程连接参数应通过本地环境变量显式传入。
 
 ## 获取帮助
 

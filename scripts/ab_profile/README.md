@@ -25,8 +25,8 @@ $AB_ROOT/new    当前 HEAD（a3e7beb）的源码 checkout
 
 两个 checkout 都必须是能通过 Sunway 工具链构建的完整树（含 `tools/`）。`./ab_build.sh` 会自行创建 `logs/`、`runs/`、`scratch/`。
 表中的 `new=a3e7beb` 是这次归档实验的固定版本，不代表以后执行时的最新 HEAD。
-执行前显式设置 `AB_ROOT` 和 `DATA_ROOT`，不再默认访问旧账号目录；参考
-[`../../TESTING_GUIDE_ZH.md`](../../TESTING_GUIDE_ZH.md) 检查 `gfsquota`。
+执行前显式设置 `AB_ROOT` 和 `DATA_ROOT`，不再默认访问旧账号目录；
+使用 `gfsquota` 检查剩余配额，空间紧张时不要开始新实验。
 复用已有构建目录前请手动确认版本；构建脚本不会覆盖已有 runs。
 driver 和 MD5 检查共用文件锁；提交状态未知时会停止，必须先用 `bjobs` 确认，不能直接重启。
 
@@ -48,10 +48,10 @@ nohup ./ab_driver.sh > logs/driver.out 2>&1 &
 ./md5_check.sh cross ERR1203383 PE dc5c0a6babd41641db22808caedb7a44
 ```
 
-本地侧拉日志（新账号直连，限速 500 KB/s，预检最多 10 MiB，不含 SAM、不使用 `--delete`）：
+本地侧拉日志（连接参数由环境变量提供，限速 500 KB/s，预检最多 10 MiB，不含 SAM、不使用 `--delete`）：
 
 ```bash
-AB_REMOTE=/path/to/completed/experiment bash fetch_logs.sh
+REMOTE=user@host SSH_PORT=22 AB_REMOTE=/path/to/completed/experiment bash fetch_logs.sh
 ```
 
 解析与渲染：

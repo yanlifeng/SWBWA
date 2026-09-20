@@ -2,6 +2,8 @@
 #include <crts.h>
 #include <assert.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "bwt.h"
@@ -44,6 +46,53 @@ static inline void swbwa_finish_cross_task(void)
     swbwa_task->completion_flags[_MYID] = 1;
     flush_slave_cache();
     while (1) { }
+}
+
+/*
+ * Publish a fatal cross-mode CPE condition to the MPE and park this core.
+ * Keep error reporting independent of CPE stdio and its relocated runtime.
+ */
+void swbwa_cpe_fail(int code, long a, long b, long c)
+{
+    volatile long *slot = swbwa_task != NULL ? swbwa_task->error_info : NULL;
+
+    if (slot == NULL) { /* no channel (standalone CPE run): best effort */
+        printf("CPE %d fatal: code=%d a=%ld b=%ld c=%ld\n", _MYID, code, a, b, c);
+        exit(EXIT_FAILURE);
+    }
+    /* Each CPE owns a separate slot; simultaneous failures cannot mix fields. */
+    slot += _MYID * SWBWA_CPE_ERROR_WORDS;
+    if (slot[0] == SWBWA_CPE_ERR_NONE) {
+        slot[1] = _MYID;
+        slot[2] = a;
+        slot[3] = b;
+        slot[4] = c;
+        asm volatile("memb\n\t" ::: "memory");
+        slot[0] = code;
+        asm volatile("memb\n\t" ::: "memory");
+    }
+    flush_slave_cache();
+    while (1) { }
+}
+
+/*
+ * Route uClibc assertions through the same channel. The MPE validates string
+ * addresses against the copied cross segment before dereferencing them.
+ */
+void __assert(const char *assertion, const char *file, int line,
+              const char *function)
+{
+    (void)function;
+    swbwa_cpe_fail(SWBWA_CPE_ERR_ASSERT, line, (long)(unsigned long)file,
+                   (long)(unsigned long)assertion);
+}
+
+static void swbwa_cpe_publish_pool_usage(swbwa_cpe_task_t *task)
+{
+    task->pool_high_water[_MYID] = cpe_pool_high_water();
+    task->ldm_outstanding[_MYID] = swbwa_ldm_outstanding();
+    task->ldm_peak[_MYID] = swbwa_ldm_peak();
+    task->ldm_refusals[_MYID] = swbwa_ldm_refusals();
 }
 
 static inline void swbwa_finish_standard_task(swbwa_cpe_task_t *task)
@@ -394,6 +443,7 @@ void worker12_s_fast_cross(void) {
 
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_SAM_COPY);
     swbwa_cpe_profile_exit(para->profile_counters);
+    swbwa_cpe_publish_pool_usage(para);
     swbwa_finish_cross_task();
 }
 
@@ -559,5 +609,6 @@ void worker12_s_fast(swbwa_cpe_task_t *para) {
 #endif
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_SAM_COPY);
     swbwa_cpe_profile_exit(para->profile_counters);
+    swbwa_cpe_publish_pool_usage(para);
     swbwa_finish_standard_task(para);
 }

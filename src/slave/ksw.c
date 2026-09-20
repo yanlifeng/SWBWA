@@ -70,7 +70,9 @@ struct _kswq_t {
 	int in_ldm;
 };
 
-enum { SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES = 64 << 10 };
+#ifndef SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES
+#define SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES (16 << 10)
+#endif
 
 #if SWBWA_ENABLE_CPE_PROFILE
 enum {
@@ -151,7 +153,7 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 		int m, const int8_t *mat, int prefer_ldm)
 {
 	kswq_t *q;
-	int slen, a, tmp, p;
+	int slen, a, tmp, p, in_ldm;
 	size_t allocation_bytes;
 
 	size = size > 1? 2 : 1;
@@ -161,11 +163,14 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 
 	allocation_bytes = sizeof(kswq_t) + 63 +
 	                   sizeof(__m128i) * slen * (m + 4);
+	q = NULL;
 	if (prefer_ldm &&
 	    allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES)
-		q = (kswq_t*)ldm_malloc(allocation_bytes);
-	else
-		q = (kswq_t*)malloc(allocation_bytes);
+		q = (kswq_t*)swbwa_ldm_alloc(allocation_bytes, 6);
+	/* LDM occupancy depends on the work in flight, so a refusal here is
+	 * normal and must degrade to the heap rather than abort. */
+	in_ldm = q != NULL;
+	if (q == NULL) q = (kswq_t*)malloc(allocation_bytes);
 	assert(q != NULL);
 	q->qp = (__m128i*)(((size_t)q + sizeof(kswq_t) + 63) >> 6 << 6); // align memory
 	q->H0 = q->qp + slen * m;
@@ -174,8 +179,7 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 	q->Hmax = q->E + slen;
 	q->slen = slen; q->qlen = qlen; q->size = size;
 	q->allocation_bytes = allocation_bytes;
-	q->in_ldm = prefer_ldm &&
-	            allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES;
+	q->in_ldm = in_ldm;
 	// compute shift
 	tmp = m * m;
 	for (a = 0, q->shift = 127, q->mdiff = 0; a < tmp; ++a) { // find the minimum and maximum score
@@ -261,7 +265,7 @@ static void ksw_qdestroy(kswq_t *q)
 {
 	if (q == NULL) return;
 	if (q->in_ldm)
-		ldm_free(q, q->allocation_bytes);
+		swbwa_ldm_release(q, q->allocation_bytes);
 	else
 		free(q);
 }
@@ -682,7 +686,7 @@ static swbwa_ksw_pair_q_t *ksw_qinit_u8_pair(int qlen,
 	swbwa_ksw_pair_q_t *q;
 	size_t allocation_bytes;
 	int tmp;
-	int a, i, lane;
+	int a, i, lane, pair_in_ldm;
 	_Float16 profile[32] __attribute__((aligned(64)));
 
 	q = NULL;
@@ -692,15 +696,14 @@ static swbwa_ksw_pair_q_t *ksw_qinit_u8_pair(int qlen,
 	                    SWBWA_KSW_PAIR_LANES) * (m + 4);
 	if (prefer_ldm &&
 	    allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES)
-		q = (swbwa_ksw_pair_q_t *)ldm_malloc(allocation_bytes);
-	else
-		q = (swbwa_ksw_pair_q_t *)malloc(allocation_bytes);
+		q = (swbwa_ksw_pair_q_t *)swbwa_ldm_alloc(allocation_bytes, 7);
+	pair_in_ldm = q != NULL;
+	if (q == NULL) q = (swbwa_ksw_pair_q_t *)malloc(allocation_bytes);
 	assert(q != NULL);
 	q->slen = (qlen + SWBWA_KSW_PAIR_LANES - 1) /
 	          SWBWA_KSW_PAIR_LANES;
 	q->allocation_bytes = allocation_bytes;
-	q->in_ldm = prefer_ldm &&
-	            allocation_bytes <= SWBWA_KSW_LDM_QUERY_PROFILE_MAX_BYTES;
+	q->in_ldm = pair_in_ldm;
 	q->qp = (float16v32 *)(((uintptr_t)q + sizeof(*q) + 63) >> 6 << 6);
 	q->H0 = q->qp + q->slen * m;
 	q->H1 = q->H0 + q->slen;
@@ -736,7 +739,7 @@ static swbwa_ksw_pair_q_t *ksw_qinit_u8_pair(int qlen,
 static void ksw_pair_qdestroy(swbwa_ksw_pair_q_t *q)
 {
 	if (q->in_ldm)
-		ldm_free(q, q->allocation_bytes);
+		swbwa_ldm_release(q, q->allocation_bytes);
 	else
 		free(q);
 }

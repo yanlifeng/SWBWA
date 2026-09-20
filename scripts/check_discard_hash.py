@@ -10,6 +10,7 @@ HASH_RE = re.compile(
     r"\[SWBWA output hash rank\s+(\d+)/(\d+)\] "
     r"calls=(\d+) bytes=(\d+) sum=0x([0-9a-fA-F]{16}) "
     r"xor=0x([0-9a-fA-F]{16}) enabled=([01])"
+    r"(?: hash_prefix_bytes=(\d+))?"
 )
 MASK64 = (1 << 64) - 1
 
@@ -36,6 +37,8 @@ def parse_log(path):
                 raise ValueError(f"{path}: duplicate hash for rank {rank}")
             if not enabled:
                 raise ValueError(f"{path}: hash disabled for rank {rank}")
+            if int(match.group(8) or 0) != 0:
+                raise ValueError(f"{path}: prefix-only hash is not a full-output check")
             world_size = size
             ranks[rank] = {
                 "calls": int(match.group(3)),

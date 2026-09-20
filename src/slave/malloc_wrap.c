@@ -58,10 +58,98 @@ static char *pool_starts[SWBWA_CPE_COUNT];
 static size_t pool_offsets[SWBWA_CPE_COUNT];
 static size_t pool_sizes[SWBWA_CPE_COUNT];
 
+/*
+ * A single size class must not be able to swallow the whole pool. Tree sizes
+ * double on every refill, so without a cap one class that briefly needs more
+ * live blocks than its initial tree holds jumps straight to a multi-megabyte
+ * allocation and starves everyone else.
+ */
+enum { SWBWA_ALLOC_MAX_TREE_BYTES = 1 << 20 };
+
+long cpe_pool_high_water(void)
+{
+    return (long)pool_offsets[_MYID];
+}
+
+static long ldm_outstanding_bytes[SWBWA_CPE_COUNT];
+static long ldm_peak_bytes[SWBWA_CPE_COUNT];
+static long ldm_refusals[SWBWA_CPE_COUNT];
+
+/*
+ * The CPE stack shares LDM with this scratch, and overrunning it silently
+ * overwrites saved return addresses instead of failing an allocation: the
+ * core then returns to a garbage PC, which the hardware reports as an
+ * unrelated integer/NPC overflow. ldm_malloc alone does not prevent that, so
+ * cap the tracked scratch. This is a conservative budget, not a measurement
+ * of total LDM usage: stack, static data and legacy raw allocations are extra.
+ */
+#ifndef SWBWA_LDM_SCRATCH_BUDGET_BYTES
+#define SWBWA_LDM_SCRATCH_BUDGET_BYTES (40 << 10)
+#endif
+#if SWBWA_LDM_SCRATCH_BUDGET_BYTES < 0
+#error "SWBWA_LDM_SCRATCH_BUDGET_BYTES must be non-negative"
+#endif
+
+/*
+ * Returns NULL when the request does not fit the budget or LDM refuses it;
+ * every caller is expected to fall back to the heap. Occupancy varies with
+ * the alignment work in flight, so a request that normally fits can
+ * legitimately fail.
+ */
+void *swbwa_ldm_alloc(unsigned long bytes, int site)
+{
+    void *p;
+
+    (void)site;
+    if (bytes > (unsigned long)SWBWA_LDM_SCRATCH_BUDGET_BYTES ||
+        ldm_outstanding_bytes[_MYID] >
+            SWBWA_LDM_SCRATCH_BUDGET_BYTES - (long)bytes) {
+        ++ldm_refusals[_MYID];
+        return NULL;
+    }
+    p = ldm_malloc(bytes);
+    if (p == NULL) {
+        ++ldm_refusals[_MYID];
+        return NULL;
+    }
+    ldm_outstanding_bytes[_MYID] += (long)bytes;
+    if (ldm_outstanding_bytes[_MYID] > ldm_peak_bytes[_MYID])
+        ldm_peak_bytes[_MYID] = ldm_outstanding_bytes[_MYID];
+    return p;
+}
+
+void swbwa_ldm_release(void *ptr, unsigned long bytes)
+{
+    if (ptr == NULL) return;
+    ldm_free(ptr, bytes);
+    ldm_outstanding_bytes[_MYID] -= (long)bytes;
+}
+
+void swbwa_ldm_begin_batch(void)
+{
+    /* Preserve outstanding bytes so a leak is not hidden by the reset. */
+    ldm_peak_bytes[_MYID] = ldm_outstanding_bytes[_MYID];
+    ldm_refusals[_MYID] = 0;
+}
+
+long swbwa_ldm_outstanding(void)
+{
+    return ldm_outstanding_bytes[_MYID];
+}
+
+long swbwa_ldm_peak(void)
+{
+    return ldm_peak_bytes[_MYID];
+}
+
+long swbwa_ldm_refusals(void)
+{
+    return ldm_refusals[_MYID];
+}
+
 void set_big_buffer(char* buffer, long long t_size) {
     if (buffer == NULL || t_size <= 0) {
-        printf("invalid CPE allocator pool: buffer=%p size=%lld\n", buffer, t_size);
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_POOL_BAD_POOL, (long)t_size, 0, 0);
     }
     pool_starts[_MYID] = buffer + _MYID * t_size;
     pool_offsets[_MYID] = 0;
@@ -74,14 +162,13 @@ void set_big_buffer(char* buffer, long long t_size) {
 void *l_calloc(size_t nmemb, size_t size) {
     size_t t_size;
     if (size != 0 && nmemb > SIZE_MAX / size) {
-        printf("CPE allocator size overflow: %zu * %zu\n", nmemb, size);
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_POOL_SIZE_OVERFLOW, (long)nmemb, (long)size, 0);
     }
     t_size = nmemb * size;
-    if (pool_offsets[_MYID] + t_size > pool_sizes[_MYID]) {
-        printf("CPE allocator pool exhausted: requested=%zu available=%zu\n",
-               t_size, pool_sizes[_MYID] - pool_offsets[_MYID]);
-        exit(EXIT_FAILURE);
+    if (t_size > pool_sizes[_MYID] - pool_offsets[_MYID]) {
+        swbwa_cpe_fail(SWBWA_CPE_ERR_POOL_EXHAUSTED, (long)t_size,
+                       (long)(pool_sizes[_MYID] - pool_offsets[_MYID]),
+                       (long)pool_offsets[_MYID]);
     }
     void *ptr = pool_starts[_MYID] + pool_offsets[_MYID];
     pool_offsets[_MYID] += t_size;
@@ -177,11 +264,18 @@ static void *pool_malloc(size_t size) {
 
     if (find_pos == -1) {
         if (SWBWA_ALLOC_TREE_COUNTS[length_type] >= SWBWA_ALLOC_MAX_TREES_PER_CLASS) {
-            printf("CPE allocator tree limit reached for size class %d\n", length_type);
-            exit(EXIT_FAILURE);
+            swbwa_cpe_fail(SWBWA_CPE_ERR_POOL_TREE_LIMIT, length_type,
+                           SWBWA_ALLOC_TREE_COUNTS[length_type], 0);
         }
-        struct swbwa_segment_tree *now_tree = build_segment_tree(block_sizes[length_type], SWBWA_ALLOC_NEXT_TREE_SIZES[length_type]);
-        SWBWA_ALLOC_NEXT_TREE_SIZES[length_type] = SWBWA_ALLOC_NEXT_TREE_SIZES[length_type] << 1;
+        int next_size = SWBWA_ALLOC_NEXT_TREE_SIZES[length_type];
+
+        /* Each segment also costs two ints of segment-tree index. */
+        while (next_size > 1 &&
+               (long long)next_size * (block_sizes[length_type] + 8) >
+                   SWBWA_ALLOC_MAX_TREE_BYTES)
+            next_size >>= 1;
+        struct swbwa_segment_tree *now_tree = build_segment_tree(block_sizes[length_type], next_size);
+        SWBWA_ALLOC_NEXT_TREE_SIZES[length_type] = next_size << 1;
         SWBWA_ALLOC_TREES[length_type][SWBWA_ALLOC_TREE_COUNTS[length_type]++] = now_tree;
         find_pos = SWBWA_ALLOC_TREE_COUNTS[length_type] - 1;
         first_zero_pos = 1;
@@ -231,7 +325,8 @@ void cpe_pool_free(void *ptr) {
         return;
     }
     int free_seg_pos = segment_index(SWBWA_ALLOC_TREES[pos1][pos2], block_sizes[pos1], ptr);
-    assert(segment_allocation_state(SWBWA_ALLOC_TREES[pos1][pos2], free_seg_pos) == 1);
+    if (segment_allocation_state(SWBWA_ALLOC_TREES[pos1][pos2], free_seg_pos) != 1)
+        swbwa_cpe_fail(SWBWA_CPE_ERR_POOL_DOUBLE_FREE, pos1, pos2, free_seg_pos);
     update_segment_tree(SWBWA_ALLOC_TREES[pos1][pos2], free_seg_pos, -1);
 }
 
@@ -274,6 +369,7 @@ void *cpe_pool_realloc(void *ptr, size_t size) {
     size_t old_size = block_sizes[pos1];
     if (size > old_size) {
         void *new_ptr = cpe_pool_malloc(size);
+        if (new_ptr == NULL) return NULL;
         memcpy(new_ptr, ptr, old_size);
         int free_seg_pos = segment_index(SWBWA_ALLOC_TREES[pos1][pos2], block_sizes[pos1], ptr);
         assert(segment_allocation_state(SWBWA_ALLOC_TREES[pos1][pos2], free_seg_pos) == 1);
@@ -364,17 +460,12 @@ void *wrap_calloc(size_t nmemb, size_t size,
     void *p;
 
     if (size != 0 && nmemb > SIZE_MAX / size) {
-        printf(
-                "[%s] calloc size overflow at %s line %u\n",
-                func, file, line);
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_POOL_SIZE_OVERFLOW, (long)nmemb, (long)size, line);
     }
     bytes = nmemb * size;
     p = cpe_pool_malloc(bytes);
     if (bytes > 0 && p == NULL) {
-        printf("[%s] failed to calloc %zu bytes at %s line %u: %s\n",
-               func, bytes, file, line, strerror(errno));
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_ALLOC_FAILED, (long)bytes, line, 0);
     }
     memset(p, 0, bytes);
     return p;
@@ -385,9 +476,7 @@ void *wrap_malloc(size_t size,
 {
     void *p = cpe_pool_malloc(size);
     if (size > 0 && p == NULL) {
-        printf("[%s] failed to malloc %zu bytes at %s line %u: %s\n",
-               func, size, file, line, strerror(errno));
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_ALLOC_FAILED, (long)size, line, 0);
     }
     return p;
 }
@@ -397,9 +486,7 @@ void *wrap_realloc(void *ptr, size_t size,
 {
     void *p = cpe_pool_realloc(ptr, size);
     if (size > 0 && p == NULL) {
-        printf("[%s] failed to realloc %zu bytes at %s line %u: %s\n",
-               func, size, file, line, strerror(errno));
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_ALLOC_FAILED, (long)size, line, 0);
     }
     return p;
 }
@@ -409,9 +496,7 @@ char *wrap_strdup(const char *s,
 {
     char *p = cpe_pool_strdup(s);
     if (p == NULL) {
-        printf("[%s] failed to strdup %zu bytes at %s line %u: %s\n",
-               func, strlen(s), file, line, strerror(errno));
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_ALLOC_FAILED, (long)strlen(s), line, 0);
     }
     return p;
 }

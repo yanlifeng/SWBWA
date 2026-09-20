@@ -128,11 +128,12 @@ static void print_discard_hash(void)
     fprintf(stderr,
             "[SWBWA output hash rank %06d/%06d] calls=%" PRIu64
             " bytes=%" PRIu64 " sum=0x%016" PRIx64
-            " xor=0x%016" PRIx64 " enabled=%d\n",
+            " xor=0x%016" PRIx64 " enabled=%d hash_prefix_bytes=%llu\n",
             swbwa_mpi_rank(), swbwa_mpi_size(),
             output_state.write_calls, output_state.submitted_bytes,
             output_state.hash_sum, output_state.hash_xor,
-            output_state.discard_hash_enabled);
+            output_state.discard_hash_enabled,
+            (unsigned long long)SWBWA_DISCARD_HASH_BYTES);
     fflush(stderr);
 }
 #endif
@@ -428,8 +429,14 @@ int swbwa_output_write(const void *data, size_t length)
         ++output_state.write_calls;
         output_state.submitted_bytes += (uint64_t)length;
         if (output_state.discard_hash_enabled) {
-            uint64_t hash = hash_sam_record(source, length);
+            size_t hash_length = length;
+            uint64_t hash;
 
+#if SWBWA_DISCARD_HASH_BYTES > 0
+            if (hash_length > SWBWA_DISCARD_HASH_BYTES)
+                hash_length = SWBWA_DISCARD_HASH_BYTES;
+#endif
+            hash = hash_sam_record(source, hash_length);
             output_state.hash_sum += hash;
             output_state.hash_xor ^= hash;
         }

@@ -58,6 +58,14 @@
     SWBWA_OUTPUT_MODE != SWBWA_OUTPUT_DISCARD
 #error "invalid SWBWA_OUTPUT_MODE"
 #endif
+
+/* Zero hashes each complete SAM blob; a positive limit is profiling only. */
+#ifndef SWBWA_DISCARD_HASH_BYTES
+#define SWBWA_DISCARD_HASH_BYTES 0
+#endif
+#if SWBWA_DISCARD_HASH_BYTES < 0
+#error "SWBWA_DISCARD_HASH_BYTES must be non-negative"
+#endif
 #endif /* SWBWA_USE_MPI */
 
 #define SWBWA_EXEC_SINGLE_CG  1
@@ -227,5 +235,49 @@
 
 #define SWBWA_CPE_POOL_TOTAL_BYTES \
     (1LL * SWBWA_CPE_COUNT * SWBWA_CPE_POOL_BYTES_PER_CPE)
+
+/*
+ * CPE-side failure reporting. In cross mode use uncached memory and let the
+ * MPE print diagnostics, avoiding additional CPE libc dependencies on an
+ * already failing path. Standard CPE execution keeps its stdio/exit fallback.
+ */
+enum {
+    SWBWA_CPE_ERR_NONE = 0,
+    SWBWA_CPE_ERR_POOL_EXHAUSTED,
+    SWBWA_CPE_ERR_POOL_TREE_LIMIT,
+    SWBWA_CPE_ERR_POOL_SIZE_OVERFLOW,
+    SWBWA_CPE_ERR_POOL_BAD_POOL,
+    SWBWA_CPE_ERR_POOL_DOUBLE_FREE,
+    SWBWA_CPE_ERR_ALLOC_FAILED,
+    SWBWA_CPE_ERR_FORMAT_TOO_MANY_READS,
+    SWBWA_CPE_ERR_FORMAT_BUFFER_FULL,
+    SWBWA_CPE_ERR_FASTQ_TRUNCATED,
+    SWBWA_CPE_ERR_FASTQ_COUNT_MISMATCH,
+    SWBWA_CPE_ERR_FASTQ_PAIR_SHORT,
+    SWBWA_CPE_ERR_ASSERT,
+    SWBWA_CPE_ERR_FETCH_SEQ,
+    SWBWA_CPE_ERR_LDM_EXHAUSTED
+};
+
+/* code, cpe id, then three call-site specific values. */
+#define SWBWA_CPE_ERROR_WORDS 8 /* One cache-line-sized slot per CPE. */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+void swbwa_cpe_fail(int code, long a, long b, long c) __attribute__((noreturn));
+long cpe_pool_high_water(void);
+
+/* Accounted wrappers around the SDK LDM allocator, so a leak or a failed
+ * request is reported with numbers instead of a NULL-pointer assertion. */
+void *swbwa_ldm_alloc(unsigned long bytes, int site);
+void swbwa_ldm_release(void *ptr, unsigned long bytes);
+void swbwa_ldm_begin_batch(void);
+long swbwa_ldm_outstanding(void);
+long swbwa_ldm_peak(void);
+long swbwa_ldm_refusals(void);
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SWBWA_CONFIG_H */

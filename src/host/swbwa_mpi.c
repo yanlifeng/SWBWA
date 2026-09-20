@@ -217,11 +217,23 @@ typedef struct {
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 static swbwa_fastq_scheduler_t chunk_scheduler;
 
+/* The tail defaults stay overridable at compile time so builds can disable
+ * tail refinement without depending on the runtime environment. */
+#ifndef SWBWA_MPI_DEFAULT_TAIL_PERCENT
+#define SWBWA_MPI_DEFAULT_TAIL_PERCENT 10
+#endif
+#ifndef SWBWA_MPI_DEFAULT_FINE_TAIL_WAVES
+#define SWBWA_MPI_DEFAULT_FINE_TAIL_WAVES 2
+#endif
+#if SWBWA_MPI_DEFAULT_TAIL_PERCENT < 0 || SWBWA_MPI_DEFAULT_TAIL_PERCENT > 100
+#error "SWBWA_MPI_DEFAULT_TAIL_PERCENT must be in 0..100"
+#endif
+#if SWBWA_MPI_DEFAULT_FINE_TAIL_WAVES < 0
+#error "SWBWA_MPI_DEFAULT_FINE_TAIL_WAVES must be non-negative"
+#endif
 enum {
-    SWBWA_MPI_DEFAULT_TAIL_PERCENT = 10,
     SWBWA_MPI_MICRO_CHUNK_DIVISOR = 4,
-    SWBWA_MPI_FINE_CHUNK_DIVISOR = 4,
-    SWBWA_MPI_DEFAULT_FINE_TAIL_WAVES = 2
+    SWBWA_MPI_FINE_CHUNK_DIVISOR = 4
 };
 
 static double scheduler_debug_now(void)

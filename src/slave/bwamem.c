@@ -153,29 +153,37 @@ typedef struct {
 	size_t chain_arena_used;
 } smem_aux_t;
 
-enum {
-	SWBWA_SMEM_LDM_TMP_CAPACITY = 256,
-	SWBWA_CHAIN_LDM_ARENA_BYTES = 24 << 10
-};
+/* Overridable so a build can move individual scratch buffers out of LDM. */
+#ifndef SWBWA_SMEM_LDM_TMP_CAPACITY
+#define SWBWA_SMEM_LDM_TMP_CAPACITY 256
+#endif
+#ifndef SWBWA_CHAIN_LDM_ARENA_BYTES
+#define SWBWA_CHAIN_LDM_ARENA_BYTES (24 << 10)
+#endif
 
 static smem_aux_t *smem_aux_init(int use_ldm)
 {
 	smem_aux_t *a = calloc(1, sizeof(*a));
 
-	if (use_ldm) {
+	assert(a != NULL);
+	if (use_ldm && SWBWA_SMEM_LDM_TMP_CAPACITY > 0) {
 		size_t bytes = 2 * SWBWA_SMEM_LDM_TMP_CAPACITY *
 		               sizeof(bwtintv_t);
 
-		/* The two vectors are never live with more than len entries. */
-		a->ldm_tmp_storage = ldm_malloc(bytes);
-		assert(a->ldm_tmp_storage != NULL);
-		a->ldm_tmpv[0].m = SWBWA_SMEM_LDM_TMP_CAPACITY;
-		a->ldm_tmpv[0].a = a->ldm_tmp_storage;
-		a->ldm_tmpv[1].m = SWBWA_SMEM_LDM_TMP_CAPACITY;
-		a->ldm_tmpv[1].a = a->ldm_tmp_storage +
-		                    SWBWA_SMEM_LDM_TMP_CAPACITY;
-		a->ldm_chain_arena = ldm_malloc(SWBWA_CHAIN_LDM_ARENA_BYTES);
+		/* The two vectors are never live with more than len entries.
+		 * A refusal is fine: use_ldm_tmp then keeps the heap vectors. */
+		a->ldm_tmp_storage = swbwa_ldm_alloc(bytes, 1);
+		if (a->ldm_tmp_storage != NULL) {
+			a->ldm_tmpv[0].m = SWBWA_SMEM_LDM_TMP_CAPACITY;
+			a->ldm_tmpv[0].a = a->ldm_tmp_storage;
+			a->ldm_tmpv[1].m = SWBWA_SMEM_LDM_TMP_CAPACITY;
+			a->ldm_tmpv[1].a = a->ldm_tmp_storage +
+			                    SWBWA_SMEM_LDM_TMP_CAPACITY;
+		}
 	}
+	if (use_ldm && SWBWA_CHAIN_LDM_ARENA_BYTES > 0)
+		a->ldm_chain_arena =
+			swbwa_ldm_alloc(SWBWA_CHAIN_LDM_ARENA_BYTES, 2);
 	return a;
 }
 
@@ -189,10 +197,10 @@ static void smem_aux_destroy(smem_aux_t *a)
 		size_t bytes = 2 * SWBWA_SMEM_LDM_TMP_CAPACITY *
 		               sizeof(bwtintv_t);
 
-		ldm_free(a->ldm_tmp_storage, bytes);
+		swbwa_ldm_release(a->ldm_tmp_storage, bytes);
 	}
 	if (a->ldm_chain_arena != NULL)
-		ldm_free(a->ldm_chain_arena, SWBWA_CHAIN_LDM_ARENA_BYTES);
+		swbwa_ldm_release(a->ldm_chain_arena, SWBWA_CHAIN_LDM_ARENA_BYTES);
 	free(a);
 }
 
@@ -617,7 +625,9 @@ typedef struct {
 	int score, query_begin, index;
 } mem_alnreg_sort_key_t;
 
-enum { SWBWA_MATE_DEDUP_LDM_MAX_BYTES = 64 << 10 };
+#ifndef SWBWA_MATE_DEDUP_LDM_MAX_BYTES
+#define SWBWA_MATE_DEDUP_LDM_MAX_BYTES (16 << 10)
+#endif
 
 #define alnreg_key_end_lt(a, b) ((a).coordinate < (b).coordinate)
 KSORT_INIT(mem_ars_key_end, mem_alnreg_sort_key_t, alnreg_key_end_lt)
@@ -685,7 +695,7 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 
 		/* Keep common small sorts in LDM and preserve a heap fallback. */
 		if (sort_storage_bytes <= SWBWA_MATE_DEDUP_LDM_MAX_BYTES) {
-			sort_storage = ldm_malloc(sort_storage_bytes);
+			sort_storage = swbwa_ldm_alloc(sort_storage_bytes, 5);
 			sort_storage_in_ldm = sort_storage != 0;
 		}
 		if (sort_storage == 0) sort_storage = malloc(sort_storage_bytes);
@@ -775,7 +785,7 @@ int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_
 	if (mate_rescue_dedup)
 		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_DEDUP_SORT_SCORE);
 	if (sort_storage_in_ldm)
-		ldm_free(sort_storage, sort_storage_bytes);
+		swbwa_ldm_release(sort_storage, sort_storage_bytes);
 	else free(sort_storage);
 	return m;
 }
@@ -1414,13 +1424,17 @@ mem_alnreg_v mem_align1_core(int id, const mem_opt_t *opt,
                              const uint8_t *pac, int l_seq, char *seq,
                              void *buf)
 {
-	bwt_t *bwt = ldm_malloc(sizeof(*bwt));
+	bwt_t *bwt = swbwa_ldm_alloc(sizeof(*bwt), 3);
 	mem_alnreg_v regs;
+	int in_ldm = bwt != NULL;
 
+	/* Avoid increasing the LDM stack footprint on the fallback path. */
+	if (bwt == NULL) bwt = malloc(sizeof(*bwt));
 	assert(bwt != NULL);
 	*bwt = *init_bwt;
 	regs = mem_align1_core_impl(id, opt, bwt, bns, pac, l_seq, seq, buf);
-	ldm_free(bwt, sizeof(*bwt));
+	if (in_ldm) swbwa_ldm_release(bwt, sizeof(*bwt));
+	else free(bwt);
 	return regs;
 }
 
@@ -1511,14 +1525,19 @@ typedef struct {
 typedef struct {
 	bwt_t bwt;
 	smem_aux_t *smem_aux;
+	int in_ldm;
 } worker12_context_t;
 
 void *worker12_context_init(void *data)
 {
 	worker_t *w = (worker_t*)data;
-	worker12_context_t *context = ldm_malloc(sizeof(*context));
+	swbwa_ldm_begin_batch();
+	worker12_context_t *context = swbwa_ldm_alloc(sizeof(*context), 4);
+	int in_ldm = context != NULL;
 
+	if (context == NULL) context = malloc(sizeof(*context));
 	assert(context != NULL);
+	context->in_ldm = in_ldm;
 	context->bwt = *w->bwt;
 	context->smem_aux = smem_aux_init(1);
 	assert(context->smem_aux != NULL);
@@ -1531,7 +1550,8 @@ void worker12_context_destroy(void *opaque_context)
 
 	if (context == NULL) return;
 	smem_aux_destroy(context->smem_aux);
-	ldm_free(context, sizeof(*context));
+	if (context->in_ldm) swbwa_ldm_release(context, sizeof(*context));
+	else free(context);
 }
 
 
@@ -1823,8 +1843,8 @@ static void copy_fastq_field(char **destination, char *output,
                              const char *source, int length)
 {
     if (length < 0 || *output_position > output_size - (long long)length - 1) {
-        fprintf(stderr, "CPE FASTQ formatting buffer exhausted\n");
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_FORMAT_BUFFER_FULL,
+                       (long)*output_position, (long)output_size, length);
     }
     *destination = output + *output_position;
     memcpy(*destination, source, length);
@@ -1845,8 +1865,8 @@ static int parse_fastq_record(char *input, long long input_size,
     line_length = next_fastq_line(input, input_size, input_position, &line);
     if (line_length < 0) return 0;
     if (line_length == 0) {
-        fprintf(stderr, "invalid empty FASTQ name line\n");
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_TRUNCATED,
+                       (long)*input_position, (long)input_size, 0);
     }
 
     memset(record, 0, sizeof(*record));
@@ -1877,8 +1897,9 @@ static int parse_fastq_record(char *input, long long input_size,
     return 1;
 
 truncated_record:
-    fprintf(stderr, "invalid or truncated FASTQ record\n");
-    exit(EXIT_FAILURE);
+    swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_TRUNCATED,
+                   (long)*input_position, (long)input_size, line_length);
+    return 0;
 }
 
 static int count_fastq_records(char *input, long long input_size)
@@ -1890,8 +1911,8 @@ static int count_fastq_records(char *input, long long input_size)
     }
     if (input_size > 0 && input[input_size - 1] != '\n') ++line_count;
     if (line_count % 4 != 0 || line_count / 4 > INT_MAX) {
-        fprintf(stderr, "invalid FASTQ partition while counting records\n");
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_COUNT_MISMATCH,
+                       (long)line_count, (long)input_size, 0);
     }
     return (int)(line_count / 4);
 }
@@ -1936,8 +1957,8 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
         total_read_count += format_partition_read_counts[i];
     }
     if (total_read_count > max_work_items) {
-        fprintf(stderr, "too many reads in one CPE formatting batch\n");
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_FORMAT_TOO_MANY_READS,
+                       total_read_count, max_work_items, local_read_count);
     }
 
     while (parse_fastq_record(buffer, buffer_size, &buffer_pos,
@@ -1949,13 +1970,14 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
             !parse_fastq_record(buffer2, buffer_size2, &buffer_pos2,
                                 tmp_buffer2, tmp_buffer_size, &tmp_buffer_pos2,
                                 &seq2)) {
-            fprintf(stderr, "paired FASTQ input ended before read 1\n");
-            exit(EXIT_FAILURE);
+            swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_PAIR_SHORT,
+                           (long)buffer_pos2, (long)buffer_size2,
+                           local_read_index);
         }
 
         if (local_read_index >= local_read_count) {
-            fprintf(stderr, "FASTQ record count changed during CPE formatting\n");
-            exit(EXIT_FAILURE);
+            swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_COUNT_MISMATCH,
+                           local_read_index, local_read_count, (long)buffer_pos);
         }
         ++local_read_index;
 
@@ -1968,8 +1990,8 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
     }
     if (local_read_index != local_read_count ||
         (is_paired && buffer_pos2 != buffer_size2)) {
-        fprintf(stderr, "inconsistent FASTQ partition record count\n");
-        exit(EXIT_FAILURE);
+        swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_COUNT_MISMATCH,
+                       local_read_index, local_read_count, (long)buffer_pos2);
     }
 
     sync_format_workers();

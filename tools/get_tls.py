@@ -37,11 +37,11 @@ def parse_file(input_file, output_file):
         with open(output_file, 'wb') as outfile:
             tls_size = len(offsets)
             print(tls_size)
-            outfile.write(tls_size.to_bytes(8, byteorder='little'))  # 假设 unsigned long 是 8 字节，使用小端序
+            outfile.write(tls_size.to_bytes(8, byteorder='little'))  # assume unsigned long is 8 bytes, little-endian
             print(offsets)
 
             for offset in offsets:
-                outfile.write(int(offset, 16).to_bytes(8, byteorder='little'))  # 假设 offset 是十六进制字符串
+                outfile.write(int(offset, 16).to_bytes(8, byteorder='little'))  # assume offset is a hex string
         
         print(f"Processing completed. Results saved to {output_file}.")
 

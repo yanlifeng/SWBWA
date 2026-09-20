@@ -1310,6 +1310,97 @@ unsigned long swbwa_cpe_data_start = SWBWA_CPE_DATA_START_ADDRESS;
 unsigned long swbwa_cpe_data_size = SWBWA_CPE_DATA_SEGMENT_BYTES;
 
 __uncached volatile int swbwa_cpe_completion_flags[SWBWA_CPE_COUNT];
+__uncached volatile long
+    swbwa_cpe_error_info[SWBWA_CPE_COUNT * SWBWA_CPE_ERROR_WORDS]
+        __attribute__((aligned(64)));
+
+static const char *swbwa_cpe_error_text(long code)
+{
+    switch (code) {
+    case SWBWA_CPE_ERR_POOL_EXHAUSTED:
+        return "CPE pool exhausted (requested, available, high water)";
+    case SWBWA_CPE_ERR_POOL_TREE_LIMIT:
+        return "CPE pool size-class tree limit (class, tree count, -)";
+    case SWBWA_CPE_ERR_POOL_SIZE_OVERFLOW:
+        return "CPE pool allocation size overflow (nmemb, size, -)";
+    case SWBWA_CPE_ERR_POOL_BAD_POOL:
+        return "CPE pool not initialised (size, -, -)";
+    case SWBWA_CPE_ERR_POOL_DOUBLE_FREE:
+        return "CPE pool double free or corrupt block (class, tree, segment)";
+    case SWBWA_CPE_ERR_ALLOC_FAILED:
+        return "CPE allocation returned NULL (bytes, line, -)";
+    case SWBWA_CPE_ERR_FORMAT_TOO_MANY_READS:
+        return "too many reads in one CPE formatting batch (reads, limit, -)";
+    case SWBWA_CPE_ERR_FORMAT_BUFFER_FULL:
+        return "CPE FASTQ formatting buffer exhausted (position, size, length)";
+    case SWBWA_CPE_ERR_FASTQ_TRUNCATED:
+        return "invalid or truncated FASTQ record (position, size, -)";
+    case SWBWA_CPE_ERR_FASTQ_COUNT_MISMATCH:
+        return "inconsistent FASTQ partition record count (parsed, counted, -)";
+    case SWBWA_CPE_ERR_FASTQ_PAIR_SHORT:
+        return "paired FASTQ input ended before read 1 (position, size, -)";
+    case SWBWA_CPE_ERR_ASSERT:
+        return "assertion failed (line, file, expression)";
+    case SWBWA_CPE_ERR_FETCH_SEQ:
+        return "bns_fetch_seq mismatch (beg, end, len)";
+    case SWBWA_CPE_ERR_LDM_EXHAUSTED:
+        return "LDM allocation failed (bytes, outstanding, site)";
+    default:
+        return "unknown CPE failure";
+    }
+}
+
+/*
+ * The cross segment is ordinary host memory, so string pointers a CPE reports
+ * can be dereferenced here once they are known to fall inside it.
+ */
+static const char *swbwa_cross_base;
+static size_t swbwa_cross_bytes;
+
+static const char *swbwa_cpe_string(long address)
+{
+    const char *p = (const char *)(unsigned long)address;
+    uintptr_t value = (uintptr_t)p, base = (uintptr_t)swbwa_cross_base;
+    size_t i, remaining;
+
+    if (swbwa_cross_base == NULL || value < base ||
+        value - base >= swbwa_cross_bytes)
+        return NULL;
+    remaining = swbwa_cross_bytes - (value - base);
+    for (i = 0; i < 256 && i < remaining; i++)
+        if (p[i] == '\0') return p;
+    return NULL;
+}
+
+static void swbwa_cpe_check_error(void)
+{
+    volatile long *slot = NULL;
+    long code;
+    const char *file, *expr;
+
+    for (int i = 0; i < SWBWA_CPE_COUNT; ++i) {
+        volatile long *candidate = swbwa_cpe_error_info +
+                                   i * SWBWA_CPE_ERROR_WORDS;
+        if (candidate[0] != SWBWA_CPE_ERR_NONE) {
+            slot = candidate;
+            break;
+        }
+    }
+    if (slot == NULL) return;
+    asm volatile("memb\n\t" ::: "memory");
+    code = slot[0];
+    if (code == SWBWA_CPE_ERR_ASSERT) {
+        file = swbwa_cpe_string(slot[3]);
+        expr = swbwa_cpe_string(slot[4]);
+        err_fatal("swbwa_cpe",
+                  "CPE %ld assertion failed: %s:%ld: \"%s\"",
+                  slot[1], file != NULL ? file : "<unknown>",
+                  slot[2], expr != NULL ? expr : "<unknown>");
+    }
+    err_fatal("swbwa_cpe", "CPE %ld failed: %s: code=%ld a=%ld b=%ld c=%ld",
+              slot[1], swbwa_cpe_error_text(code), code,
+              slot[2], slot[3], slot[4]);
+}
 
 enum swbwa_cpe_progress_phase {
     SWBWA_CPE_PROGRESS_FORMAT,
@@ -1692,8 +1783,12 @@ static void swbwa_enable_cross_execution(void)
 static void swbwa_cross_run(long fun_addr)
 {
 
-    if (bwa_verbose >= 4) fprintf(stderr, "start swbwa_cross_run\n");
-    for(int i = 0; i < SWBWA_CPE_COUNT; i++) swbwa_cpe_completion_flags[i] = 0;
+    if (bwa_verbose >= 4) fprintf(stderr, "start swbwa_cross_run 0x%lx\n", (unsigned long)fun_addr);
+    for(int i = 0; i < SWBWA_CPE_COUNT; i++) {
+        swbwa_cpe_completion_flags[i] = 0;
+        swbwa_cpe_error_info[i * SWBWA_CPE_ERROR_WORDS] = SWBWA_CPE_ERR_NONE;
+    }
+    asm volatile("memb\n\t" ::: "memory");
 
     for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
         for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
@@ -1717,8 +1812,12 @@ static void swbwa_cross_run(long fun_addr)
         for(int i = 0; i < SWBWA_CPE_COUNT; i++)
             sum += swbwa_cpe_completion_flags[i];
         if(sum == SWBWA_CPE_COUNT) break;
+        /* A failing CPE stops synchronising, so its peers never reach their
+         * completion flag. Poll the error channel or this loop never ends. */
+        swbwa_cpe_check_error();
         usleep(100);
     }
+    swbwa_cpe_check_error();
 }
 
 typedef struct {
@@ -1738,9 +1837,16 @@ static void swbwa_cross_runtime_init(swbwa_cross_runtime_t *runtime,
     start_time = GetTime();
     swbwa_enable_cross_execution();
     runtime->segments = swbwa_allocate_cross_segments();
+    swbwa_cross_base = runtime->segments;
+    swbwa_cross_bytes = swbwa_cpe_data_start + swbwa_cpe_data_size -
+                        swbwa_cpe_text_start;
+    if (bwa_verbose >= 4)
+        fprintf(stderr, "[DBG] cross segments base = 0x%lx\n",
+                (unsigned long)runtime->segments);
 
     params->private_segment_copies = swbwa_allocate_private_segment_copies();
     params->completion_flags = swbwa_cpe_completion_flags;
+    params->error_info = swbwa_cpe_error_info;
 
     asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
     params->relocated_gp = (void*)((unsigned long)runtime->segments + host_gp -
@@ -1813,6 +1919,7 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
             sam_blocks_static[i] = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*sam_blocks_static[i]), "static SAM block");
         }
         para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
+        memset(para, 0, sizeof(*para));
     }
 
     para->work_item_count = nn;
@@ -1830,6 +1937,27 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     para->formatted_buffer[1] = tmp_block_buffer2;
     para->formatted_buffer_size = SWBWA_CPE_FORMAT_BUFFER_BYTES;
     for(int i = 0; i < n; i++) para->sam_lengths[i] = 0;
+
+#if SWBWA_USE_CROSS_SEGMENT
+    /* Sample shared buffer placement; NULL R2 is normal for SE input. */
+    if (bwa_verbose >= 4) {
+        const void *tracked[5];
+        int outside = 0;
+
+        tracked[0] = block_buffer;
+        tracked[1] = block_buffer2;
+        tracked[2] = w.seqs;
+        tracked[3] = para->sam_records;
+        tracked[4] = para->sam_lengths;
+        for (int i = 0; i < 5; i++)
+            if (tracked[i] != NULL &&
+                ((unsigned long)tracked[i] >> 40) != 0x58) ++outside;
+        fprintf(stderr,
+                "[xheap] batch=%lu fastq=%p,%p seqs=%p sam_rec=%p sam_len=%p outside_cross=%d\n",
+                batch_number, tracked[0], tracked[1], tracked[2], tracked[3],
+                tracked[4], outside);
+    }
+#endif
 
 
 #if SWBWA_USE_CROSS_SEGMENT
@@ -1894,6 +2022,38 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         (void*)slave_worker12_s_fast, para, SWBWA_CPE_PROGRESS_SAM);
 #endif
     t_work1_5 += GetTime() - tt0;
+
+#if SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+    if (bwa_verbose >= 4) {
+        long peak = 0;
+        int peak_cpe = 0;
+
+        for (int i = 0; i < SWBWA_CPE_COUNT; i++) {
+            if (para->pool_high_water[i] > peak) {
+                peak = para->pool_high_water[i];
+                peak_cpe = i;
+            }
+        }
+        long ldm_left = 0, ldm_peak = 0, ldm_refusals = 0;
+        int ldm_cpe = 0;
+
+        for (int i = 0; i < SWBWA_CPE_COUNT; i++) {
+            if (para->ldm_outstanding[i] > ldm_left) {
+                ldm_left = para->ldm_outstanding[i];
+                ldm_cpe = i;
+            }
+            if (para->ldm_peak[i] > ldm_peak) ldm_peak = para->ldm_peak[i];
+            ldm_refusals += para->ldm_refusals[i];
+        }
+        fprintf(stderr,
+                "[CPE pool] batch=%lu peak=%ld bytes (%.1f%% of %lld) cpe=%d"
+                " | LDM still_held=%ld (cpe=%d) peak=%ld refusals=%ld\n",
+                batch_number, peak,
+                100.0 * (double)peak / (double)SWBWA_CPE_POOL_BYTES_PER_CPE,
+                (long long)SWBWA_CPE_POOL_BYTES_PER_CPE, peak_cpe,
+                ldm_left, ldm_cpe, ldm_peak, ldm_refusals);
+    }
+#endif
 
     *n2 = n;
     if (bwa_verbose >= 4) fprintf(stderr, "processed %d\n", *n2);

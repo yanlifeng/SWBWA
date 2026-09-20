@@ -19,6 +19,8 @@ AR  = ar
 #   MPI_INPUT_MODE: static | dynamic
 #   OUTPUT_MODE: split | single_unordered | discard
 #   MPI_EXACT_READ_INDEX: 0 | 1 (exact n_processed for correctness checks)
+#   MPI_TAIL_PERCENT: 0..100 (0 disables dynamic tail refinement entirely)
+#   DISCARD_HASH_BYTES: 0 | N (0 hashes the whole blob; N hashes at most N bytes)
 EXEC_MODE           ?= single
 CPE_ALLOCATOR       ?= system
 HOST_MALLOC_WRAPPER ?= 1
@@ -35,6 +37,8 @@ ifeq ($(USE_MPI),1)
 MPI_INPUT_MODE       ?= dynamic
 OUTPUT_MODE          ?= single_unordered
 MPI_EXACT_READ_INDEX ?= 1
+MPI_TAIL_PERCENT     ?= 10
+DISCARD_HASH_BYTES   ?= 0
 endif
 
 ifeq ($(USE_MPI),1)
@@ -97,6 +101,12 @@ ifeq ($(USE_MPI),1)
 ifeq ($(filter $(MPI_EXACT_READ_INDEX),$(VALID_BOOLEAN_VALUES)),)
 $(error MPI_EXACT_READ_INDEX must be 0 or 1)
 endif
+ifeq ($(shell printf '%s\n' "$(MPI_TAIL_PERCENT)" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)$$' && test "$(MPI_TAIL_PERCENT)" -le 100 2>/dev/null && echo 1),)
+$(error MPI_TAIL_PERCENT must be a decimal integer in 0..100, without leading zeros)
+endif
+ifeq ($(shell printf '%s\n' "$(DISCARD_HASH_BYTES)" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)$$' && test "$(DISCARD_HASH_BYTES)" -le 2147483647 2>/dev/null && echo 1),)
+$(error DISCARD_HASH_BYTES must be a decimal integer in 0..2147483647, without leading zeros)
+endif
 ifeq ($(filter $(MPI_INPUT_MODE),$(VALID_MPI_INPUT_MODES)),)
 $(error MPI_INPUT_MODE must be one of: $(VALID_MPI_INPUT_MODES))
 endif
@@ -140,6 +150,8 @@ ifeq ($(USE_MPI),1)
 SWBWA_CPPFLAGS += \
 	-DSWBWA_MPI_INPUT_MODE=$(MPI_INPUT_MODE_VALUE_$(MPI_INPUT_MODE)) \
 	-DSWBWA_MPI_EXACT_READ_INDEX=$(MPI_EXACT_READ_INDEX) \
+	-DSWBWA_MPI_DEFAULT_TAIL_PERCENT=$(MPI_TAIL_PERCENT) \
+	-DSWBWA_DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES) \
 	-DSWBWA_OUTPUT_MODE=$(OUTPUT_MODE_VALUE_$(OUTPUT_MODE))
 endif
 
@@ -151,7 +163,9 @@ INCLUDE_DIR := include
 CONFIG_HEADER := $(INCLUDE_DIR)/swbwa_config.h
 DEPFLAGS := -MMD -MP
 
-CPPFLAGS += -include $(CONFIG_HEADER) $(SWBWA_CPPFLAGS)
+# EXTRA_CPPFLAGS is a passthrough for one-off overrides of the #ifndef-guarded
+# tunables in swbwa_config.h, e.g. EXTRA_CPPFLAGS=-DSWBWA_CPE_POOL_BYTES_PER_CPE=...
+CPPFLAGS += -include $(CONFIG_HEADER) $(SWBWA_CPPFLAGS) $(EXTRA_CPPFLAGS)
 DFLAGS   += -DHAVE_PTHREAD
 INCLUDES += -I$(INCLUDE_DIR)
 ifeq ($(CPE_PROFILE),1)
@@ -213,6 +227,8 @@ ifeq ($(USE_MPI),1)
 	@echo "MPI_INPUT_MODE=$(MPI_INPUT_MODE)"
 	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
 	@echo "MPI_EXACT_READ_INDEX=$(MPI_EXACT_READ_INDEX)"
+	@echo "MPI_TAIL_PERCENT=$(MPI_TAIL_PERCENT)"
+	@echo "DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES)"
 endif
 	@echo "MPI_LINK_VARIANT=$(MPI_LINK_VARIANT)"
 

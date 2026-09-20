@@ -1,0 +1,2566 @@
+Job <8164624> has been submitted to queue <q_share>
+waiting for dispatch ...
+[M::main_mem] mean insert size: 170.000, stddev: 80.000, max: 500, min: 1
+[MPI input] mode=dynamic chunks=129 bytes_per_cg=19660800 cg_count=6 chunk_bytes=117964800 micro_chunk_bytes=0 fine_chunk_bytes=0 tail_percent=0 fine_tail_waves=2 file_bytes=15182222352 scheduler=distributed read_index=byte_offset
+malloc bwt->bwt 3107576584, 0x580006804020
+malloc bwt->bwt 3107576584, 0x580006804020
+malloc bwt->bwt 3107576584, 0x580006804020
+malloc bwt->bwt 3107576584, 0x580006804020
+malloc bwt->sa 1553788264, 0x5800bfba1b40
+malloc bwt->sa 1553788264, 0x5800bfba1b40
+malloc bwt->sa 1553788264, 0x5800bfba1b40
+malloc bwt->sa 1553788264, 0x5800bfba1b40
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x58011c5708c0
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x58011c5708c0
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x58011c5708c0
+[MPI rank 000002/000004] output: (discard)
+[M::bwa_idx_load_from_disk] read 0 ALT contigs
+malloc pac 776894131, 0x58011c5708c0
+[MPI rank 000001/000004] output: (discard)
+[MPI rank 000003/000004] output: (discard)
+the input file is /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/data/bwa_test_big_data/big4_SRR7963242_1.fastq
+the input file is /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/data/bwa_test_big_data/big4_SRR7963242_2.fastq
+[MPI rank 000000/000004] output: (discard)
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117965124 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964736 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964768 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964736 bytes)...
+[DBG stage1] slow fread: R1 offset=117965124 requested=117964736 read=117964736 elapsed=1.091 s
+[DBG stage1] slow fread: R1 offset=0 requested=117965124 read=117965124 elapsed=1.332 s
+[DBG stage1] slow fread: R1 offset=353894596 requested=117964768 read=117964768 elapsed=1.287 s
+[DBG stage1] slow fread: R1 offset=235929860 requested=117964736 read=117964736 elapsed=1.680 s
+[DBG stage1] slow fread: R2 offset=0 requested=117965124 read=117965124 elapsed=1.304 s
+step1 0x580000020090
+step2 get 0x580000020090
+[M::swbwa_cross_runtime_init] initialized cross-segment runtime in 0.076 sec
+start swbwa_cross_run
+[DBG stage1] slow fread: R2 offset=353894596 requested=117964768 read=117964768 elapsed=1.314 s
+step1 0x580000020090
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+step2 get 0x580000020090
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::swbwa_cross_runtime_init] initialized cross-segment runtime in 0.086 sec
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=117965124 requested=117964736 read=117964736 elapsed=1.666 s
+step1 0x580000020090
+step2 get 0x580000020090
+[M::swbwa_cross_runtime_init] initialized cross-segment runtime in 0.080 sec
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=235929860 requested=117964736 read=117964736 elapsed=1.484 s
+step1 0x580000020090
+step2 get 0x580000020090
+[M::swbwa_cross_runtime_init] initialized cross-segment runtime in 0.083 sec
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=471859364 requested=117964920 read=117964920 elapsed=1.349 s
+[DBG stage1] slow fread: R1 offset=589824284 requested=117964540 read=117964540 elapsed=1.372 s
+[DBG stage1] slow fread: R1 offset=707788824 requested=117964920 read=117964920 elapsed=1.291 s
+[DBG stage1] slow fread: R1 offset=825753744 requested=117964920 read=117964920 elapsed=1.392 s
+[DBG stage1] slow fread: R2 offset=471859364 requested=117964920 read=117964920 elapsed=1.545 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=707788824 requested=117964920 read=117964920 elapsed=1.287 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=589824284 requested=117964540 read=117964540 elapsed=1.576 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=825753744 requested=117964920 read=117964920 elapsed=1.543 s
+step1 0x5800007c98a0
+slave pre done
+now n is 622080
+start swbwa_cross_run
+processed 622080
+[M::mem_process_seqs_merge2] Processed 622080 reads in 0.870 CPU sec, 5.521 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 627472
+start swbwa_cross_run
+processed 627472
+[M::mem_process_seqs_merge2] Processed 627472 reads in 0.770 CPU sec, 5.800 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 627472
+start swbwa_cross_run
+processed 627472
+[M::mem_process_seqs_merge2] Processed 627472 reads in 0.890 CPU sec, 5.970 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 629838
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+start swbwa_cross_run
+processed 629838
+[M::mem_process_seqs_merge2] Processed 629838 reads in 1.070 CPU sec, 6.811 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=1061683204 requested=117964920 read=117964920 elapsed=1.903 s
+[DBG stage1] slow fread: R1 offset=1297613044 requested=117964920 read=117964920 elapsed=1.576 s
+[DBG stage1] slow fread: R1 offset=943718664 requested=117964540 read=117964540 elapsed=1.640 s
+[DBG stage1] slow fread: R1 offset=1179648124 requested=117964920 read=117964920 elapsed=1.829 s
+[DBG stage1] slow fread: R2 offset=1297613044 requested=117964920 read=117964920 elapsed=1.280 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=1061683204 requested=117964920 read=117964920 elapsed=1.505 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=943718664 requested=117964540 read=117964540 elapsed=1.354 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=1179648124 requested=117964920 read=117964920 elapsed=1.481 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.090 CPU sec, 5.589 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.090 CPU sec, 5.530 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.910 CPU sec, 5.410 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620866
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.200 CPU sec, 5.369 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=1651507424 requested=117964920 read=117964920 elapsed=1.676 s
+[DBG stage1] slow fread: R1 offset=1415577964 requested=117964540 read=117964540 elapsed=1.744 s
+[DBG stage1] slow fread: R1 offset=1533542504 requested=117964920 read=117964920 elapsed=1.952 s
+[DBG stage1] slow fread: R1 offset=1769472344 requested=117964540 read=117964540 elapsed=1.656 s
+[DBG stage1] slow fread: R2 offset=1651507424 requested=117964920 read=117964920 elapsed=1.989 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=1415577964 requested=117964540 read=117964540 elapsed=1.996 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=1533542504 requested=117964920 read=117964920 elapsed=1.881 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=1769472344 requested=117964540 read=117964540 elapsed=1.902 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.050 CPU sec, 5.498 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.030 CPU sec, 5.730 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.030 CPU sec, 5.798 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.990 CPU sec, 6.150 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=2241331264 requested=117964920 read=117964920 elapsed=1.576 s
+[DBG stage1] slow fread: R1 offset=2005401804 requested=117964920 read=117964920 elapsed=1.611 s
+[DBG stage1] slow fread: R1 offset=1887436884 requested=117964920 read=117964920 elapsed=1.649 s
+[DBG stage1] slow fread: R1 offset=2123366724 requested=117964540 read=117964540 elapsed=1.536 s
+[DBG stage1] slow fread: R2 offset=2241331264 requested=117964920 read=117964920 elapsed=1.607 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=2005401804 requested=117964920 read=117964920 elapsed=1.643 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=1887436884 requested=117964920 read=117964920 elapsed=1.317 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=2123366724 requested=117964540 read=117964540 elapsed=1.362 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.930 CPU sec, 5.480 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.990 CPU sec, 5.600 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.940 CPU sec, 5.410 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620868
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.190 CPU sec, 5.391 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=2359296184 requested=117964920 read=117964920 elapsed=1.878 s
+[DBG stage1] slow fread: R1 offset=2477261104 requested=117964540 read=117964540 elapsed=1.596 s
+[DBG stage1] slow fread: R1 offset=2595225644 requested=117964920 read=117964920 elapsed=1.963 s
+[DBG stage1] slow fread: R1 offset=2713190564 requested=117964920 read=117964920 elapsed=1.766 s
+[DBG stage1] slow fread: R2 offset=2359296184 requested=117964920 read=117964920 elapsed=1.496 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=2477261104 requested=117964540 read=117964540 elapsed=1.416 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=2595225644 requested=117964920 read=117964920 elapsed=1.689 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=2713190564 requested=117964920 read=117964920 elapsed=1.536 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.970 CPU sec, 5.600 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.090 CPU sec, 5.520 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.040 CPU sec, 5.520 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.320 CPU sec, 5.459 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=2949120024 requested=117964920 read=117964920 elapsed=1.835 s
+[DBG stage1] slow fread: R1 offset=3185049864 requested=117964540 read=117964540 elapsed=1.825 s
+[DBG stage1] slow fread: R1 offset=2831155484 requested=117964540 read=117964540 elapsed=1.849 s
+[DBG stage1] slow fread: R1 offset=3067084944 requested=117964920 read=117964920 elapsed=2.209 s
+[DBG stage1] slow fread: R2 offset=2949120024 requested=117964920 read=117964920 elapsed=1.610 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=3185049864 requested=117964540 read=117964540 elapsed=1.490 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=2831155484 requested=117964540 read=117964540 elapsed=1.446 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=3067084944 requested=117964920 read=117964920 elapsed=1.678 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.020 CPU sec, 5.520 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.070 CPU sec, 5.610 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.150 CPU sec, 5.519 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.030 CPU sec, 5.740 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=3538944244 requested=117964920 read=117964920 elapsed=1.986 s
+[DBG stage1] slow fread: R1 offset=3303014404 requested=117964920 read=117964920 elapsed=1.787 s
+[DBG stage1] slow fread: R1 offset=3420979324 requested=117964920 read=117964920 elapsed=1.588 s
+[DBG stage1] slow fread: R1 offset=3656909164 requested=117964540 read=117964540 elapsed=1.671 s
+[DBG stage1] slow fread: R2 offset=3538944244 requested=117964920 read=117964920 elapsed=1.786 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=3303014404 requested=117964920 read=117964920 elapsed=1.487 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=3420979324 requested=117964920 read=117964920 elapsed=1.306 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=3656909164 requested=117964540 read=117964540 elapsed=1.563 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.140 CPU sec, 5.610 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964768 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.000 CPU sec, 5.510 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117965112 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.080 CPU sec, 5.419 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+start swbwa_cross_run
+step3 0x580000020090
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964736 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.020 CPU sec, 5.730 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964752 bytes)...
+[DBG stage1] slow fread: R1 offset=4128768304 requested=117964768 read=117964768 elapsed=1.820 s
+[DBG stage1] slow fread: R1 offset=3892838456 requested=117965112 read=117965112 elapsed=1.580 s
+[DBG stage1] slow fread: R1 offset=4010803568 requested=117964736 read=117964736 elapsed=1.559 s
+[DBG stage1] slow fread: R1 offset=3774873704 requested=117964752 read=117964752 elapsed=1.737 s
+[DBG stage1] slow fread: R2 offset=4128768304 requested=117964768 read=117964768 elapsed=1.590 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=3892838456 requested=117965112 read=117965112 elapsed=1.400 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=4010803568 requested=117964736 read=117964736 elapsed=1.331 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=3774873704 requested=117964752 read=117964752 elapsed=1.499 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.960 CPU sec, 5.450 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.910 CPU sec, 5.470 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.940 CPU sec, 5.329 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.980 CPU sec, 5.550 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=4246733072 requested=117964540 read=117964540 elapsed=1.568 s
+[DBG stage1] slow fread: R1 offset=4482662532 requested=117964920 read=117964920 elapsed=1.691 s
+[DBG stage1] slow fread: R1 offset=4600627452 requested=117964920 read=117964920 elapsed=1.581 s
+[DBG stage1] slow fread: R2 offset=4246733072 requested=117964540 read=117964540 elapsed=1.739 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=4364697612 requested=117964920 read=117964920 elapsed=1.909 s
+[DBG stage1] slow fread: R2 offset=4482662532 requested=117964920 read=117964920 elapsed=1.614 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=4600627452 requested=117964920 read=117964920 elapsed=1.784 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=4364697612 requested=117964920 read=117964920 elapsed=1.527 s
+step1 0x580000020090
+slave pre done
+now n is 623238
+start swbwa_cross_run
+processed 623238
+[M::mem_process_seqs_merge2] Processed 623238 reads in 1.930 CPU sec, 5.690 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 627474
+start swbwa_cross_run
+processed 627474
+[M::mem_process_seqs_merge2] Processed 627474 reads in 2.010 CPU sec, 5.731 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 627472
+start swbwa_cross_run
+processed 627472
+[M::mem_process_seqs_merge2] Processed 627472 reads in 2.160 CPU sec, 5.758 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=4836556912 requested=117964920 read=117964920 elapsed=1.811 s
+slave pre done
+now n is 628678
+start swbwa_cross_run
+processed 628678
+[M::mem_process_seqs_merge2] Processed 628678 reads in 2.050 CPU sec, 6.631 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=5072486752 requested=117964540 read=117964540 elapsed=1.743 s
+[DBG stage1] slow fread: R1 offset=4718592372 requested=117964540 read=117964540 elapsed=1.834 s
+[DBG stage1] slow fread: R2 offset=4836556912 requested=117964920 read=117964920 elapsed=1.595 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=4954521832 requested=117964920 read=117964920 elapsed=1.749 s
+[DBG stage1] slow fread: R2 offset=5072486752 requested=117964540 read=117964540 elapsed=1.652 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=4718592372 requested=117964540 read=117964540 elapsed=1.802 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.010 CPU sec, 5.410 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=4954521832 requested=117964920 read=117964920 elapsed=1.557 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.040 CPU sec, 5.469 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.060 CPU sec, 5.580 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=5426381132 requested=117964540 read=117964540 elapsed=1.767 s
+slave pre done
+now n is 620868
+[DBG stage1] slow fread: R1 offset=5190451292 requested=117964920 read=117964920 elapsed=1.592 s
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.020 CPU sec, 5.509 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=5308416212 requested=117964920 read=117964920 elapsed=1.635 s
+[DBG stage1] slow fread: R2 offset=5426381132 requested=117964540 read=117964540 elapsed=1.550 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=5190451292 requested=117964920 read=117964920 elapsed=1.340 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=5308416212 requested=117964920 read=117964920 elapsed=1.346 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=5544345672 requested=117964920 read=117964920 elapsed=1.664 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.030 CPU sec, 5.620 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=5544345672 requested=117964920 read=117964920 elapsed=1.561 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.020 CPU sec, 5.569 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.990 CPU sec, 5.610 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=6016204972 requested=117964920 read=117964920 elapsed=1.504 s
+[DBG stage1] slow fread: R1 offset=5780275512 requested=117964540 read=117964540 elapsed=1.550 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.130 CPU sec, 5.649 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=5898240052 requested=117964920 read=117964920 elapsed=1.806 s
+[DBG stage1] slow fread: R2 offset=6016204972 requested=117964920 read=117964920 elapsed=1.588 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=5780275512 requested=117964540 read=117964540 elapsed=1.536 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=5662310592 requested=117964920 read=117964920 elapsed=1.839 s
+[DBG stage1] slow fread: R2 offset=5898240052 requested=117964920 read=117964920 elapsed=1.464 s
+step1 0x580000020090
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.000 CPU sec, 5.390 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=5662310592 requested=117964920 read=117964920 elapsed=1.460 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.060 CPU sec, 5.699 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.200 CPU sec, 5.520 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=6134169892 requested=117964540 read=117964540 elapsed=1.701 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.000 CPU sec, 5.479 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=6370099352 requested=117964920 read=117964920 elapsed=1.706 s
+[DBG stage1] slow fread: R1 offset=6488064272 requested=117964540 read=117964540 elapsed=1.616 s
+[DBG stage1] slow fread: R2 offset=6134169892 requested=117964540 read=117964540 elapsed=1.446 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=6252134432 requested=117964920 read=117964920 elapsed=1.660 s
+[DBG stage1] slow fread: R2 offset=6488064272 requested=117964540 read=117964540 elapsed=1.498 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=6370099352 requested=117964920 read=117964920 elapsed=1.629 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.930 CPU sec, 5.751 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.030 CPU sec, 5.519 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.120 CPU sec, 5.590 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=6252134432 requested=117964920 read=117964920 elapsed=2.418 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=6723993732 requested=117964920 read=117964920 elapsed=1.856 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.150 CPU sec, 5.499 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=6606028812 requested=117964920 read=117964920 elapsed=1.633 s
+[DBG stage1] slow fread: R1 offset=6959923572 requested=117964540 read=117964540 elapsed=1.973 s
+[DBG stage1] slow fread: R2 offset=6723993732 requested=117964920 read=117964920 elapsed=1.714 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=6606028812 requested=117964920 read=117964920 elapsed=1.542 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=6841958652 requested=117964920 read=117964920 elapsed=1.833 s
+[DBG stage1] slow fread: R2 offset=6959923572 requested=117964540 read=117964540 elapsed=1.763 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.030 CPU sec, 5.579 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=6841958652 requested=117964920 read=117964920 elapsed=1.556 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.960 CPU sec, 5.619 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.000 CPU sec, 5.650 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=7313817952 requested=117964540 read=117964540 elapsed=1.708 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.970 CPU sec, 5.749 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R1 offset=7077888112 requested=117964920 read=117964920 elapsed=1.680 s
+[DBG stage1] slow fread: R1 offset=7195853032 requested=117964920 read=117964920 elapsed=1.623 s
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=7313817952 requested=117964540 read=117964540 elapsed=1.502 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=7077888112 requested=117964920 read=117964920 elapsed=1.490 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=7195853032 requested=117964920 read=117964920 elapsed=1.460 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=7431782492 requested=117964920 read=117964920 elapsed=1.865 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.050 CPU sec, 5.579 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964764 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.980 CPU sec, 5.469 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R2 offset=7431782492 requested=117964920 read=117964920 elapsed=1.482 s
+step1 0x580000020090
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964736 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.100 CPU sec, 5.520 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964736 bytes)...
+[DBG stage1] slow fread: R1 offset=7903641636 requested=117964764 read=117964764 elapsed=1.836 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.060 CPU sec, 5.689 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964752 bytes)...
+[DBG stage1] slow fread: R1 offset=7667712164 requested=117964736 read=117964736 elapsed=1.920 s
+[DBG stage1] slow fread: R1 offset=7785676900 requested=117964736 read=117964736 elapsed=1.805 s
+[DBG stage1] slow fread: R2 offset=7903641636 requested=117964764 read=117964764 elapsed=1.679 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=7667712164 requested=117964736 read=117964736 elapsed=1.306 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=7785676900 requested=117964736 read=117964736 elapsed=1.475 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=7549747412 requested=117964752 read=117964752 elapsed=1.846 s
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.070 CPU sec, 5.410 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=7549747412 requested=117964752 read=117964752 elapsed=1.475 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.980 CPU sec, 5.619 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.970 CPU sec, 5.420 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=8021606400 requested=117964920 read=117964920 elapsed=1.615 s
+slave pre done
+now n is 620868
+[DBG stage1] slow fread: R1 offset=8257536240 requested=117964920 read=117964920 elapsed=1.600 s
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.970 CPU sec, 5.569 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R1 offset=8375501160 requested=117964540 read=117964540 elapsed=1.631 s
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=8021606400 requested=117964920 read=117964920 elapsed=1.566 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=8257536240 requested=117964920 read=117964920 elapsed=1.455 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=8375501160 requested=117964540 read=117964540 elapsed=1.527 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=8139571320 requested=117964920 read=117964920 elapsed=1.697 s
+slave pre done
+now n is 624396
+start swbwa_cross_run
+processed 624396
+[M::mem_process_seqs_merge2] Processed 624396 reads in 1.850 CPU sec, 5.600 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=8139571320 requested=117964920 read=117964920 elapsed=1.802 s
+step1 0x5800007c98f0
+slave pre done
+now n is 627472
+start swbwa_cross_run
+slave pre done
+now n is 627472
+processed 627472
+[M::mem_process_seqs_merge2] Processed 627472 reads in 2.070 CPU sec, 5.869 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+start swbwa_cross_run
+step3 0x5800007c98a0
+processed 627472
+[M::mem_process_seqs_merge2] Processed 627472 reads in 1.990 CPU sec, 5.750 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=8611430620 requested=117964920 read=117964920 elapsed=1.953 s
+[DBG stage1] slow fread: R1 offset=8493465700 requested=117964920 read=117964920 elapsed=1.626 s
+[DBG stage1] slow fread: R1 offset=8847360080 requested=117964920 read=117964920 elapsed=1.513 s
+slave pre done
+now n is 627520
+start swbwa_cross_run
+processed 627520
+[M::mem_process_seqs_merge2] Processed 627520 reads in 1.990 CPU sec, 6.639 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=8611430620 requested=117964920 read=117964920 elapsed=1.566 s
+step1 0x580000020090
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=8493465700 requested=117964920 read=117964920 elapsed=1.468 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=8847360080 requested=117964920 read=117964920 elapsed=1.369 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.230 CPU sec, 5.410 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=8729395540 requested=117964540 read=117964540 elapsed=1.786 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.840 CPU sec, 5.449 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+start swbwa_cross_run
+step3 0x5800007c98f0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.990 CPU sec, 5.540 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=9201254460 requested=117964920 read=117964920 elapsed=1.803 s
+[DBG stage1] slow fread: R2 offset=8729395540 requested=117964540 read=117964540 elapsed=1.562 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=8965325000 requested=117964920 read=117964920 elapsed=1.881 s
+[DBG stage1] slow fread: R1 offset=9083289920 requested=117964540 read=117964540 elapsed=1.962 s
+[DBG stage1] slow fread: R2 offset=9201254460 requested=117964920 read=117964920 elapsed=1.472 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.190 CPU sec, 5.449 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=8965325000 requested=117964920 read=117964920 elapsed=1.468 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=9083289920 requested=117964540 read=117964540 elapsed=1.474 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.180 CPU sec, 5.630 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=9319219380 requested=117964920 read=117964920 elapsed=1.875 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.930 CPU sec, 5.698 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+slave pre done
+now n is 620868
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.070 CPU sec, 5.630 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=9791078680 requested=117964540 read=117964540 elapsed=1.802 s
+[DBG stage1] slow fread: R2 offset=9319219380 requested=117964920 read=117964920 elapsed=1.643 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=9673113760 requested=117964920 read=117964920 elapsed=1.449 s
+[DBG stage1] slow fread: R1 offset=9555148840 requested=117964920 read=117964920 elapsed=1.760 s
+[DBG stage1] slow fread: R2 offset=9791078680 requested=117964540 read=117964540 elapsed=1.557 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.270 CPU sec, 5.689 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=9673113760 requested=117964920 read=117964920 elapsed=1.399 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=9555148840 requested=117964920 read=117964920 elapsed=1.513 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.920 CPU sec, 5.480 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=9437184300 requested=117964540 read=117964540 elapsed=2.042 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.010 CPU sec, 5.470 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.970 CPU sec, 5.760 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=9909043220 requested=117964920 read=117964920 elapsed=1.825 s
+[DBG stage1] slow fread: R2 offset=9437184300 requested=117964540 read=117964540 elapsed=1.474 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=10144973060 requested=117964540 read=117964540 elapsed=1.787 s
+[DBG stage1] slow fread: R1 offset=10262937600 requested=117964920 read=117964920 elapsed=1.568 s
+[DBG stage1] slow fread: R2 offset=9909043220 requested=117964920 read=117964920 elapsed=1.616 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.120 CPU sec, 5.659 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=10144973060 requested=117964540 read=117964540 elapsed=1.340 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=10262937600 requested=117964920 read=117964920 elapsed=1.616 s
+step1 0x580000020090
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.970 CPU sec, 5.600 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=10027008140 requested=117964920 read=117964920 elapsed=1.761 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.060 CPU sec, 5.540 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.110 CPU sec, 5.530 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=10027008140 requested=117964920 read=117964920 elapsed=1.407 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=10498867440 requested=117964920 read=117964920 elapsed=1.849 s
+[DBG stage1] slow fread: R1 offset=10734796900 requested=117964920 read=117964920 elapsed=1.478 s
+[DBG stage1] slow fread: R1 offset=10380902520 requested=117964920 read=117964920 elapsed=1.620 s
+[DBG stage1] slow fread: R2 offset=10498867440 requested=117964920 read=117964920 elapsed=1.460 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.010 CPU sec, 5.549 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=10734796900 requested=117964920 read=117964920 elapsed=1.533 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=10380902520 requested=117964920 read=117964920 elapsed=1.463 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.110 CPU sec, 5.601 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R1 offset=10616832360 requested=117964540 read=117964540 elapsed=1.609 s
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.950 CPU sec, 5.920 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.950 CPU sec, 5.600 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+start swbwa_cross_run
+step3 0x580000020090
+start swbwa_cross_run
+step3 0x580000020090
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R1 offset=11088691280 requested=117964920 read=117964920 elapsed=1.358 s
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=10616832360 requested=117964540 read=117964540 elapsed=1.733 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=10852761820 requested=117964920 read=117964920 elapsed=1.567 s
+[DBG stage1] slow fread: R2 offset=11088691280 requested=117964920 read=117964920 elapsed=1.538 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=10970726740 requested=117964540 read=117964540 elapsed=1.570 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.960 CPU sec, 5.679 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=10852761820 requested=117964920 read=117964920 elapsed=1.293 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R2 offset=10970726740 requested=117964540 read=117964540 elapsed=1.507 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.960 CPU sec, 5.559 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964764 bytes)...
+[DBG stage1] slow fread: R1 offset=11206656200 requested=117964920 read=117964920 elapsed=1.666 s
+slave pre done
+now n is 620868
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.160 CPU sec, 5.550 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.990 CPU sec, 5.580 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964736 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964736 bytes)...
+[DBG stage1] slow fread: R1 offset=11678515344 requested=117964764 read=117964764 elapsed=1.660 s
+[DBG stage1] slow fread: R2 offset=11206656200 requested=117964920 read=117964920 elapsed=1.449 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=11442585872 requested=117964736 read=117964736 elapsed=1.557 s
+[DBG stage1] slow fread: R2 offset=11678515344 requested=117964764 read=117964764 elapsed=1.461 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=11560550608 requested=117964736 read=117964736 elapsed=1.694 s
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.120 CPU sec, 5.679 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964752 bytes)...
+[DBG stage1] slow fread: R2 offset=11442585872 requested=117964736 read=117964736 elapsed=1.356 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=11560550608 requested=117964736 read=117964736 elapsed=1.560 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.950 CPU sec, 5.499 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=11324621120 requested=117964752 read=117964752 elapsed=1.668 s
+slave pre done
+now n is 620868
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.990 CPU sec, 5.480 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.920 CPU sec, 5.510 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=11796480108 requested=117964920 read=117964920 elapsed=1.875 s
+[DBG stage1] slow fread: R2 offset=11324621120 requested=117964752 read=117964752 elapsed=1.396 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=12032409948 requested=117964540 read=117964540 elapsed=1.555 s
+[DBG stage1] slow fread: R2 offset=11796480108 requested=117964920 read=117964920 elapsed=1.580 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=12150374488 requested=117964920 read=117964920 elapsed=1.738 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.950 CPU sec, 5.619 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=12032409948 requested=117964540 read=117964540 elapsed=1.414 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=12150374488 requested=117964920 read=117964920 elapsed=1.648 s
+step1 0x5800007c98a0
+slave pre done
+now n is 625554
+start swbwa_cross_run
+processed 625554
+[M::mem_process_seqs_merge2] Processed 625554 reads in 2.400 CPU sec, 5.650 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=11914445028 requested=117964920 read=117964920 elapsed=1.633 s
+slave pre done
+now n is 627472
+start swbwa_cross_run
+processed 627472
+[M::mem_process_seqs_merge2] Processed 627472 reads in 2.050 CPU sec, 5.600 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=12386304328 requested=117964540 read=117964540 elapsed=1.760 s
+[DBG stage1] slow fread: R2 offset=11914445028 requested=117964920 read=117964920 elapsed=1.420 s
+step1 0x5800007c98a0
+slave pre done
+now n is 627472
+start swbwa_cross_run
+processed 627472
+[M::mem_process_seqs_merge2] Processed 627472 reads in 2.180 CPU sec, 6.330 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=12268339408 requested=117964920 read=117964920 elapsed=1.575 s
+[DBG stage1] slow fread: R2 offset=12386304328 requested=117964540 read=117964540 elapsed=1.479 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=12622233788 requested=117964920 read=117964920 elapsed=1.916 s
+[DBG stage1] slow fread: R2 offset=12268339408 requested=117964920 read=117964920 elapsed=1.450 s
+step1 0x5800007c98f0
+slave pre done
+now n is 626362
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 626362
+[M::mem_process_seqs_merge2] Processed 626362 reads in 2.030 CPU sec, 6.639 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+start swbwa_cross_run
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.990 CPU sec, 5.490 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x580000020090
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=12622233788 requested=117964920 read=117964920 elapsed=1.610 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.090 CPU sec, 5.540 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=12976128168 requested=117964920 read=117964920 elapsed=1.568 s
+[DBG stage1] slow fread: R1 offset=12504268868 requested=117964920 read=117964920 elapsed=1.731 s
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.270 CPU sec, 5.650 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=12504268868 requested=117964920 read=117964920 elapsed=1.307 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=12858163248 requested=117964920 read=117964920 elapsed=1.566 s
+[DBG stage1] slow fread: R2 offset=12976128168 requested=117964920 read=117964920 elapsed=1.532 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=12740198708 requested=117964540 read=117964540 elapsed=1.854 s
+[DBG stage1] slow fread: R2 offset=12858163248 requested=117964920 read=117964920 elapsed=1.542 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.110 CPU sec, 5.509 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.000 CPU sec, 5.620 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=12740198708 requested=117964540 read=117964540 elapsed=1.416 s
+step1 0x580000020090
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.950 CPU sec, 5.580 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R1 offset=13094093088 requested=117964540 read=117964540 elapsed=1.595 s
+[DBG stage1] slow fread: R1 offset=13565952008 requested=117964920 read=117964920 elapsed=1.694 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.230 CPU sec, 5.600 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+start swbwa_cross_run
+step3 0x5800007c98f0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=13447987468 requested=117964540 read=117964540 elapsed=1.624 s
+[DBG stage1] slow fread: R2 offset=13094093088 requested=117964540 read=117964540 elapsed=1.644 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=13565952008 requested=117964920 read=117964920 elapsed=1.405 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=13330022548 requested=117964920 read=117964920 elapsed=1.677 s
+[DBG stage1] slow fread: R2 offset=13447987468 requested=117964540 read=117964540 elapsed=1.467 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.130 CPU sec, 5.410 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+slave pre done
+now n is 620868
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.140 CPU sec, 5.629 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=13330022548 requested=117964920 read=117964920 elapsed=1.501 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.990 CPU sec, 5.610 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R1 offset=13683916928 requested=117964920 read=117964920 elapsed=1.560 s
+[DBG stage1] slow fread: R1 offset=13212057628 requested=117964920 read=117964920 elapsed=1.787 s
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.040 CPU sec, 5.571 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=13683916928 requested=117964920 read=117964920 elapsed=1.458 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=13212057628 requested=117964920 read=117964920 elapsed=1.616 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=14037811308 requested=117964920 read=117964920 elapsed=1.624 s
+[DBG stage1] slow fread: R1 offset=13919846768 requested=117964540 read=117964540 elapsed=1.612 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.180 CPU sec, 5.480 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.990 CPU sec, 5.519 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[DBG stage1] slow fread: R2 offset=14037811308 requested=117964920 read=117964920 elapsed=1.805 s
+step1 0x5800007c98f0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=13919846768 requested=117964540 read=117964540 elapsed=1.393 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620866
+[DBG stage1] slow fread: R1 offset=13801881848 requested=117964920 read=117964920 elapsed=1.562 s
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.060 CPU sec, 5.520 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=14273741148 requested=117964540 read=117964540 elapsed=1.607 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.070 CPU sec, 5.519 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=13801881848 requested=117964920 read=117964920 elapsed=1.454 s
+step1 0x580000020090
+[DBG stage1] slow fread: R2 offset=14273741148 requested=117964540 read=117964540 elapsed=1.483 s
+step1 0x5800007c98f0
+[DBG stage1] slow fread: R1 offset=14155776228 requested=117964920 read=117964920 elapsed=1.697 s
+[DBG stage1] slow fread: R1 offset=14509670608 requested=117964920 read=117964920 elapsed=1.848 s
+[DBG stage1] slow fread: R2 offset=14155776228 requested=117964920 read=117964920 elapsed=1.387 s
+step1 0x580000020090
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.060 CPU sec, 5.510 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.110 CPU sec, 5.679 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R2 offset=14509670608 requested=117964920 read=117964920 elapsed=1.349 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=14391705688 requested=117964920 read=117964920 elapsed=1.571 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.960 CPU sec, 5.610 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964920 bytes)...
+[DBG stage1] slow fread: R1 offset=14863564988 requested=117964920 read=117964920 elapsed=1.802 s
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.050 CPU sec, 5.569 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+step3 0x5800007c98f0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+[DBG stage1] slow fread: R2 offset=14391705688 requested=117964920 read=117964920 elapsed=1.314 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R1 offset=14745600068 requested=117964920 read=117964920 elapsed=1.518 s
+[DBG stage1] slow fread: R2 offset=14863564988 requested=117964920 read=117964920 elapsed=1.590 s
+step1 0x580000020090
+[DBG stage1] slow fread: R1 offset=14627635528 requested=117964540 read=117964540 elapsed=1.798 s
+[DBG stage1] slow fread: R2 offset=14745600068 requested=117964920 read=117964920 elapsed=1.510 s
+step1 0x5800007c98a0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.970 CPU sec, 5.670 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 117964540 bytes)...
+slave pre done
+now n is 620866
+[DBG stage1] slow fread: R2 offset=14627635528 requested=117964540 read=117964540 elapsed=1.407 s
+step1 0x5800007c98a0
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 2.360 CPU sec, 5.709 real sec
+step2 put 0x5800007c98f0
+step2 get 0x580000020090
+start swbwa_cross_run
+step3 0x5800007c98f0
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[M::process] read chunk (19660800 bytes/CG x 6 CGs, 82727904 bytes)...
+slave pre done
+now n is 620868
+[DBG stage1] slow fread: R1 offset=15099494448 requested=82727904 read=82727904 elapsed=1.354 s
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.170 CPU sec, 5.720 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R1 offset=14981529908 requested=117964540 read=117964540 elapsed=1.728 s
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.200 CPU sec, 5.749 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+[DBG stage1] slow fread: R2 offset=15099494448 requested=82727904 read=82727904 elapsed=1.072 s
+step1 0x5800007c98a0
+[DBG stage1] slow fread: R2 offset=14981529908 requested=117964540 read=117964540 elapsed=1.658 s
+step1 0x5800007c98f0
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 2.080 CPU sec, 5.660 real sec
+step2 put 0x5800007c98a0
+step2 get 0x5800007c98f0
+step3 0x5800007c98a0
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.780 CPU sec, 5.459 real sec
+step2 put 0x580000020090
+step2 get 0x5800007c98a0
+step3 0x580000020090
+start swbwa_cross_run
+[M::mem_process_seqs_merge2] CPE FASTQ formatting done
+start swbwa_cross_run
+slave pre done
+now n is 620868
+start swbwa_cross_run
+processed 620868
+[M::mem_process_seqs_merge2] Processed 620868 reads in 1.300 CPU sec, 5.450 real sec
+step2 put 0x5800007c98a0
+step3 0x5800007c98a0
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.300 CPU sec, 5.569 real sec
+step2 put 0x5800007c98a0
+step3 0x5800007c98a0
+[MPI rank 000002/000004] input work: chunks=32 records=9947087 bytes=3774873284
+[MPI rank 000001/000004] input work: chunks=32 records=9947087 bytes=3774873280
+slave pre done
+now n is 435410
+start swbwa_cross_run
+processed 435410
+[M::mem_process_seqs_merge2] Processed 435410 reads in 1.300 CPU sec, 4.269 real sec
+step2 put 0x5800007c98a0
+step3 0x5800007c98a0
+[MPI rank 000000/000004] input work: chunks=32 records=9855613 bytes=3739636704
+slave pre done
+now n is 620866
+start swbwa_cross_run
+processed 620866
+[M::mem_process_seqs_merge2] Processed 620866 reads in 1.290 CPU sec, 5.630 real sec
+step2 put 0x5800007c98f0
+step3 0x5800007c98f0
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000000 / 000004
+
+  Work summary
+    claimed chunks                                         32
+    claimed from this rank's queue                          9
+    claimed from another rank's queue                      23
+    completed FASTQ records                           9855613
+    claimed input bytes                            3739636704
+
+  Scheduler counters
+    scheduler_next calls                                   33
+    RMA ticket attempts                                    37
+    attempts against another rank's queue                  27
+    tickets beyond the final chunk                          5
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000158 s  (1 calls,   158.251 us/call)
+    MPI_Barrier after setup                      0.000013 s  (1 calls,    12.951 us/call)
+[MPI rank 000003/000004] input work: chunks=33 records=10250213 bytes=3892839084
+    scheduler_next total                         5.955554 s  (33 calls, 180471.324 us/call)
+      RMA ticket path total                        0.720202 s  (37 calls, 19464.908 us/call)
+        MPI_Win_lock                                 0.000170 s  (37 calls,     4.605 us/call)
+        MPI_Fetch_and_op                             0.001391 s  (37 calls,    37.596 us/call)
+        MPI_Win_unlock                               0.718577 s  (37 calls, 19421.009 us/call)
+        RMA call overhead (derived)                  0.000063 s  (37 calls,     1.697 us/call)
+      align nominal offsets to FASTQ records       5.235227 s  (32 calls, 163600.830 us/call)
+      scheduler loop/bookkeeping (derived)         0.000126 s  (33 calls,     3.805 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           1.531350 s  (1 calls, 1531350.377 us/call)
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000001 / 000004
+
+  Work summary
+    claimed chunks                                         32
+    claimed from this rank's queue                          8
+    claimed from another rank's queue                      24
+    completed FASTQ records                           9947087
+    claimed input bytes                            3774873280
+
+  Scheduler counters
+    scheduler_next calls                                   33
+    RMA ticket attempts                                    36
+    attempts against another rank's queue                  27
+    tickets beyond the final chunk                          4
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000160 s  (1 calls,   160.452 us/call)
+    MPI_Barrier after setup                      0.000010 s  (1 calls,     9.550 us/call)
+    scheduler_next total                         6.863779 s
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000002 / 000004
+
+  Work summary
+    claimed chunks                                         32
+    claimed from this rank's queue                          8
+    claimed from another rank's queue                      24
+    completed FASTQ records                           9947087
+    claimed input bytes                            3774873284
+
+  Scheduler counters
+    scheduler_next calls                                   33
+    RMA ticket attempts                                    36
+    attempts against another rank's queue                  27
+    tickets beyond the final chunk                          4
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000160 s  (1 calls,   159.551 us/call)
+    MPI_Barrier after setup                      0.000012 s  (1 calls,    12.100 us/call)
+    scheduler_next total                         5.949975 s  (33 calls, 180302.266 us/call)
+      RMA ticket path total                        0.813771 s  (36 calls, 22604.744 us/call)
+        MPI_Win_lock                                 0.000171 s  (36 calls,     4.747 us/call)
+        MPI_Fetch_and_op                             0.001639 s  (36 calls,    45.516 us/call)
+        MPI_Win_unlock                               0.811899 s  (36 calls, 22552.737 us/call)
+        RMA call overhead (derived)                  0.000063 s  (36 calls,     1.744 us/call)
+      align nominal offsets to FASTQ records       5.136071 s  (32 calls, 160502.204 us/call)
+      scheduler loop/bookkeeping (derived)         0.000133 s  (33 calls,     4.044 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           3.888957 s  (1 calls, 3888956.708 us/call)
+    MPI_Win_free                                 0.000056 s  (1 calls,    56.450 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                       32
+    accumulated stage 2                            178.804437 s
+    average stage 2 per chunk                        5.587639 s
+    slowest chunk                                           8
+    slowest chunk stage 2                            6.150326 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       2      2  [   235929860,    353894596)    117964736       313736    5.970302
+        1       7      3  [   825753744,    943718664)    117964920       310434    5.410256
+        2       8      0  [   943718664,   1061683204)    117964540       310433    6.150326
+        3      13      1  [  1533542504,   1651507424)    117964920       310434    5.391133
+        4      18      2  [  2123366724,   2241331264)    117964540       310433    5.459357
+        5      23      3  [  2713190564,   2831155484)    117964920       310434    5.519308
+        6      24      0  [  2831155484,   2949120024)    117964540       310433    5.419372
+        7      29      1  [  3420979324,   3538944244)    117964920       310434    5.329337
+        8      34      2  [  4010803568,   4128768304)    117964736       313736    5.758442
+        9      39      3  [  4600627452,   4718592372)    117964920       310434    5.580292
+       10      40      0  [  4718592372,   4836556912)    117964540       310433    5.610342
+       11      45      1  [  5308416212,   5426381132)    117964920       310434    5.520254
+       12      50      2  [  5898240052,   6016204972)    117964920       310434    5.590317
+       13      55      3  [  6488064272,   6606028812)    117964540       310433    5.650228
+       14      56      0  [  6606028812,   6723993732)    117964920       310434    5.520254
+       15      61      1  [  7195853032,   7313817952)    117964920       310434    5.420297
+       16      66      2  [  7785676900,   7903641636)    117964736       313736    5.750267
+       17      71      3  [  8375501160,   8493465700)    117964540       310433    5.540362
+       18      72      0  [  8493465700,   8611430620)    117964920       310434    5.630237
+       19      77      1  [  9083289920,   9201254460)    117964540       310433    5.760287
+       20      82      2  [  9673113760,   9791078680)    117964920       310434    5.530318
+       21      87      3  [ 10262937600,  10380902520)    117964920       310434    5.600308
+       22      88      0  [ 10380902520,  10498867440)    117964920       310434    5.550324
+       23      93      1  [ 10970726740,  11088691280)    117964540       310433    5.510407
+       24      98      2  [ 11560550608,  11678515344)    117964736       313736    5.600377
+       25     103      3  [ 12150374488,  12268339408)    117964920       310434    5.540272
+       26     104      0  [ 12268339408,  12386304328)    117964920       310434    5.580242
+       27     109      1  [ 12858163248,  12976128168)    117964920       310434    5.610265
+       28     114      2  [ 13447987468,  13565952008)    117964540       310433    5.520355
+       29     119      3  [ 14037811308,  14155776228)    117964920       310434    5.610249
+       30     120      0  [ 14155776228,  14273741148)    117964920       310434    5.720260
+       31     125      1  [ 14745600068,  14863564988)    117964920       310434    5.450090
+==============================================================
+
+
+================ MPI Dynamic Scheduler Debug =================
+  MPI rank: 000003 / 000004
+
+  Work summary
+    claimed chunks                                         33
+    claimed from this rank's queue                          9
+    claimed from another rank's queue                      24
+    completed FASTQ records                          10250213
+    claimed input bytes                            3892839084
+
+  Scheduler counters
+    scheduler_next calls                                   34
+    RMA ticket attempts                                    37
+    attempts against another rank's queue                  27
+    tickets beyond the final chunk                          4
+    empty aligned chunks                                    0
+
+  Scheduler timing
+    MPI_Win_create (setup)                       0.000155 s  (1 calls,   155.151 us/call)
+    MPI_Barrier after setup                      0.000010 s  (1 calls,    10.300 us/call)
+    scheduler_next total                         8.051011 s  (34 calls, 236794.450 us/call)
+      RMA ticket path total                        0.787996 s  (37 calls, 21297.182 us/call)
+        MPI_Win_lock                                 0.000181 s  (37 calls,     4.878 us/call)
+        MPI_Fetch_and_op                             0.001378 s  (37 calls,    37.237 us/call)
+        MPI_Win_unlock                               0.786376 s  (37 calls, 21253.403 us/call)
+        RMA call overhead (derived)                  0.000062 s  (37 calls,     1.664 us/call)
+      align nominal offsets to FASTQ records       7.262872 s  (33 calls, 220087.021 us/call)
+      scheduler loop/bookkeeping (derived)         0.000144 s  (34 calls,     4.232 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           0.000025 s  (1 calls,    24.850 us/call)
+    MPI_Win_free                                 0.000044 s  (1 calls,    44.400 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                       33
+    accumulated stage 2                            183.204703 s
+    average stage 2 per chunk                        5.551658 s
+    slowest chunk                                          51
+    slowest chunk stage 2                            5.751244 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       3      3  [   353894596,    471859364)    117964768       311040    5.521184
+        1       4      0  [   471859364,    589824284)    117964920       310434    5.589441
+        2       9      1  [  1061683204,   1179648124)    117964920       310434    5.498499
+        3      14      2  [  1651507424,   1769472344)    117964920       310434    5.480266
+        4      19      3  [  2241331264,   2359296184)    117964920       310434    5.600369
+        5      20      0  [  2359296184,   2477261104)    117964920       310434    5.520311
+        6      25      1  [  2949120024,   3067084944)    117964920       310434    5.610295
+        7      30      2  [  3538944244,   3656909164)    117964920       310434    5.450246
+        8      35      3  [  4128768304,   4246733072)    117964768       311619    5.690261
+        9      36      0  [  4246733072,   4364697612)    117964540       310433    5.410321
+       10      41      1  [  4836556912,   4954521832)    117964920       310434    5.620348
+       11      46      2  [  5426381132,   5544345672)    117964540       310433    5.390403
+       12      51      3  [  6016204972,   6134169892)    117964920       310434    5.751244
+       13      52      0  [  6134169892,   6252134432)    117964540       310433    5.579421
+       14      57      1  [  6723993732,   6841958652)    117964920       310434    5.578553
+       15      62      2  [  7313817952,   7431782492)    117964540       310433    5.410265
+       16      67      3  [  7903641636,   8021606400)    117964764       312198    5.600234
+       17      68      0  [  8021606400,   8139571320)    117964920       310434    5.410295
+       18      73      1  [  8611430620,   8729395540)    117964920       310434    5.630305
+    MPI_Win_free                                 0.000055 s  (1 calls,    55.000 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                       32
+    accumulated stage 2                            182.088791 s
+    average stage 2 per chunk                        5.690275 s
+    slowest chunk                                           0
+    slowest chunk stage 2                            6.811267 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       0      0  [           0,    117965124)    117965124       314919    6.811267
+        1       5      1  [   589824284,    707788824)    117964540       310433    5.369428
+        2      10      2  [  1179648124,   1297613044)    117964920       310434    5.798547
+        3      15      3  [  1769472344,   1887436884)    117964540       310433    5.410232
+        4      16      0  [  1887436884,   2005401804)    117964920       310434    5.520436
+        5      21      1  [  2477261104,   2595225644)    117964540       310433    5.740192
+        6      26      2  [  3067084944,   3185049864)    117964920       310434    5.730384
+        7      31      3  [  3656909164,   3774873704)    117964540       310433    5.550302
+        8      32      0  [  3774873704,   3892838456)    117964752       314339    6.631233
+        9      37      1  [  4364697612,   4482662532)    117964920       310434    5.509386
+       10      42      2  [  4954521832,   5072486752)    117964920       310434    5.649414
+       11      47      3  [  5544345672,   5662310592)    117964920       310434    5.479453
+       12      48      0  [  5662310592,   5780275512)    117964920       310434    5.499360
+       13      53      1  [  6252134432,   6370099352)    117964920       310434    5.749426
+       14      58      2  [  6841958652,   6959923572)    117964920       310434    5.689434
+       15      63      3  [  7431782492,   7549747412)    117964920       310434    5.569460
+       16      64      0  [  7549747412,   7667712164)    117964752       313760    6.639548
+       17      69      1  [  8139571320,   8257536240)    117964920       310434    5.449482
+       18      74      2  [  8729395540,   8847360080)    117964540       310433    5.689437
+       19      79      3  [  9319219380,   9437184300)    117964920       310434    5.659434
+       20      80      0  [  9437184300,   9555148840)    117964540       310433    5.549592
+       21      85      1  [ 10027008140,  10144973060)    117964920       310434    5.679492
+       22      90      2  [ 10616832360,  10734796900)    117964540       310433    5.679384
+       23      95      3  [ 11206656200,  11324621120)    117964920       310434    5.619334
+       24      96      0  [ 11324621120,  11442585872)    117964752       313181    6.639427
+       25     101      1  [ 11914445028,  12032409948)    117964920       310434    5.509412
+       26     106      2  [ 12504268868,  12622233788)    117964920       310434    5.629470
+       27     111      3  [ 13094093088,  13212057628)    117964540       310433    5.519390
+       28     116      0  [ 13683916928,  13801881848)    117964920       310434    5.679451
+       29     121      1  [ 14273741148,  14391705688)    117964540       310433    5.709464
+       30     126      2  [ 14863564988,  14981529908)    117964920       310434    5.459318
+       31     128      0  [ 15099494448,  15182222352)     82727904       217705    4.269202
+==============================================================
+
+  (33 calls, 207993.292 us/call)
+      RMA ticket path total                        0.790357 s  (36 calls, 21954.362 us/call)
+        MPI_Win_lock                                 0.000168 s  (36 calls,     4.665 us/call)
+        MPI_Fetch_and_op                             0.001444 s  (36 calls,    40.099 us/call)
+        MPI_Win_unlock                               0.788687 s  (36 calls, 21907.970 us/call)
+        RMA call overhead (derived)                  0.000059 s  (36 calls,     1.628 us/call)
+      align nominal offsets to FASTQ records       6.073286 s  (32 calls, 189790.186 us/call)
+      scheduler loop/bookkeeping (derived)         0.000136 s  (33 calls,     4.111 us/call)
+
+  Scheduler teardown timing
+    MPI_Barrier (wait for other ranks)           2.970472 s  (1 calls, 2970472.389 us/call)
+    MPI_Win_free                                 0.000055 s  (1 calls,    55.350 us/call)
+
+  Stage 2 by chunk
+    completed chunks                                       32
+    accumulated stage 2                            180.038908 s
+    average stage 2 per chunk                        5.626216 s
+    slowest chunk                                          97
+    slowest chunk stage 2                            6.330330 s
+
+    order   chunk  queue        byte range                       bytes      records   stage2(s)
+        0       1      1  [   117965124,    235929860)    117964736       313736    5.800356
+        1       6      2  [   707788824,    825753744)    117964920       310434    5.530258
+        2      11      3  [  1297613044,   1415577964)    117964920       310434    5.730341
+        3      12      0  [  1415577964,   1533542504)    117964540       310433    5.600324
+        4      17      1  [  2005401804,   2123366724)    117964920       310434    5.520326
+        5      22      2  [  2595225644,   2713190564)    117964920       310434    5.610320
+        6      27      3  [  3185049864,   3303014404)    117964540       310433    5.510372
+        7      28      0  [  3303014404,   3420979324)    117964920       310434    5.470416
+        8      33      1  [  3892838456,   4010803568)    117965112       313737    5.731376
+        9      38      2  [  4482662532,   4600627452)    117964920       310434    5.469406
+       10      43      3  [  5072486752,   5190451292)    117964540       310433    5.569467
+       11      44      0  [  5190451292,   5308416212)    117964920       310434    5.699353
+       12      49      1  [  5780275512,   5898240052)    117964540       310433    5.519459
+       13      54      2  [  6370099352,   6488064272)    117964920       310434    5.619512
+       14      59      3  [  6959923572,   7077888112)    117964540       310433    5.469376
+       15      60      0  [  7077888112,   7195853032)    117964920       310434    5.619411
+       16      65      1  [  7667712164,   7785676900)    117964736       313736    5.869573
+       17      70      2  [  8257536240,   8375501160)    117964920       310434    5.449328
+       18      75      3  [  8847360080,   8965325000)    117964920       310434    5.698433
+       19      76      0  [  8965325000,   9083289920)    117964920       310434    5.470297
+       20      81      1  [  9555148840,   9673113760)    117964920       310434    5.540309
+       21      86      2  [ 10144973060,  10262937600)    117964540       310433    5.920253
+       22      91      3  [ 10734796900,  10852761820)    117964920       310434    5.580365
+       23      92      0  [ 10852761820,  10970726740)    117964920       310434    5.480248
+       24      97      1  [ 11442585872,  11560550608)    117964736       313736    6.330330
+       25     102      2  [ 12032409948,  12150374488)    117964540       310433    5.650352
+       26     107      3  [ 12622233788,  12740198708)    117964920       310434    5.600351
+       27     108      0  [ 12740198708,  12858163248)    117964540       310433    5.571223
+       28     113      1  [ 13330022548,  13447987468)    117964920       310434    5.519678
+       29         19      78      2  [  9201254460,   9319219380)    117964920       310434    5.480323
+       20      83      3  [  9791078680,   9909043220)    117964540       310433    5.600284
+       21      84      0  [  9909043220,  10027008140)    117964920       310434    5.601138
+       22      89      1  [ 10498867440,  10616832360)    117964920       310434    5.559350
+       23      94      2  [ 11088691280,  11206656200)    117964920       310434    5.498566
+       24      99      3  [ 11678515344,  11796480108)    117964764       312777    5.650271
+       25     100      0  [ 11796480108,  11914445028)    117964920       310434    5.490290
+       26     105      1  [ 12386304328,  12504268868)    117964540       310433    5.620334
+       27     110      2  [ 12976128168,  13094093088)    117964920       310434    5.410414
+       28     115      3  [ 13565952008,  13683916928)    117964920       310434    5.480489
+       29     112      0  [ 13212057628,  13330022548)    117964920       310434    5.510255
+       30     117      1  [ 13801881848,  13919846768)    117964920       310434    5.670245
+       31     122      2  [ 14391705688,  14509670608)    117964920       310434    5.660404
+       32     127      3  [ 14981529908,  15099494448)    117964540       310433    5.630079
+==============================================================
+
+   118      2  [ 13919846768,  14037811308)    117964540       310433    5.569392
+       30     123      3  [ 14509670608,  14627635528)    117964920       310434    5.749509
+       31     124      0  [ 14627635528,  14745600068)    117964540       310433    5.569194
+==============================================================
+
+[SWBWA output hash rank 000002/000004] calls=19894174 bytes=8387197435 sum=0x9433abfa59813b29 xor=0x1f9f0160a9c3caf9 enabled=1
+[SWBWA output hash rank 000003/000004] calls=20500426 bytes=8645300648 sum=0xaed0b1b7cb6d9759 xor=0xfed624b9aaebd7c5 enabled=1
+[SWBWA output hash rank 000000/000004] calls=19711226 bytes=8316144072 sum=0x42e84c8eb4f4b700 xor=0x512326d2ec65ae60 enabled=1
+[SWBWA output hash rank 000001/000004] calls=19894174 bytes=8388618636 sum=0xbf7981c15b9e24b5 xor=0x94db1859eaff2f07 enabled=1
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000000 / 000004
+  lifetime                                      187.251304 s
+  MPI_Iprobe calls                                   18619
+  MPI_Iprobe total                                0.481224 s
+  MPI_Iprobe average                                25.846 us
+  MPI_Iprobe maximum                              0.010156 s
+  calls >= 1 ms                                         28
+  calls >= 10 ms                                        25
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000002 / 000004
+  lifetime                                      187.250231 s
+  MPI_Iprobe calls                                   18614
+  MPI_Iprobe total                                0.478830 s
+  MPI_Iprobe average                                25.724 us
+  MPI_Iprobe maximum                              0.010159 s
+  calls >= 1 ms                                         31
+  calls >= 10 ms                                        20
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000000 / 000004
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000003 / 000004
+  lifetime                                      187.251244 s
+  MPI_Iprobe calls                                   18605
+  MPI_Iprobe total                                0.488226 s
+  MPI_Iprobe average                                26.242 us
+  MPI_Iprobe maximum                              0.010159 s
+  calls >= 1 ms                                         30
+  calls >= 10 ms                                        20
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+    FASTQ formatting               0          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length       0          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation          0          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                 0          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000002 / 000004
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               0          0      0.000      0.000     0.000       0        0         0       0          0
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000003 / 000004
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+
+======================= SWBWA Timing Report =======================
+    alignment and SAM length       0          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation          0          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                 0          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+  MPI rank: 000000 / 000004
+    FASTQ formatting               0          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length       0          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation          0          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                 0          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   187.257 s
+    stage 1 - allocate and read raw FASTQ blocks            112.061 s
+
+================ MPI Progress Thread Debug =================
+  MPI rank: 000001 / 000004
+  lifetime                                      187.251936 s
+  MPI_Iprobe calls                                   18614
+  MPI_Iprobe total                                0.499323 s
+  MPI_Iprobe average                                26.825 us
+  MPI_Iprobe maximum                              0.010170 s
+  calls >= 1 ms                                         32
+  calls >= 10 ms                                        22
+  calls >= 100 ms                                        0
+  calls >= 1 s                                           0
+============================================================
+
+
+================ SWBWA CPE/MPI Progress Debug ================
+  MPI rank: 000001 / 000004
+
+    phase                      waits     probes   total(s)    avg(us)    max(s)   >=1ms   >=10ms   >=100ms    >=1s  completed
+    FASTQ formatting               0          0      0.000      0.000     0.000       0        0         0       0          0
+    alignment and SAM length       0          0      0.000      0.000     0.000       0        0         0       0          0
+    SAM record generation          0          0      0.000      0.000     0.000       0        0         0       0          0
+    all CPE phases                 0          0      0.000      0.000     0.000       0        0         0       0          0
+
+  Probes marked 'completed' returned with the CPE completion
+  flag set. Their full call duration bounds the possible delay.
+    completion-observing probe total               0.000000 s
+    slowest completion-observing probe             0.000000 s
+==============================================================
+
+    stage 2 - align reads and generate SAM records          182.089 s
+    stage 3 - write SAM and release batch data               48.780 s
+      SAM output writes                                        39.592 s
+      batch cleanup and loop overhead (derived)                 9.188 s
+
+  Stage 1 input details
+    batches completed / stage calls                      32 / 33
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000001 / 000004
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   187.254 s
+    stage 1 - allocate and read raw FASTQ blocks            111.041 s
+    stage 2 - align reads and generate SAM records          180.039 s
+    stage 3 - write SAM and release batch data               49.107 s
+      SAM output writes                                        39.810 s
+      batch cleanup and loop overhead (derived)                 9.297 s
+
+  Stage 1 input details
+    batches completed / stage calls                      32 / 33
+    input-buffer and batch allocations                        0.000 s  (97 calls, max 0.000 s)
+    aggregate requested allocation bytes           7549814208
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000002 / 000004
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   187.257 s
+    stage 1 - allocate and read raw FASTQ blocks            109.764 s
+    stage 2 - align reads and generate SAM records          178.804 s
+    stage 3 - write SAM and release batch data               50.618 s
+      SAM output writes                                        40.998 s
+      batch cleanup and loop overhead (derived)                 9.620 s
+
+  Stage 1 input details
+    batches completed / stage calls                      32 / 33
+    input-buffer and batch allocations                        0.000 s  (97 calls, max 0.000 s)
+    aggregate requested allocation bytes           7549814216
+    FASTQ fseeko calls                                        2.405 s  (64 calls, max 0.112 s)
+    FASTQ fread calls                                       101.392 s  (64 calls, max 1.962 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               5.967 s
+    raw FASTQ bytes read                           7549746568  (7199.999 MiB)
+    effective fread bandwidth                         71.012 MiB/s
+    slowest allocation                                 0.000 s  (117965564 bytes)
+    slowest fread                                      1.962 s  (R1 offset=9083289920, bytes=117964540)
+
+  Stage 2 worker details
+    total - active merge worker                             178.800 s
+      part 1 - prepare CPE task and reusable buffers            1.050 s
+      part 2 - CPE FASTQ formatting and input release           0.510 s
+      part 3 - CPE alignment and SAM length pass              175.277 s
+      part 4 - assign slices in the shared SAM buffer           1.525 s
+      part 5 - CPE SAM record generation                        0.435 s
+
+======================= SWBWA Timing Report =======================
+  MPI rank: 000003 / 000004
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+  Accumulated wall-clock time; indented rows are included in
+  their parent row and must not be added to it.
+
+  Pipeline
+    total - complete three-stage pipeline                   187.254 s
+    stage 1 - allocate and read raw FASTQ blocks            119.077 s
+    stage 2 - align reads and generate SAM records          183.205 s
+    stage 3 - write SAM and release batch data               49.941 s
+      SAM output writes                                        40.504 s
+      batch cleanup and loop overhead (derived)                 9.437 s
+
+  Stage 1 input details
+    batches completed / stage calls                      33 / 34
+    input-buffer and batch allocations                        0.000 s  (100 calls, max 0.000 s)
+    aggregate requested allocation bytes           7785747928
+    FASTQ fseeko calls                                        3.010 s  (66 calls, max 0.290 s)
+    FASTQ fread calls                                       107.999 s  (66 calls, max 1.989 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               8.068 s
+    raw FASTQ bytes read                           7785678168  (7425.001 MiB)
+    effective fread bandwidth                         68.751 MiB/s
+    slowest allocation                                 0.000 s  (117965944 bytes)
+    slowest fread                                      1.989 s  (R2 offset=1651507424, bytes=117964920)
+
+  Stage 2 worker details
+    total - active merge worker                             183.200 s
+      part 1 - prepare CPE task and reusable buffers            1.104 s
+      part 2 - CPE FASTQ formatting and input release           0.533 s
+      part 3 - CPE alignment and SAM length pass              179.579 s
+      part 4 - assign slices in the shared SAM buffer           1.563 s
+      part 5 - CPE SAM record generation                        0.416 s
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+    input-buffer and batch allocations                        0.000 s  (97 calls, max 0.000 s)
+    aggregate requested allocation bytes           7479341056
+    FASTQ fseeko calls                                        2.049 s  (64 calls, max 0.106 s)
+    FASTQ fread calls                                       104.015 s  (64 calls, max 2.418 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               5.996 s
+    raw FASTQ bytes read                           7479273408  (7132.791 MiB)
+    effective fread bandwidth                         68.574 MiB/s
+    slowest allocation                                 0.000 s  (82728928 bytes)
+    slowest fread                                      2.418 s  (R2 offset=6252134432, bytes=117964920)
+
+  Stage 2 worker details
+    total - active merge worker                             182.074 s
+      part 1 - prepare CPE task and reusable buffers            1.112 s
+      part 2 - CPE FASTQ formatting and input release           0.505 s
+      part 3 - CPE alignment and SAM length pass              178.425 s
+      part 4 - assign slices in the shared SAM buffer           1.514 s
+      part 5 - CPE SAM record generation                        0.506 s
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+    FASTQ fseeko calls                                        2.733 s  (64 calls, max 0.163 s)
+    FASTQ fread calls                                       101.409 s  (64 calls, max 1.996 s)
+    align chunk ends to FASTQ record boundaries               0.000 s  (0 calls, max 0.000 s)
+    scheduler, checks and bookkeeping (derived)               6.898 s
+    raw FASTQ bytes read                           7549746560  (7199.999 MiB)
+    effective fread bandwidth                         71.000 MiB/s
+    slowest allocation                                 0.000 s  (117965944 bytes)
+    slowest fread                                      1.996 s  (R2 offset=1415577964, bytes=117964540)
+
+  Stage 2 worker details
+    total - active merge worker                             180.029 s
+      part 1 - prepare CPE task and reusable buffers            1.042 s
+      part 2 - CPE FASTQ formatting and input release           0.512 s
+      part 3 - CPE alignment and SAM length pass              176.469 s
+      part 4 - assign slices in the shared SAM buffer           1.524 s
+      part 5 - CPE SAM record generation                        0.476 s
+      part 6 - release temporary worker data                    0.001 s
+
+  Reserved allocator timers (no active timing sites)
+    malloc timer                                              0.000 s
+    free timer                                                0.000 s
+===================================================================
+
+[main] Version: 0.0.1
+[main] CMD: ./SWBWA mem -v 4 -t 1 -o discard_A.sam -I 170,80,500,1 /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/data/GRCh38.d1.vd1.fa /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/data/bwa_test_big_data/big4_SRR7963242_1.fastq /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/data/bwa_test_big_data/big4_SRR7963242_2.fastq
+dispatching ...
+Job 8164624 has been finished.

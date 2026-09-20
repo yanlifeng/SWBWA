@@ -63,6 +63,18 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 
 动态 MPI 输入在 FASTQ 前 90% 使用配置的大块；最后 10% 使用四分之一大小的尾部块，最后两轮 rank 再使用四分之一大小的细尾块。可通过 `SWBWA_MPI_TAIL_PERCENT=0` 关闭尾部细分，或通过 `SWBWA_MPI_FINE_TAIL_WAVES=0` 保留中等尾部而关闭细尾区域。
 
+编译时可用 `MPI_TAIL_PERCENT=0..100` 设置尾部比例默认值，运行环境变量仍可覆盖。
+`OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`（默认）对每次提交的完整 SAM blob 计算指纹；
+正整数 `DISCARD_HASH_BYTES=N` 只计算前 N 字节，**仅用于测量哈希成本，不能做全输出正确性验证**。
+日志包含 `hash_prefix_bytes`，`scripts/check_discard_hash.py` 会拒绝截短哈希。
+`EXTRA_CPPFLAGS` 可传递受 `#ifndef` 保护的实验参数；修改参数后必须完整重编译，
+cross 构建仍需 `build.sh` 的两遍流程。
+
+当前 CPE 分配器对已包装的 LDM scratch 使用 40 KiB 总预算，分配失败回退 heap，
+KSW profile 和 mate-dedup 的单次 LDM 上限各为 16 KiB。这不包含完整栈/静态数据用量。
+默认 context + SMEM 会使 24 KiB chain arena 通常回退 heap，性能不能直接套用旧版本结果。
+`-v 4` 的 pool 诊断输出每批次 LDM 峰值、拒绝次数和结束时未归还字节数。
+
 `OUTPUT_MODE=discard` 是 profiling 模式，不生成 SAM 文件。默认会对提交到输出接口的非空 SAM 数据计算与顺序无关的 sum/XOR 指纹；只有在测量哈希开销时才建议设置 `SWBWA_DISCARD_HASH=0`。
 
 示例：
@@ -137,6 +149,8 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 ```
 
 测试脚本和结果目录约定见 [`scripts/README.md`](scripts/README.md) 与 [`correctness_results/README.md`](correctness_results/README.md)。
+
+在神威远程平台上实际跑测试（SSH 连接、代码同步、`bsub` 运行约束、正确性验证，以及使用 agent 时的安全与资源纪律）见 [`TESTING_GUIDE_ZH.md`](TESTING_GUIDE_ZH.md)；项目背景、优化脉络与实验结论见 [`DEVELOPMENT_HANDOFF_ZH.md`](DEVELOPMENT_HANDOFF_ZH.md)。
 
 ## 获取帮助
 

@@ -29,6 +29,7 @@ typedef struct {
     swbwa_matesw_profile_t *matesw_profile;
 
     volatile int *completion_flags;
+    volatile long *error_info; /* Cross runtime: CPE_COUNT slots, ERROR_WORDS each. */
     void *relocated_gp;
     unsigned long segment_offset;
     void *private_segment_copies;
@@ -40,6 +41,12 @@ typedef struct {
     long long fastq_size[2];
     long long formatted_buffer_size;
     long formatted_read_counts[SWBWA_CPE_COUNT];
+    /* Bytes handed out by the CPE bump allocator, sampled per batch. */
+    long pool_high_water[SWBWA_CPE_COUNT];
+    /* LDM bytes still held after a batch (should be zero) and the batch peak. */
+    long ldm_outstanding[SWBWA_CPE_COUNT];
+    long ldm_peak[SWBWA_CPE_COUNT];
+    long ldm_refusals[SWBWA_CPE_COUNT];
 } swbwa_cpe_task_t;
 
 #endif /* SWBWA_CPE_H */

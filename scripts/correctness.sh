@@ -90,6 +90,9 @@ bigdata options:
   --datasets LIST       ERR1203383, small_SRR7963242, SRR2496709, or all
   --result-root DIR     Output root for logs and MD5 summaries
   --chunk-bytes INT     Pass -K INT; omitted by default
+  --io-mode MODE        has1, no1, or both (default: both)
+  --configs LIST        Comma-separated subset of single_system, cgs_system,
+                        cgs_pool, cgs_cross_system, cgs_cross_pool (default: all)
 
 bigdata-mpi options:
   --datasets LIST       ERR1203383, small_SRR7963242, SRR2496709, or all
@@ -1733,18 +1736,53 @@ write_bigdata_global_summary()
     echo "[GLOBAL SUMMARY] $output"
 }
 
+bigdata_configuration_is_selected()
+{
+    local name=$1
+    local candidate
+
+    for candidate in "${BIGDATA_SELECTED_CONFIGS[@]}"; do
+        [[ "$candidate" == "$name" ]] && return 0
+    done
+    return 1
+}
+
 bigdata_command()
 {
     local datasets=all
     local failures=0
+    local io_mode=both
+    local configs=all
+    local config
 
     while (($# > 0)); do
         case "$1" in
             --datasets) datasets=${2:?}; shift 2 ;;
             --result-root) BIGDATA_RESULT_ROOT=${2:?}; shift 2 ;;
             --chunk-bytes) CHUNK_BYTES=${2:?}; shift 2 ;;
+            --io-mode) io_mode=${2:?}; shift 2 ;;
+            --configs) configs=${2:?}; shift 2 ;;
             -h|--help) usage; exit 0 ;;
             *) die "unknown bigdata option '$1'" ;;
+        esac
+    done
+
+    BIGDATA_SELECTED_CONFIGS=()
+    if [[ "$configs" == all ]]; then
+        BIGDATA_SELECTED_CONFIGS=(single_system cgs_system cgs_pool
+                                  cgs_cross_system cgs_cross_pool)
+    else
+        IFS=',' read -r -a BIGDATA_SELECTED_CONFIGS <<< "$configs"
+    fi
+    ((${#BIGDATA_SELECTED_CONFIGS[@]} > 0)) ||
+        die "no big-data configurations selected"
+    for config in "${BIGDATA_SELECTED_CONFIGS[@]}"; do
+        case "$config" in
+            single_system|cgs_system|cgs_pool|cgs_cross_system|cgs_cross_pool)
+                ;;
+            *)
+                die "unknown big-data configuration '$config'"
+                ;;
         esac
     done
 
@@ -1753,7 +1791,7 @@ bigdata_command()
     fi
     validate_positive_integer BUILD_JOBS "$BUILD_JOBS"
     select_bigdata_datasets "$datasets"
-    select_io_modes both
+    select_io_modes "$io_mode"
     [[ -d "$BIGDATA_DATA" ]] ||
         die "big-data input directory not found: $BIGDATA_DATA"
     [[ -f "$BIGDATA_MD5_FILE" ]] ||
@@ -1761,21 +1799,26 @@ bigdata_command()
     EXE=./SWBWA
     mkdir -p "$BIGDATA_RESULT_ROOT"
 
-    if ! run_bigdata_configuration single_system single single system; then
+    if bigdata_configuration_is_selected single_system &&
+        ! run_bigdata_configuration single_system single single system; then
         failures=$((failures + 1))
     fi
-    if ! run_bigdata_configuration cgs_system cgs cgs system; then
+    if bigdata_configuration_is_selected cgs_system &&
+        ! run_bigdata_configuration cgs_system cgs cgs system; then
         failures=$((failures + 1))
     fi
-    if ! run_bigdata_configuration cgs_pool cgs cgs pool; then
+    if bigdata_configuration_is_selected cgs_pool &&
+        ! run_bigdata_configuration cgs_pool cgs cgs pool; then
         failures=$((failures + 1))
     fi
-    if ! run_bigdata_configuration cgs_cross_system cgs_cross \
-                                     cgs_cross system; then
+    if bigdata_configuration_is_selected cgs_cross_system &&
+        ! run_bigdata_configuration cgs_cross_system cgs_cross \
+                                      cgs_cross system; then
         failures=$((failures + 1))
     fi
-    if ! run_bigdata_configuration cgs_cross_pool cgs_cross \
-                                     cgs_cross pool; then
+    if bigdata_configuration_is_selected cgs_cross_pool &&
+        ! run_bigdata_configuration cgs_cross_pool cgs_cross \
+                                      cgs_cross pool; then
         failures=$((failures + 1))
     fi
     write_bigdata_global_summary

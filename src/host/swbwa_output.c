@@ -1,6 +1,7 @@
 #include "swbwa_config.h"
 #include "swbwa_mpi.h"
 #include "swbwa_output.h"
+#include "swbwa_discard_digest.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -25,7 +26,7 @@ typedef struct {
     size_t capacity;
     uint64_t write_calls;
     uint64_t submitted_bytes;
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     uint64_t hash_sum;
     uint64_t hash_xor;
 #endif
@@ -51,7 +52,7 @@ typedef struct {
     int opened;
     int fd;
     int owns_fd;
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     int discard_hash_enabled;
 #endif
     char *name;
@@ -63,7 +64,7 @@ typedef struct {
 
 static swbwa_output_state_t output_state;
 
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
 static int discard_hash_enabled(void)
 {
     const char *value = getenv("SWBWA_DISCARD_HASH");
@@ -80,8 +81,22 @@ static int discard_hash_enabled(void)
     return -1;
 }
 
+static inline uint64_t hash_sam_word(const unsigned char *cursor)
+{
+    const uint64_t multiplier = UINT64_C(0xc6a4a7935bd1e995);
+    uint64_t word;
+
+    memcpy(&word, cursor, sizeof(word));
+    word *= multiplier;
+    word ^= word >> 47;
+    return word * multiplier;
+}
+
 static uint64_t hash_sam_record(const void *data, size_t length)
 {
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+    return swbwa_digest_hash_blob(data, length);
+#else
     static const uint64_t multiplier = UINT64_C(0xc6a4a7935bd1e995);
     static const unsigned int shift = 47;
     const unsigned char *cursor = data;
@@ -89,17 +104,24 @@ static uint64_t hash_sam_record(const void *data, size_t length)
     uint64_t hash = UINT64_C(0x9e3779b97f4a7c15) ^
                     ((uint64_t)length * multiplier);
 
-    while (remaining >= sizeof(uint64_t)) {
-        uint64_t word;
+    /* Independent word mixing can overlap; the record recurrence is unchanged. */
+    while (remaining >= 4 * sizeof(uint64_t)) {
+        uint64_t word0 = hash_sam_word(cursor);
+        uint64_t word1 = hash_sam_word(cursor + 8);
+        uint64_t word2 = hash_sam_word(cursor + 16);
+        uint64_t word3 = hash_sam_word(cursor + 24);
 
-        memcpy(&word, cursor, sizeof(word));
-        word *= multiplier;
-        word ^= word >> shift;
-        word *= multiplier;
-        hash ^= word;
-        hash *= multiplier;
-        cursor += sizeof(word);
-        remaining -= sizeof(word);
+        hash = (hash ^ word0) * multiplier;
+        hash = (hash ^ word1) * multiplier;
+        hash = (hash ^ word2) * multiplier;
+        hash = (hash ^ word3) * multiplier;
+        cursor += 4 * sizeof(uint64_t);
+        remaining -= 4 * sizeof(uint64_t);
+    }
+    while (remaining >= sizeof(uint64_t)) {
+        hash = (hash ^ hash_sam_word(cursor)) * multiplier;
+        cursor += sizeof(uint64_t);
+        remaining -= sizeof(uint64_t);
     }
 
     switch (remaining) {
@@ -121,6 +143,7 @@ static uint64_t hash_sam_record(const void *data, size_t length)
     hash *= multiplier;
     hash ^= hash >> shift;
     return hash;
+#endif
 }
 
 static void print_discard_hash(void)
@@ -295,7 +318,7 @@ static int flush_single_unordered(void)
 
 int swbwa_output_open(const char *path, int debug_enabled)
 {
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     size_t capacity = 0;
 #else
     size_t capacity = (size_t)SWBWA_OUTPUT_BUFFER_BYTES;
@@ -305,7 +328,7 @@ int swbwa_output_open(const char *path, int debug_enabled)
         errno = EALREADY;
         return -1;
     }
-#if !(SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
+#if !(SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
     if (capacity == 0 || capacity > INT_MAX) {
         errno = EINVAL;
         return -1;
@@ -315,19 +338,29 @@ int swbwa_output_open(const char *path, int debug_enabled)
     output_state.fd = -1;
     output_state.capacity = capacity;
     output_state.debug_enabled = debug_enabled != 0;
-#if !(SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
+#if !(SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
     output_state.buffer = malloc(capacity);
     if (output_state.buffer == NULL) return -1;
 #endif
 
-#if SWBWA_USE_MPI
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     (void)path;
     output_state.discard_hash_enabled = discard_hash_enabled();
     if (output_state.discard_hash_enabled < 0) goto fail;
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+    {
+        const uint16_t endian_probe = 1;
+        if (*(const unsigned char *)&endian_probe != 1) {
+            errno = EINVAL;
+            goto fail;
+        }
+    }
+    fprintf(stderr, "[SWBWA discard digest] hash_scope=generated_sam final_sam_copy=0 metadata_bytes=%d\n",
+            SWBWA_DIGEST_RECORD_BYTES);
+#endif
     output_state.name = strdup("(discard)");
     if (output_state.name == NULL) goto fail;
-#else
+#elif SWBWA_USE_MPI
     if (path == NULL || strcmp(path, "-") == 0) {
         errno = EINVAL;
         goto fail;
@@ -382,7 +415,6 @@ int swbwa_output_open(const char *path, int debug_enabled)
     if (mpi_check(MPI_Barrier(MPI_COMM_WORLD), "MPI_Barrier") != 0)
         goto fail_locked_window;
 #endif
-#endif
 #else
     if (path == NULL || strcmp(path, "-") == 0) {
         output_state.fd = STDOUT_FILENO;
@@ -415,6 +447,44 @@ fail:
     return -1;
 }
 
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+int swbwa_output_discard_hash_active(void)
+{
+    if (!output_state.opened) {
+        errno = EINVAL;
+        return -1;
+    }
+    return output_state.discard_hash_enabled;
+}
+
+int swbwa_output_write_digest(const void *record)
+{
+    const unsigned char *p = (const unsigned char *)record;
+    uint64_t length, hash, state, expected;
+
+    if (!output_state.opened || p == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    length = swbwa_digest_load64(p);
+    hash = swbwa_digest_load64(p + 8);
+    state = swbwa_digest_load64(p + 16);
+    expected = output_state.discard_hash_enabled ? SWBWA_DIGEST_HASH_READY : SWBWA_DIGEST_COUNT_READY;
+    if (state != expected) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (length == 0) return 0;
+    ++output_state.write_calls;
+    output_state.submitted_bytes += length;
+    if (output_state.discard_hash_enabled) {
+        output_state.hash_sum += hash;
+        output_state.hash_xor ^= hash;
+    }
+    return 0;
+}
+#endif
+
 int swbwa_output_write(const void *data, size_t length)
 {
     const unsigned char *source = data;
@@ -424,7 +494,7 @@ int swbwa_output_write(const void *data, size_t length)
         return -1;
     }
     if (length == 0) return 0;
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     {
         ++output_state.write_calls;
         output_state.submitted_bytes += (uint64_t)length;
@@ -488,7 +558,7 @@ int swbwa_output_flush(void)
     }
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
     result = flush_single_unordered();
-#elif SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+#elif SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     output_state.used = 0;
     result = 0;
 #else
@@ -506,8 +576,8 @@ static const char *output_debug_mode_name(void)
     return "MPI single_unordered";
 #elif SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SPLIT
     return "MPI split";
-#elif SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
-    return "MPI discard";
+#elif SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+    return SWBWA_USE_MPI ? "MPI discard" : "non-MPI discard";
 #else
     return "non-MPI POSIX";
 #endif
@@ -698,7 +768,7 @@ int swbwa_output_close(void)
     }
 #endif
 
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     print_discard_hash();
 #else
     output_debug_report();

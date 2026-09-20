@@ -52,12 +52,16 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `CPE_ALLOCATOR` | `system`、`pool` | `system` |
 | `HOST_MALLOC_WRAPPER` | `0`、`1` | `1` |
 | `HOST_MALLOC_STATS` | `0`、`1` | `0` |
+| `CPE_KERNEL_OPT` | `0`、`1` | 非 MPI `cgs_cross + pool` 为 `1`，其他为 `0` |
+| `CPE_DISCARD_DIGEST` | `0`、`1` | 非 MPI `cgs_cross + pool` 且 `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0` 时为 `1`，其他为 `0` |
 | `USE_MPI` | `0`、`1` | `1` |
 | `MPI_INPUT_MODE` | `static`、`dynamic` | MPI 构建时为 `dynamic` |
-| `OUTPUT_MODE` | `split`、`single_unordered`、`discard` | `single_unordered` |
+| `OUTPUT_MODE` | `split`、`single_unordered`、`discard` | MPI 为 `single_unordered`，非 MPI 为 `split` |
 | `MPI_EXACT_READ_INDEX` | `0`、`1` | `1` |
 
-`MPI_INPUT_MODE`、`OUTPUT_MODE` 和 `MPI_EXACT_READ_INDEX` 仅在 `USE_MPI=1` 时生效。
+`MPI_INPUT_MODE` 和 `MPI_EXACT_READ_INDEX` 仅在 `USE_MPI=1` 时生效。
+非 MPI 也支持 `OUTPUT_MODE=discard`；非 MPI 的 `split` 保持普通单文件输出，
+`single_unordered` 则必须启用 MPI。
 
 `MPI_EXACT_READ_INDEX=1` 用于正确性检查。程序会在比对前由 rank 0 扫描完整 FASTQ，建立精确的记录前缀索引。
 
@@ -72,10 +76,70 @@ cross 构建仍需 `build.sh` 的两遍流程。
 
 当前 CPE 分配器对已包装的 LDM scratch 使用 40 KiB 总预算，分配失败回退 heap，
 KSW profile 和 mate-dedup 的单次 LDM 上限各为 16 KiB。这不包含完整栈/静态数据用量。
-默认 context + SMEM 会使 24 KiB chain arena 通常回退 heap，性能不能直接套用旧版本结果。
+关闭 `CPE_KERNEL_OPT` 时，context + SMEM 会使独立的 24 KiB chain arena 通常回退 heap。
+开启后，chain arena 复用收集阶段结束后不再使用的 16 KiB SMEM scratch；
+实际容量按 backing allocation 计算，不把 16 KiB 当成 24 KiB 使用。
 `-v 4` 的 pool 诊断输出每批次 LDM 峰值、拒绝次数和结束时未归还字节数。
 
 `OUTPUT_MODE=discard` 是 profiling 模式，不生成 SAM 文件。默认会对提交到输出接口的非空 SAM 数据计算与顺序无关的 sum/XOR 指纹；只有在测量哈希开销时才建议设置 `SWBWA_DISCARD_HASH=0`。
+
+`CPE_DISCARD_DIGEST` 仅在同时满足
+`EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`
+时默认设为 `1`，其他情况默认 `0`。比较纯核心 stage2 性能或验证最终复制路径时，
+显式设置 `CPE_DISCARD_DIGEST=0`：主核在 stage3 对复制后的最终 SAM 缓冲区计算哈希。
+符合条件时的默认值 `CPE_DISCARD_DIGEST=1` 面向整体 discard 吞吐：
+哈希移至 stage2 part5 的 CPE 复制 worker，最终 SAM 复制由逐 read 摘要元数据替代。
+报告时分别列出 part3、part5 和 stage3，不将输出工作迁移当作比对算法加速。
+
+启用路径要求 `EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0`
+以及 `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`。它检查**生成的完整 SAM blob 字节**，仅排除末尾 NUL，
+保留逐 read/mate 的 blob 边界及 `calls/bytes/sum/xor` 语义；
+**不执行也不验证被跳过的最终 SAM 复制**，日志明确标记
+`hash_scope=generated_sam final_sam_copy=0`。正常 SAM 输出模式不变。
+`SWBWA_DISCARD_HASH=0` 同时关闭 CPE 哈希，保留 calls/bytes，但不构成 FULL 正确性证据。
+构建时传 Make 变量 `CPE_DISCARD_DIGEST`，不要在 `EXTRA_CPPFLAGS` 中重复定义；
+修改开关后仍须完整执行两遍构建。
+
+### 单进程 CPE 核心优化
+
+`CPE_KERNEL_OPT=1` 组合启用下列等价实现，默认只针对非 MPI `cgs_cross + pool`：
+
+- SMEM/chain 复用同一段 LDM scratch，不改变 seed 的生命周期和算法顺序。
+- `ksw_extend2()` 的 EH 和 QP 合计不超过 4096 字节时优先放入 LDM；
+  预算不足或请求过大时保留原来的可复用 heap scratch。
+- 五字符 alphabet 的 QP 构建共享 query load，保持原来的行布局。
+- 整数 SIMD 合并 gap 下限截断，利用 predicate/XOR 实现选择。
+- 主核复用 SAM 指针/长度 scratch，消除主核重复写入终止符。
+
+不改变 lane 数量、打分、lazy-F 终止、tie 比较、任务划分，也不提高 40 KiB LDM 总预算。
+用 `CPE_KERNEL_OPT=0` 构建核心对照组；输出 hash 加速和按批次计时独立于此开关。
+
+纯核心示例：单进程六 CG 的 stage2 测量与 FULL 最终复制校验，显式设置 `CPE_DISCARD_DIGEST=0`：
+
+```bash
+./build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 \
+    CPE_KERNEL_OPT=1 OUTPUT_MODE=discard DISCARD_HASH_BYTES=0 CPE_DISCARD_DIGEST=0 CPE_PROFILE=0
+SWBWA_DISCARD_HASH=1 bsub -I -b -q q_share -n 1 -cgsp 64 -mpecg 6 \
+    -share_size 2000 -xmalloc -cross_size 42000 -cache_size 128 -priv_size 16 \
+    ./SWBWA mem -v 4 -t 1 -1 -I 170,80,500,1 -o ignored.sam \
+    ref.fa read1.fq read2.fq
+```
+
+`-1` 将三个 stage 串行执行。比较 stage2 和其内部 part3，不把输入波动或 hash 加速
+算作 CPE 比对加速。正确性检查必须同时匹配 `calls/bytes/sum/xor`，
+并确认 `enabled=1 hash_prefix_bytes=0`。指纹是回归检查，不是无碰撞证明或 SAM MD5。
+
+采用默认 discard 吞吐配置时，用下列命令重新构建，再使用上面的运行命令。
+此配置下 `CPE_KERNEL_OPT` 和 `CPE_DISCARD_DIGEST` 均默认 `1`；FULL 校验覆盖生成的 SAM
+（`hash_scope=generated_sam`），不验证被跳过的最终复制。
+
+```bash
+./build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 \
+    OUTPUT_MODE=discard DISCARD_HASH_BYTES=0 CPE_PROFILE=0
+```
+
+本机可运行 `bash tests/run_host_checks.sh` 和 `bash tests/run_cpe_kernel_checks.sh`。
+后者使用编译器向量适配层和 sanitizer 比较实际 CPE 函数，不替代神威端完整输出验证。
 
 示例：
 

@@ -47,11 +47,13 @@
 #include "ksort.h"
 #include "utils.h"
 #include "swbwa_config.h"
+#include "swbwa_discard_digest.h"
 #include "swbwa_cpe.h"
 #include "swbwa_cpe_layout.h"
 #include "swbwa_mpi.h"
 #include "swbwa_runtime.h"
 #include "swbwa_cpe_profile.h"
+#include "swbwa_host_prep.h"
 
 #if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
@@ -1913,6 +1915,10 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
     batch_number++;
     if (para == NULL) {
+#if SWBWA_HOST_PREP_REUSE || SWBWA_HOST_PREP_CPE_TERMINATORS
+        fprintf(stderr, "[host-prep] reuse=%d cpe_terminators=%d\n",
+                SWBWA_HOST_PREP_REUSE, SWBWA_HOST_PREP_CPE_TERMINATORS);
+#endif
         tmp_block_buffer = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*tmp_block_buffer), "temporary FASTQ block");
         tmp_block_buffer2 = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*tmp_block_buffer2), "temporary paired FASTQ block");
         for(int i = 0; i < SWBWA_PIPELINE_BUFFER_COUNT; i++) {
@@ -1924,8 +1930,16 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
     para->work_item_count = nn;
     para->worker_data = (void*)&w;
+#if SWBWA_HOST_PREP_REUSE
+    /* Scratch is consumed only by this synchronous worker, never stage 3. */
+    if (para->sam_records == NULL)
+        para->sam_records = checked_malloc_array(n, sizeof(*para->sam_records), "CPE SAM pointers");
+    if (para->sam_lengths == NULL)
+        para->sam_lengths = checked_malloc_array(n, sizeof(*para->sam_lengths), "CPE SAM lengths");
+#else
     para->sam_records = checked_malloc_array(n, sizeof(*para->sam_records), "CPE SAM pointers");
     para->sam_lengths = checked_malloc_array(n, sizeof(*para->sam_lengths), "CPE SAM lengths");
+#endif
     para->pes = pes0;
     para->profile_counters = swbwa_cpe_profile_counters();
     para->matesw_profile = swbwa_cpe_matesw_profile();
@@ -1936,7 +1950,9 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     para->formatted_buffer[0] = tmp_block_buffer;
     para->formatted_buffer[1] = tmp_block_buffer2;
     para->formatted_buffer_size = SWBWA_CPE_FORMAT_BUFFER_BYTES;
+#if !SWBWA_HOST_PREP_REUSE
     for(int i = 0; i < n; i++) para->sam_lengths[i] = 0;
+#endif
 
 #if SWBWA_USE_CROSS_SEGMENT
     /* Sample shared buffer placement; NULL R2 is normal for SE input. */
@@ -1985,6 +2001,13 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     }
     free(block_buffer);
     free(block_buffer2);
+#if SWBWA_HOST_PREP_REUSE
+    /* Formatting does not read these arrays; clear only the active prefix. */
+    if (para->work_item_count < 0 || para->work_item_count > nn)
+        err_fatal(__func__, "formatted read count exceeds the per-batch capacity");
+    n = (opt->flag&MEM_F_PE) ? para->work_item_count << 1 : para->work_item_count;
+    memset(para->sam_lengths, 0, (size_t)n * sizeof(*para->sam_lengths));
+#endif
     t_work1_2 += GetTime() - tt0;
 
     tt0 = GetTime();
@@ -2004,11 +2027,30 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
     size_t now_f_block_pos = 0;
     char* f_sam_block = sam_blocks_static[(batch_number - 1) % SWBWA_PIPELINE_BUFFER_COUNT];
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+    int discard_hash = swbwa_output_discard_hash_active();
+    if (discard_hash < 0)
+        err_fatal(__func__, "discard output is not initialized");
+    if (n < 0 || (size_t)n > SWBWA_CPE_FORMAT_BUFFER_BYTES / SWBWA_DIGEST_RECORD_BYTES)
+        err_fatal(__func__, "discard digests exceed the per-batch buffer");
+#endif
     for(int i = 0; i < n; i++) {
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+        if (para->sam_lengths[i] < 0)
+            err_fatal(__func__, "negative SAM record length");
+#endif
         if (now_f_block_pos + para->sam_lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES > SWBWA_CPE_FORMAT_BUFFER_BYTES)
             err_fatal(__func__, "SAM output exceeds the per-batch buffer");
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+        w.seqs[i].sam = f_sam_block + (size_t)i * SWBWA_DIGEST_RECORD_BYTES;
+        swbwa_digest_prepare(w.seqs[i].sam, (uint64_t)para->sam_lengths[i], discard_hash);
+#else
         w.seqs[i].sam = f_sam_block + now_f_block_pos;
+#if !SWBWA_HOST_PREP_CPE_TERMINATORS
         w.seqs[i].sam[(para->sam_lengths[i])] = '\0';
+#endif
+        /* worker12_fast terminates every SE/PE record before batch publication. */
+#endif
         now_f_block_pos += para->sam_lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES;
     }
     t_work1_4 += GetTime() - tt0;
@@ -2061,8 +2103,10 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     *seqs2 = w.seqs;
 
     tt0 = GetTime();
+#if !SWBWA_HOST_PREP_REUSE
     checked_free_array(para->sam_lengths);
     checked_free_array(para->sam_records);
+#endif
     worker_destroy(&w);
     t_work1_6 += GetTime() - tt0;
 

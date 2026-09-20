@@ -15,12 +15,14 @@ AR  = ar
 # KSW_I16_MODE:        scalar_8 | int32_8 (default: int32_8)
 # MATESW_DUAL_FORWARD: 0 | 1 (150 bp same-PE forward KSW 16+16 path)
 # USE_MPI:       0 | 1
+# CPE_KERNEL_OPT: 0 | 1 (defaults on only for non-MPI cgs_cross + pool)
+# OUTPUT_MODE:   split | single_unordered (MPI only) | discard
+# DISCARD_HASH_BYTES: 0 hashes each full SAM blob; N is profiling only
+# CPE_DISCARD_DIGEST: 0 | 1 (defaults on for FULL discard on non-MPI cross+pool)
 # MPI-only options:
 #   MPI_INPUT_MODE: static | dynamic
-#   OUTPUT_MODE: split | single_unordered | discard
 #   MPI_EXACT_READ_INDEX: 0 | 1 (exact n_processed for correctness checks)
 #   MPI_TAIL_PERCENT: 0..100 (0 disables dynamic tail refinement entirely)
-#   DISCARD_HASH_BYTES: 0 | N (0 hashes the whole blob; N hashes at most N bytes)
 EXEC_MODE           ?= single
 CPE_ALLOCATOR       ?= system
 HOST_MALLOC_WRAPPER ?= 1
@@ -33,13 +35,17 @@ MATESW_DUAL_FORWARD ?= 1
 LWPF3_DIR            ?= /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/lwpf3
 
 USE_MPI              ?= 1
+CPE_KERNEL_OPT       ?= $(if $(filter cgs_cross:pool:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI)),1,0)
 ifeq ($(USE_MPI),1)
 MPI_INPUT_MODE       ?= dynamic
 OUTPUT_MODE          ?= single_unordered
 MPI_EXACT_READ_INDEX ?= 1
 MPI_TAIL_PERCENT     ?= 10
-DISCARD_HASH_BYTES   ?= 0
+else
+OUTPUT_MODE          ?= split
 endif
+DISCARD_HASH_BYTES   ?= 0
+CPE_DISCARD_DIGEST   ?= $(if $(filter cgs_cross:pool:0:discard:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI):$(OUTPUT_MODE):$(DISCARD_HASH_BYTES)),1,0)
 
 ifeq ($(USE_MPI),1)
 MPI_LINK_VARIANT := multi_static
@@ -97,6 +103,18 @@ endif
 ifeq ($(filter $(USE_MPI),$(VALID_BOOLEAN_VALUES)),)
 $(error USE_MPI must be 0 or 1)
 endif
+ifneq ($(words $(CPE_KERNEL_OPT)),1)
+$(error CPE_KERNEL_OPT must be 0 or 1)
+endif
+ifeq ($(filter $(VALID_BOOLEAN_VALUES),$(CPE_KERNEL_OPT)),)
+$(error CPE_KERNEL_OPT must be 0 or 1)
+endif
+ifneq ($(words $(CPE_DISCARD_DIGEST)),1)
+$(error CPE_DISCARD_DIGEST must be 0 or 1)
+endif
+ifeq ($(filter $(VALID_BOOLEAN_VALUES),$(CPE_DISCARD_DIGEST)),)
+$(error CPE_DISCARD_DIGEST must be 0 or 1)
+endif
 ifeq ($(USE_MPI),1)
 ifeq ($(filter $(MPI_EXACT_READ_INDEX),$(VALID_BOOLEAN_VALUES)),)
 $(error MPI_EXACT_READ_INDEX must be 0 or 1)
@@ -104,14 +122,25 @@ endif
 ifeq ($(shell printf '%s\n' "$(MPI_TAIL_PERCENT)" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)$$' && test "$(MPI_TAIL_PERCENT)" -le 100 2>/dev/null && echo 1),)
 $(error MPI_TAIL_PERCENT must be a decimal integer in 0..100, without leading zeros)
 endif
-ifeq ($(shell printf '%s\n' "$(DISCARD_HASH_BYTES)" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)$$' && test "$(DISCARD_HASH_BYTES)" -le 2147483647 2>/dev/null && echo 1),)
-$(error DISCARD_HASH_BYTES must be a decimal integer in 0..2147483647, without leading zeros)
-endif
 ifeq ($(filter $(MPI_INPUT_MODE),$(VALID_MPI_INPUT_MODES)),)
 $(error MPI_INPUT_MODE must be one of: $(VALID_MPI_INPUT_MODES))
 endif
+endif
+ifeq ($(shell printf '%s\n' "$(DISCARD_HASH_BYTES)" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)$$' && test "$(DISCARD_HASH_BYTES)" -le 2147483647 2>/dev/null && echo 1),)
+$(error DISCARD_HASH_BYTES must be a decimal integer in 0..2147483647, without leading zeros)
+endif
 ifeq ($(filter $(OUTPUT_MODE),$(VALID_OUTPUT_MODES)),)
 $(error OUTPUT_MODE must be one of: $(VALID_OUTPUT_MODES))
+endif
+ifeq ($(USE_MPI):$(OUTPUT_MODE),0:single_unordered)
+$(error OUTPUT_MODE=single_unordered requires USE_MPI=1)
+endif
+ifeq ($(CPE_DISCARD_DIGEST):$(OUTPUT_MODE),1:discard)
+ifneq ($(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI),cgs_cross:pool:0)
+$(error CPE_DISCARD_DIGEST=1 requires non-MPI cgs_cross+pool)
+endif
+ifneq ($(DISCARD_HASH_BYTES),0)
+$(error CPE_DISCARD_DIGEST=1 requires DISCARD_HASH_BYTES=0)
 endif
 endif
 
@@ -144,15 +173,17 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_KSW_U8_MODE=$(KSW_U8_MODE_VALUE_$(KSW_U8_MODE)) \
 	-DSWBWA_KSW_I16_MODE=$(KSW_I16_MODE_VALUE_$(KSW_I16_MODE)) \
 	-DSWBWA_ENABLE_MATESW_DUAL_FORWARD=$(MATESW_DUAL_FORWARD) \
-	-DSWBWA_USE_MPI=$(USE_MPI)
+	-DSWBWA_USE_MPI=$(USE_MPI) \
+	-DSWBWA_ENABLE_CPE_KERNEL_OPT=$(CPE_KERNEL_OPT) \
+	-DSWBWA_CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST) \
+	-DSWBWA_DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES) \
+	-DSWBWA_OUTPUT_MODE=$(OUTPUT_MODE_VALUE_$(OUTPUT_MODE))
 
 ifeq ($(USE_MPI),1)
 SWBWA_CPPFLAGS += \
 	-DSWBWA_MPI_INPUT_MODE=$(MPI_INPUT_MODE_VALUE_$(MPI_INPUT_MODE)) \
 	-DSWBWA_MPI_EXACT_READ_INDEX=$(MPI_EXACT_READ_INDEX) \
-	-DSWBWA_MPI_DEFAULT_TAIL_PERCENT=$(MPI_TAIL_PERCENT) \
-	-DSWBWA_DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES) \
-	-DSWBWA_OUTPUT_MODE=$(OUTPUT_MODE_VALUE_$(OUTPUT_MODE))
+	-DSWBWA_MPI_DEFAULT_TAIL_PERCENT=$(MPI_TAIL_PERCENT)
 endif
 
 # Compiler and linker options
@@ -223,12 +254,14 @@ ifeq ($(CPE_PROFILE),1)
 	@echo "LWPF3_DIR=$(LWPF3_DIR)"
 endif
 	@echo "USE_MPI=$(USE_MPI)"
+	@echo "CPE_KERNEL_OPT=$(CPE_KERNEL_OPT)"
+	@echo "CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST)"
+	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
+	@echo "DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES)"
 ifeq ($(USE_MPI),1)
 	@echo "MPI_INPUT_MODE=$(MPI_INPUT_MODE)"
-	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
 	@echo "MPI_EXACT_READ_INDEX=$(MPI_EXACT_READ_INDEX)"
 	@echo "MPI_TAIL_PERCENT=$(MPI_TAIL_PERCENT)"
-	@echo "DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES)"
 endif
 	@echo "MPI_LINK_VARIANT=$(MPI_LINK_VARIANT)"
 

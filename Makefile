@@ -16,6 +16,7 @@ AR  = ar
 # MATESW_DUAL_FORWARD: 0 | 1 (150 bp same-PE forward KSW 16+16 path)
 # USE_MPI:       0 | 1
 # CPE_KERNEL_OPT: 0 | 1 (defaults on only for non-MPI cgs_cross + pool)
+# CPE_LDM_MODE:   0 (off) | 1 (tiered malloc pool) | 2 (manual, default)
 # OUTPUT_MODE:   split | single_unordered (MPI only) | discard
 # DISCARD_HASH_BYTES: 0 hashes each full SAM blob; N is profiling only
 # CPE_DISCARD_DIGEST: 0 | 1 (defaults on for FULL discard on non-MPI cross+pool)
@@ -36,6 +37,7 @@ LWPF3_DIR            ?= /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/l
 
 USE_MPI              ?= 1
 CPE_KERNEL_OPT       ?= $(if $(filter cgs_cross:pool:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI)),1,0)
+CPE_LDM_MODE         ?= 2
 ifeq ($(USE_MPI),1)
 MPI_INPUT_MODE       ?= dynamic
 OUTPUT_MODE          ?= single_unordered
@@ -60,6 +62,21 @@ VALID_KSW_U8_MODES    := int32_16 float16_16 float16_32
 VALID_KSW_I16_MODES   := scalar_8 int32_8
 VALID_MPI_INPUT_MODES := static dynamic
 VALID_OUTPUT_MODES   := split single_unordered discard
+
+# Fail on retired options instead of silently building an unintended ablation.
+$(foreach option,CPE_LDM_ALLOC CPE_MANUAL_LDM CPE_LDM_BYTES LDM_SCRATCH_BUDGET,\
+  $(if $(filter undefined,$(origin $(option))),,$(error $(option) is retired; use CPE_LDM_MODE=0, 1 or 2)))
+ifneq ($(words $(CPE_LDM_MODE)),1)
+$(error CPE_LDM_MODE must be 0, 1 or 2)
+endif
+ifeq ($(filter 0 1 2,$(CPE_LDM_MODE)),)
+$(error CPE_LDM_MODE must be 0, 1 or 2)
+endif
+ifeq ($(CPE_LDM_MODE),1)
+ifneq ($(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI),cgs_cross:pool:0)
+$(error CPE_LDM_MODE=1 requires non-MPI cgs_cross+pool)
+endif
+endif
 
 ifeq ($(filter $(EXEC_MODE),$(VALID_EXEC_MODES)),)
 $(error EXEC_MODE must be one of: $(VALID_EXEC_MODES))
@@ -175,6 +192,7 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_ENABLE_MATESW_DUAL_FORWARD=$(MATESW_DUAL_FORWARD) \
 	-DSWBWA_USE_MPI=$(USE_MPI) \
 	-DSWBWA_ENABLE_CPE_KERNEL_OPT=$(CPE_KERNEL_OPT) \
+	-DSWBWA_CPE_LDM_MODE=$(CPE_LDM_MODE) \
 	-DSWBWA_CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST) \
 	-DSWBWA_DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES) \
 	-DSWBWA_OUTPUT_MODE=$(OUTPUT_MODE_VALUE_$(OUTPUT_MODE))
@@ -255,6 +273,7 @@ ifeq ($(CPE_PROFILE),1)
 endif
 	@echo "USE_MPI=$(USE_MPI)"
 	@echo "CPE_KERNEL_OPT=$(CPE_KERNEL_OPT)"
+	@echo "CPE_LDM_MODE=$(CPE_LDM_MODE)"
 	@echo "CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST)"
 	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
 	@echo "DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES)"

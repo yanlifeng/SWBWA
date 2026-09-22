@@ -163,6 +163,8 @@
 #endif
 #endif
 
+#include "swbwa_ldm_config.h"
+
 #define SWBWA_KSW_U8_INT32_16   1
 #define SWBWA_KSW_U8_FLOAT16_16 2
 #define SWBWA_KSW_U8_FLOAT16_32 3
@@ -268,7 +270,8 @@ enum {
     SWBWA_CPE_ERR_FASTQ_PAIR_SHORT,
     SWBWA_CPE_ERR_ASSERT,
     SWBWA_CPE_ERR_FETCH_SEQ,
-    SWBWA_CPE_ERR_LDM_EXHAUSTED
+    SWBWA_CPE_ERR_LDM_EXHAUSTED,
+    SWBWA_CPE_ERR_LDM_ALLOC_STATE
 };
 
 /* code, cpe id, then three call-site specific values. */

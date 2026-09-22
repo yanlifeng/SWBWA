@@ -3,6 +3,7 @@
 
 #include "swbwa_config.h"
 #include "swbwa_matesw_profile.h"
+#include "swbwa_ldm_alloc.h"
 
 #define SWBWA_CPE_CSR_COPY_BYTES (2UL << 20)
 #define SWBWA_CPE_PRIVATE_BASE   0x400000000000UL
@@ -47,6 +48,9 @@ typedef struct {
     long ldm_outstanding[SWBWA_CPE_COUNT];
     long ldm_peak[SWBWA_CPE_COUNT];
     long ldm_refusals[SWBWA_CPE_COUNT];
+#if SWBWA_CPE_LDM_ALLOC
+    swbwa_ldm_alloc_stats_t ldm_alloc_stats[SWBWA_CPE_COUNT];
+#endif
 } swbwa_cpe_task_t;
 
 #endif /* SWBWA_CPE_H */

@@ -93,6 +93,9 @@ static void swbwa_cpe_publish_pool_usage(swbwa_cpe_task_t *task)
     task->ldm_outstanding[_MYID] = swbwa_ldm_outstanding();
     task->ldm_peak[_MYID] = swbwa_ldm_peak();
     task->ldm_refusals[_MYID] = swbwa_ldm_refusals();
+#if SWBWA_CPE_LDM_ALLOC
+    swbwa_ldm_allocator_stats(&task->ldm_alloc_stats[_MYID]);
+#endif
 }
 
 static inline void swbwa_finish_standard_task(swbwa_cpe_task_t *task)
@@ -424,6 +427,9 @@ void worker12_s_pre_fast_cross(void) {
 void worker12_s_fast_cross(void) {
     swbwa_enter_cross_runtime();
     swbwa_cpe_task_t *para = swbwa_task;
+#if SWBWA_CPE_LDM_ALLOC >= 3
+    swbwa_ldm_allocator_resume();
+#endif
     swbwa_cpe_profile_enter(para->profile_counters);
     swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_SAM_COPY);
 #if SWBWA_ENABLE_DYNAMIC_SCHEDULING
@@ -443,6 +449,9 @@ void worker12_s_fast_cross(void) {
 
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_SAM_COPY);
     swbwa_cpe_profile_exit(para->profile_counters);
+#if SWBWA_CPE_LDM_ALLOC >= 3
+    swbwa_ldm_allocator_end();
+#endif
     swbwa_cpe_publish_pool_usage(para);
     swbwa_finish_cross_task();
 }

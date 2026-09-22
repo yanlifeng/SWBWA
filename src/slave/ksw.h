@@ -22,6 +22,8 @@ typedef struct {
 extern "C" {
 #endif
 
+	void ksw_extend2_scratch_reset(void);
+
 	/**
 	 * Aligning two sequences
 	 *

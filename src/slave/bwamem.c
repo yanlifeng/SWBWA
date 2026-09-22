@@ -1575,6 +1575,9 @@ void *worker12_context_init(void *data)
 {
 	worker_t *w = (worker_t*)data;
 	swbwa_ldm_begin_batch();
+#if SWBWA_CPE_LDM_ALLOC >= 3
+	swbwa_ldm_allocator_begin();
+#endif
 	worker12_context_t *context = swbwa_ldm_alloc(sizeof(*context), 4);
 	int in_ldm = context != NULL;
 
@@ -1584,6 +1587,9 @@ void *worker12_context_init(void *data)
 	context->bwt = *w->bwt;
 	context->smem_aux = smem_aux_init(1);
 	assert(context->smem_aux != NULL);
+#if SWBWA_CPE_LDM_ALLOC && SWBWA_CPE_LDM_ALLOC < 3
+	swbwa_ldm_allocator_begin();
+#endif
 	return context;
 }
 
@@ -1592,9 +1598,16 @@ void worker12_context_destroy(void *opaque_context)
 	worker12_context_t *context = (worker12_context_t*)opaque_context;
 
 	if (context == NULL) return;
+#if SWBWA_CPE_LDM_ALLOC && SWBWA_CPE_LDM_ALLOC < 3
+	swbwa_ldm_allocator_end();
+#endif
 	smem_aux_destroy(context->smem_aux);
 	if (context->in_ldm) swbwa_ldm_release(context, sizeof(*context));
 	else free(context);
+#if SWBWA_CPE_LDM_ALLOC >= 3
+	ksw_extend2_scratch_reset();
+	swbwa_ldm_allocator_suspend();
+#endif
 }
 
 

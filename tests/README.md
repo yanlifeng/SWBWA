@@ -34,3 +34,19 @@ digest 时检查的是生成的 SAM 字节，不包含被跳过的最终 SAM 拷
 这些测试使用本机编译器向量适配层及 SDK stub，不执行神威指令；FP16
 组合只检查编译，不能据此宣称 FP16 数值正确。运行前需要 Python 3 和
 支持 ASan/UBSan 的 C 编译器，测试临时产物由各测试自行清理。
+
+## LDM mode checks
+
+`test_ldm_modes.py` checks the three production `CPE_LDM_MODE` presets,
+SDK allocation gating and rejection of retired/incompatible options.
+`test_ldm_allocator.py` retains isolated historical-policy regression coverage
+and actual global-DP score/CIGAR checks under sanitizers. Both are included in
+`run_cpe_kernel_checks.sh`. These native checks do not replace two-pass Sunway
+builds and complete output validation.
+
+`test_ldm_persistence.c` is a separate Sunway-only MPE/CPE probe for allocation,
+data/TLS persistence and stack interference across ordinary CGS spawn/join
+calls. It is not part of the native test runner or SWBWA build, and does not
+validate the custom cross-segment runtime's PC/SP handling. Keep it as a
+hardware diagnostic, not as evidence that arbitrary cross-runtime lifetimes
+or large LDM arenas are safe.

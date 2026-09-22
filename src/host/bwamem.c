@@ -1347,6 +1347,8 @@ static const char *swbwa_cpe_error_text(long code)
         return "bns_fetch_seq mismatch (beg, end, len)";
     case SWBWA_CPE_ERR_LDM_EXHAUSTED:
         return "LDM allocation failed (bytes, outstanding, site)";
+    case SWBWA_CPE_ERR_LDM_ALLOC_STATE:
+        return "LDM allocator ownership/lifetime violation (state, detail, site)";
     default:
         return "unknown CPE failure";
     }
@@ -2070,6 +2072,12 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         long peak = 0;
         int peak_cpe = 0;
 
+        if (batch_number == 1)
+            fprintf(stderr, "[CPE LDM config] mode=%d manual=%d auto=%d payload=%d budget=%d\n",
+                    SWBWA_CPE_LDM_MODE,
+                    SWBWA_CPE_MANUAL_LDM, SWBWA_CPE_LDM_ALLOC,
+                    SWBWA_CPE_LDM_BYTES, SWBWA_LDM_SCRATCH_BUDGET_BYTES);
+
         for (int i = 0; i < SWBWA_CPE_COUNT; i++) {
             if (para->pool_high_water[i] > peak) {
                 peak = para->pool_high_water[i];
@@ -2094,6 +2102,41 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
                 100.0 * (double)peak / (double)SWBWA_CPE_POOL_BYTES_PER_CPE,
                 (long long)SWBWA_CPE_POOL_BYTES_PER_CPE, peak_cpe,
                 ldm_left, ldm_cpe, ldm_peak, ldm_refusals);
+#if SWBWA_CPE_LDM_ALLOC
+        {
+            static const char *names[] = {"other", "chain", "reference", "global_dp", "reg2aln",
+                                          "query_dp", "extend_dp", "smem", "chain_seed", "context", "dedup_sort"};
+            unsigned long peak_auto = 0, misses = 0, spills = 0, arenas = 0;
+            unsigned long carried_max = 0, carried_sum = 0;
+            unsigned long reserved = 0;
+            for (int j = 0; j < SWBWA_LDM_SITE_COUNT; ++j) {
+                swbwa_ldm_site_stats_t sum = {0};
+                for (int i = 0; i < SWBWA_CPE_COUNT; ++i) {
+                    const swbwa_ldm_site_stats_t *s = &para->ldm_alloc_stats[i].site[j];
+                    sum.requests += s->requests; sum.bytes += s->bytes;
+                    sum.small += s->small; sum.placed += s->placed;
+                }
+                fprintf(stderr, "[CPE LDM alloc] batch=%lu site=%s requests=%lu bytes=%lu small=%lu placed=%lu\n",
+                        batch_number, names[j], sum.requests, sum.bytes, sum.small, sum.placed);
+            }
+            for (int i = 0; i < SWBWA_CPE_COUNT; ++i) {
+                const swbwa_ldm_alloc_stats_t *s = &para->ldm_alloc_stats[i];
+                if (s->peak > peak_auto) peak_auto = s->peak;
+                misses += s->misses; spills += s->spills;
+                arenas += s->arena_bytes != 0;
+                carried_sum += s->carried_bytes;
+                reserved += s->reserved;
+                if (s->carried_bytes > carried_max) carried_max = s->carried_bytes;
+            }
+            fprintf(stderr, "[CPE LDM alloc] batch=%lu mode=%d capacity=%d peak=%lu misses=%lu spills=%lu arenas=%lu\n",
+                    batch_number, SWBWA_CPE_LDM_ALLOC, SWBWA_CPE_LDM_BYTES,
+                    peak_auto, misses, spills, arenas);
+            fprintf(stderr, "[CPE LDM lifetime] batch=%lu carried_sum=%lu carried_max=%lu final_held=%ld\n",
+                    batch_number, carried_sum, carried_max, ldm_left);
+            fprintf(stderr, "[CPE LDM policy] batch=%lu reserve_rejections=%lu\n",
+                    batch_number, reserved);
+        }
+#endif
     }
 #endif
 

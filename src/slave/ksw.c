@@ -170,7 +170,16 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 	/* LDM occupancy depends on the work in flight, so a refusal here is
 	 * normal and must degrade to the heap rather than abort. */
 	in_ldm = q != NULL;
-	if (q == NULL) q = (kswq_t*)malloc(allocation_bytes);
+	if (q == NULL) {
+#if SWBWA_CPE_LDM_ALLOC == 4
+		/* Public/cached query profiles may outlive this worker batch.
+		 * Only the existing audited temporary-query path may use its arena. */
+		if (!prefer_ldm)
+			q = (kswq_t*)wrap_malloc(allocation_bytes, __FILE__, __LINE__, __func__);
+		else
+#endif
+			q = (kswq_t*)malloc(allocation_bytes);
+	}
 	assert(q != NULL);
 	q->qp = (__m128i*)(((size_t)q + sizeof(kswq_t) + 63) >> 6 << 6); // align memory
 	q->H0 = q->qp + slen * m;
@@ -1175,6 +1184,13 @@ typedef struct {
 } swbwa_extend2_scratch_t;
 
 static __thread swbwa_extend2_scratch_t swbwa_extend2_scratch;
+
+void ksw_extend2_scratch_reset(void)
+{
+	free(swbwa_extend2_scratch.eh);
+	free(swbwa_extend2_scratch.qp);
+	memset(&swbwa_extend2_scratch, 0, sizeof(swbwa_extend2_scratch));
+}
 
 static void swbwa_extend2_scratch_reserve(int qlen, int m)
 {

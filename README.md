@@ -53,6 +53,7 @@ The supported build variables are:
 | `HOST_MALLOC_WRAPPER` | `0`, `1` | `1` |
 | `HOST_MALLOC_STATS` | `0`, `1` | `0` |
 | `CPE_KERNEL_OPT` | `0`, `1` | `1` for non-MPI `cgs_cross + pool`; `0` otherwise |
+| `CPE_LDM_MODE` | `0` off, `1` tiered malloc pool, `2` manual | `2`; mode 1 requires non-MPI `cgs_cross + pool` |
 | `CPE_DISCARD_DIGEST` | `0`, `1` | `1` for non-MPI `cgs_cross + pool` with `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`; `0` otherwise |
 | `USE_MPI` | `0`, `1` | `1` |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
@@ -60,6 +61,22 @@ The supported build variables are:
 | `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
 
 `MPI_INPUT_MODE` and `MPI_EXACT_READ_INDEX` are only effective when `USE_MPI=1`. `OUTPUT_MODE=discard` is also supported without MPI; non-MPI `split` retains the ordinary single-file writer. `single_unordered` requires MPI.
+
+`CPE_LDM_MODE` controls explicit private-object placement, not runtime cache,
+stack, SIMD or algorithm choices. Mode 0 disables both automatic and manual
+LDM allocation. Mode 1 disables manual placement and routes wrapped allocation
+through the existing 32 KiB lifetime/access-tier pool, with cross-segment heap
+fallback. SAM and public/cached query profiles stay on the heap. Mode 2 disables
+the new pool and retains the validated manual workspace/phase-reuse paths.
+Pool metadata counts against the shared 40 KiB budget. The old Makefile options
+`CPE_LDM_ALLOC`, `CPE_MANUAL_LDM`, `CPE_LDM_BYTES` and `LDM_SCRATCH_BUDGET`
+now fail explicitly instead of silently mixing policies.
+See [LDM configuration](docs/LDM_ALLOCATOR.md) for ownership and safety limits.
+
+```bash
+# Select 0/1/2; cross mode always requires the complete two-pass build.
+bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 CPE_LDM_MODE=2
+```
 
 `MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the complete FASTQ once before alignment to build exact record prefixes.
 

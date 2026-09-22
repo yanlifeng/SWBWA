@@ -83,12 +83,6 @@ static long ldm_refusals[SWBWA_CPE_COUNT];
  * cap the tracked scratch. This is a conservative budget, not a measurement
  * of total LDM usage: stack, static data and legacy raw allocations are extra.
  */
-#ifndef SWBWA_LDM_SCRATCH_BUDGET_BYTES
-#define SWBWA_LDM_SCRATCH_BUDGET_BYTES (40 << 10)
-#endif
-#if SWBWA_LDM_SCRATCH_BUDGET_BYTES < 0
-#error "SWBWA_LDM_SCRATCH_BUDGET_BYTES must be non-negative"
-#endif
 
 /*
  * Returns NULL when the request does not fit the budget or LDM refuses it;
@@ -100,7 +94,17 @@ void *swbwa_ldm_alloc(unsigned long bytes, int site)
 {
     void *p;
 
+#if SWBWA_CPE_LDM_MODE == SWBWA_CPE_LDM_OFF
+    (void)bytes;
     (void)site;
+    return NULL;
+#elif !SWBWA_CPE_MANUAL_LDM
+    /* Ablation: disable explicit scratch placement, not the new arena or
+     * SIMD/algorithm changes. All old callers already have heap fallbacks. */
+    if (site != SWBWA_LDM_AUTO_ARENA_SITE) return NULL;
+#else
+    (void)site;
+#endif
     if (bytes > (unsigned long)SWBWA_LDM_SCRATCH_BUDGET_BYTES ||
         ldm_outstanding_bytes[_MYID] >
             SWBWA_LDM_SCRATCH_BUDGET_BYTES - (long)bytes) {

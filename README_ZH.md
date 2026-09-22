@@ -53,6 +53,7 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `HOST_MALLOC_WRAPPER` | `0`、`1` | `1` |
 | `HOST_MALLOC_STATS` | `0`、`1` | `0` |
 | `CPE_KERNEL_OPT` | `0`、`1` | 非 MPI `cgs_cross + pool` 为 `1`，其他为 `0` |
+| `CPE_LDM_MODE` | `0` 全关、`1` 分级 malloc 池、`2` 手工优化 | `2`；模式1仅支持非 MPI `cgs_cross + pool` |
 | `CPE_DISCARD_DIGEST` | `0`、`1` | 非 MPI `cgs_cross + pool` 且 `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0` 时为 `1`，其他为 `0` |
 | `USE_MPI` | `0`、`1` | `1` |
 | `MPI_INPUT_MODE` | `static`、`dynamic` | MPI 构建时为 `dynamic` |
@@ -62,6 +63,19 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 `MPI_INPUT_MODE` 和 `MPI_EXACT_READ_INDEX` 仅在 `USE_MPI=1` 时生效。
 非 MPI 也支持 `OUTPUT_MODE=discard`；非 MPI 的 `split` 保持普通单文件输出，
 `single_unordered` 则必须启用 MPI。
+
+`CPE_LDM_MODE` 只控制显式私有对象放置，不改变运行时 cache、栈、SIMD 或算法。
+模式0关闭新池和历史手工 LDM 申请；模式1关闭旧手工放置，使用每 CPE 32 KiB
+分级池接管 malloc/calloc/realloc/free，不适合或放不下的请求回退原交叉段 pool；
+模式2关闭新池，保留已验证的手工工作区/阶段复用优化。模式1的 SAM 和公共缓存
+query 仍走 heap，不是无条件将所有 malloc 放入 LDM。池元数据计入统一40 KiB预算。
+旧的 `CPE_LDM_ALLOC`、`CPE_MANUAL_LDM`、`CPE_LDM_BYTES`、`LDM_SCRATCH_BUDGET`
+不再是 Makefile 参数，使用时会明确报错。详细约束见 [LDM 说明](docs/LDM_ALLOCATOR.md)。
+
+```bash
+# 将 CPE_LDM_MODE 换成 0/1/2；cgs_cross 必须完整两遍编译。
+bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 CPE_LDM_MODE=2
+```
 
 `MPI_EXACT_READ_INDEX=1` 用于正确性检查。程序会在比对前由 rank 0 扫描完整 FASTQ，建立精确的记录前缀索引。
 

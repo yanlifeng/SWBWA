@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONDONTWRITEBYTECODE=1
 for test in \
+    test_ldm_modes.py \
+    test_ldm_allocator.py \
     test_ksw_fused_gap.py \
     test_ksw_fused_gap_native.py \
     test_ksw_xor_select_native.py \

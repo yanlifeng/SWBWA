@@ -14,15 +14,12 @@
 
 #include "malloc_wrap.h"
 
-
-
 /***********************************************************/
 extern unsigned long swbwa_cpe_text_start;
 extern unsigned long swbwa_cpe_text_size;
 extern unsigned long swbwa_cpe_data_start;
 extern unsigned long swbwa_cpe_data_size;
 /***********************************************************/
-
 
 __thread swbwa_cpe_task_t *swbwa_task;
 
@@ -41,11 +38,44 @@ static inline void swbwa_enter_cross_runtime(void)
     }
 }
 
-static inline void swbwa_finish_cross_task(void)
+/* The CPE compiler uses address bit 45 for direct __uncached accesses.
+ * MPE-supplied pointers do not inherit that alias; volatile is not enough. */
+static inline void *swbwa_cross_uncached(const void *address)
 {
-    swbwa_task->completion_flags[_MYID] = 1;
-    flush_slave_cache();
-    while (1) { }
+    return (void *)((unsigned long)address | (1UL << 45));
+}
+
+/* The hardware PC is redirected here only once. Every task must return so
+ * its stack frame is released before the MPE can publish the next task. */
+void __attribute__((noreturn, noinline)) swbwa_cross_dispatch(void)
+{
+    swbwa_cross_command_t *command;
+    volatile int *completion;
+    unsigned long last_sequence = 0;
+    int id;
+
+    swbwa_enter_cross_runtime();
+    command = swbwa_cross_uncached(swbwa_task->cross_command);
+    id = _MYID;
+    completion = swbwa_cross_uncached((const void *)(swbwa_task->completion_flags + id));
+    for (;;) {
+        unsigned long sequence = command->sequence;
+        unsigned long stack_pointer;
+        void (*entry)(void);
+
+        if (sequence == last_sequence) continue;
+        asm volatile("memb\n\t" ::: "memory");
+        entry = (void (*)(void))command->entry;
+        entry();
+        asm volatile("mov $30, %0\n\t" : "=r"(stack_pointer));
+        command->stack_pointer[id] = stack_pointer;
+        last_sequence = sequence;
+        /* Flush task writes before acknowledging, not after publication. */
+        flush_slave_cache();
+        asm volatile("memb\n\t" ::: "memory");
+        *completion = 1;
+        asm volatile("memb\n\t" ::: "memory");
+    }
 }
 
 /*
@@ -153,11 +183,17 @@ void change_priv_segment(swbwa_cpe_task_t *ptr) {
     }
 }
 
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
 __uncached long work_counter;
 int task_list[SWBWA_CPE_COUNT][SWBWA_MAX_TASKS_PER_CPE];
 int task_num[SWBWA_CPE_COUNT];
 long cur_id[SWBWA_CPE_COUNT];
+
+static inline void reset_work_counter(void)
+{
+    if (_MYID != 0) return;
+    work_counter = 0;
+    asm volatile("memb\n\t" ::: "memory");
+}
 
 int acquire_task(int block_num) {
     asm volatile("faal %0, 0(%1)\n\t"
@@ -170,16 +206,13 @@ int acquire_task(int block_num) {
     }
     return (int)cur_id[_MYID];
 }
-#endif
 
 void worker1_s_pre_fast_cross(void) {
     swbwa_enter_cross_runtime();
     asm volatile("memb\n\t":::);
     swbwa_cpe_task_t *para = swbwa_task;
 
-
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(_MYID == 0) work_counter = 0;
+    reset_work_counter();
 # if SWBWA_USE_CGS
     athread_ssync_node();
 # else
@@ -195,22 +228,14 @@ void worker1_s_pre_fast_cross(void) {
             worker1_pre_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_pre_fast(para->worker_data, i, _MYID, para->alignment_regions);
-    }
-#endif
 
-
-    swbwa_finish_cross_task();
+    return;
 }
 
 void worker1_s_fast_cross(void) {
     swbwa_enter_cross_runtime();
     swbwa_cpe_task_t *para = swbwa_task;
 
-
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
     for(long i = 0; i < task_num[_MYID]; i++) {
         int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
@@ -219,23 +244,15 @@ void worker1_s_fast_cross(void) {
             worker1_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_fast(para->worker_data, i, _MYID, para->alignment_regions);
-    }
-#endif
 
-    swbwa_finish_cross_task();
+    return;
 }
-
 
 void worker2_s_pre_fast_cross(void) {
     swbwa_enter_cross_runtime();
     swbwa_cpe_task_t *para = swbwa_task;
 
-
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(_MYID == 0) work_counter = 0;
+    reset_work_counter();
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
@@ -251,22 +268,14 @@ void worker2_s_pre_fast_cross(void) {
             worker2_pre_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_pre_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
-    }
-#endif
 
-
-    swbwa_finish_cross_task();
+    return;
 }
-
 
 void worker2_s_fast_cross(void) {
     swbwa_enter_cross_runtime();
     swbwa_cpe_task_t *para = swbwa_task;
  
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
     for(long i = 0; i < task_num[_MYID]; i++) {
         int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
@@ -275,14 +284,8 @@ void worker2_s_fast_cross(void) {
             worker2_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
-    }
-#endif
 
- 
-    swbwa_finish_cross_task();
+    return;
 }
 
 static void skip_to_line_end(char *data_, long long *pos_, const long long size_) {
@@ -290,7 +293,6 @@ static void skip_to_line_end(char *data_, long long *pos_, const long long size_
         ++(*pos_);
     }
 }
-
 
 static int64_t get_next_fastq(char *data_, long long pos_, const long long size_) {
     if(pos_ < 0) pos_ = 0;
@@ -376,7 +378,7 @@ void cpe_format_pre_cross(void)
     swbwa_enter_cross_runtime();
     swbwa_task->formatted_read_counts[_MYID] =
         format_fastq_partition(swbwa_task);
-    swbwa_finish_cross_task();
+    return;
 }
 
 void worker12_s_pre_fast_cross(void) {
@@ -388,8 +390,7 @@ void worker12_s_pre_fast_cross(void) {
 	swbwa_matesw_profile_reset();
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_WORKER_ALIGNMENT);
 	worker_context = worker12_context_init(para->worker_data);
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(_MYID == 0) work_counter = 0;
+    reset_work_counter();
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
@@ -405,24 +406,14 @@ void worker12_s_pre_fast_cross(void) {
 		                  _MYID, para->sam_lengths, para->sam_records,
 		                  para->pes, para->sequence_ids);
     }
-#else
-    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = _MYID * pre_n;
-    int r_pos = l_pos + pre_n;
-    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-	worker12_pre_fast(para->worker_data, worker_context, l_pos, r_pos, _MYID,
-	                  para->sam_lengths, para->sam_records, para->pes,
-	                  para->sequence_ids);
-#endif
 	worker12_context_destroy(worker_context);
 	swbwa_matesw_profile_commit(
 		para->matesw_profile == NULL ? NULL : &para->matesw_profile[_MYID]);
 
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_WORKER_ALIGNMENT);
     swbwa_cpe_profile_exit(para->profile_counters);
-    swbwa_finish_cross_task();
+    return;
 }
-
 
 void worker12_s_fast_cross(void) {
     swbwa_enter_cross_runtime();
@@ -432,20 +423,12 @@ void worker12_s_fast_cross(void) {
 #endif
     swbwa_cpe_profile_enter(para->profile_counters);
     swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_SAM_COPY);
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
     for(long i = 0; i < task_num[_MYID]; i++) {
         int l_pos = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
         if(r_pos > para->work_item_count) r_pos = para->work_item_count;
         worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
     }
-#else
-    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = _MYID * pre_n;
-    int r_pos = l_pos + pre_n;
-    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-    worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
-#endif
 
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_SAM_COPY);
     swbwa_cpe_profile_exit(para->profile_counters);
@@ -453,18 +436,16 @@ void worker12_s_fast_cross(void) {
     swbwa_ldm_allocator_end();
 #endif
     swbwa_cpe_publish_pool_usage(para);
-    swbwa_finish_cross_task();
+    return;
 }
-
 
 void worker1_s_pre_fast(swbwa_cpe_task_t *para) {
  
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
 # if SWBWA_USE_CGS
-    if(_MYID == 0) work_counter = 0;
+    reset_work_counter();
     athread_ssync_node();
 # else
-    if(_PEN == 0) work_counter = 0;
+    reset_work_counter();
     athread_ssync_array();
 # endif
     task_num[_MYID] = 0;
@@ -477,15 +458,9 @@ void worker1_s_pre_fast(swbwa_cpe_task_t *para) {
             worker1_pre_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_pre_fast(para->worker_data, i, _MYID, para->alignment_regions);
-    }
-#endif
 }
 
 void worker1_s_fast(swbwa_cpe_task_t *para) {
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
     for(long i = 0; i < task_num[_MYID]; i++) {
         int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
@@ -494,19 +469,11 @@ void worker1_s_fast(swbwa_cpe_task_t *para) {
             worker1_fast(para->worker_data, j, _MYID, para->alignment_regions);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker1_fast(para->worker_data, i, _MYID, para->alignment_regions);
-    }
-#endif
 
 }
 
-
-
 void worker2_s_pre_fast(swbwa_cpe_task_t *para) {
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(_MYID == 0) work_counter = 0;
+    reset_work_counter();
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
@@ -522,17 +489,10 @@ void worker2_s_pre_fast(swbwa_cpe_task_t *para) {
             worker2_pre_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_pre_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
-    }
-#endif
 
 }
 
-
 void worker2_s_fast(swbwa_cpe_task_t *para) {
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
     for(long i = 0; i < task_num[_MYID]; i++) {
         int range_l = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int range_r = range_l + SWBWA_READS_PER_DYNAMIC_TASK;
@@ -541,11 +501,6 @@ void worker2_s_fast(swbwa_cpe_task_t *para) {
             worker2_fast(para->worker_data, j, _MYID, para->sam_lengths, para->sam_records);
         }
     }
-#else
-    for(long i = _MYID; i < para->work_item_count; i += SWBWA_CPE_COUNT) {
-        worker2_fast(para->worker_data, i, _MYID, para->sam_lengths, para->sam_records);
-    }
-#endif
 
 }
 
@@ -556,7 +511,6 @@ void cpe_format_pre(swbwa_cpe_task_t *para)
     swbwa_finish_standard_task(para);
 }
 
-
 void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
 	void *worker_context;
 
@@ -564,8 +518,7 @@ void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
 	swbwa_matesw_profile_reset();
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_WORKER_ALIGNMENT);
 	worker_context = worker12_context_init(para->worker_data);
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
-    if(_MYID == 0) work_counter = 0;
+    reset_work_counter();
 #if SWBWA_USE_CGS
     athread_ssync_node();
 #else
@@ -581,15 +534,6 @@ void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
 		                  _MYID, para->sam_lengths, para->sam_records,
 		                  para->pes, para->sequence_ids);
     }
-#else
-    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = _MYID * pre_n;
-    int r_pos = l_pos + pre_n;
-    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-	worker12_pre_fast(para->worker_data, worker_context, l_pos, r_pos, _MYID,
-	                  para->sam_lengths, para->sam_records, para->pes,
-	                  para->sequence_ids);
-#endif
 	worker12_context_destroy(worker_context);
 	swbwa_matesw_profile_commit(
 		para->matesw_profile == NULL ? NULL : &para->matesw_profile[_MYID]);
@@ -598,24 +542,15 @@ void worker12_s_pre_fast(swbwa_cpe_task_t *para) {
     swbwa_finish_standard_task(para);
 }
 
-
 void worker12_s_fast(swbwa_cpe_task_t *para) {
     swbwa_cpe_profile_enter(para->profile_counters);
     swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_SAM_COPY);
-#if SWBWA_ENABLE_DYNAMIC_SCHEDULING
     for(long i = 0; i < task_num[_MYID]; i++) {
         int l_pos = task_list[_MYID][i] * SWBWA_READS_PER_DYNAMIC_TASK;
         int r_pos = l_pos + SWBWA_READS_PER_DYNAMIC_TASK;
         if(r_pos > para->work_item_count) r_pos = para->work_item_count;
         worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
     }
-#else
-    int pre_n = ceil(1.0 * para->work_item_count / SWBWA_CPE_COUNT);
-    int l_pos = _MYID * pre_n;
-    int r_pos = l_pos + pre_n;
-    if(r_pos > para->work_item_count) r_pos = para->work_item_count;
-    worker12_fast(para->worker_data, l_pos, r_pos, _MYID, para->sam_lengths, para->sam_records, para->sequence_ids);
-#endif
     swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_SAM_COPY);
     swbwa_cpe_profile_exit(para->profile_counters);
     swbwa_cpe_publish_pool_usage(para);

@@ -121,17 +121,7 @@ void swbwa_matesw_ksw_pair_work_take(swbwa_matesw_ksw_work_t work[2])
 }
 #endif
 
-#if SWBWA_ENABLE_FLOAT16_VECTOR && SWBWA_ENABLE_PACKED_INT8
-#error "KSW FP16 and packed-int8 backends are mutually exclusive"
-#endif
-
-#if SWBWA_ENABLE_FLOAT16_VECTOR
 enum { SWBWA_KSW_U8_LANES = SWBWA_KSW_U8_LOGICAL_LANES };
-#elif SWBWA_ENABLE_PACKED_INT8
-enum { SWBWA_KSW_U8_LANES = 32 };
-#else
-enum { SWBWA_KSW_U8_LANES = 16 };
-#endif
 
 /**
  * Initialize the query data structure
@@ -144,10 +134,6 @@ enum { SWBWA_KSW_U8_LANES = 16 };
  *
  * @return       Query data structure
  */
-
-
-//__thread_local_fix char kswq_fix[32 << 10];
-
 
 static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 		int m, const int8_t *mat, int prefer_ldm)
@@ -201,9 +187,7 @@ static kswq_t *ksw_qinit_impl(int size, int qlen, const uint8_t *query,
 	// An example: p=8, qlen=19, slen=3 and segmentation:
 	//  {{0,3,6,9,12,15,18,-1},{1,4,7,10,13,16,-1,-1},{2,5,8,11,14,17,-1,-1}}
 	if (size == 1) {
-#if SWBWA_ENABLE_PACKED_INT8
-		int16_t *t = (int16_t*)q->qp;
-#elif SWBWA_ENABLE_FLOAT16_VECTOR
+#if SWBWA_ENABLE_FLOAT16_VECTOR
 		_Float16 *t = (_Float16*)q->qp;
 #else
 		int *t = (int*)q->qp;
@@ -400,7 +384,6 @@ end_loop16:
 #if SWBWA_ENABLE_CPE_PROFILE
 		profile_lazy_steps += profile_row_lazy_steps;
 #endif
-		//int k;for (k=0;k<16;++k)printf("%d ", ((uint8_t*)&max)[k]);printf("\n");
 		__max_16(imax, max); // imax is the maximum number in max
 		if (imax >= minsc) { // write the b array; this condition adds branching unfornately
 			if (n_b == 0 || (int32_t)b[n_b-1] + 1 != i) { // then append
@@ -430,10 +413,7 @@ end_loop16:
 #if !SWBWA_ENABLE_FLOAT16_VECTOR
 		int qlen = slen * p_new;
 #endif
-		//uint8_t *t = (uint8_t*)Hmax;
-#if SWBWA_ENABLE_PACKED_INT8
-		uint16_t *t = (uint16_t*)Hmax;
-#elif !SWBWA_ENABLE_FLOAT16_VECTOR
+#if !SWBWA_ENABLE_FLOAT16_VECTOR
 		int *t = (int*)Hmax;
 #endif
 #if SWBWA_ENABLE_FLOAT16_VECTOR
@@ -452,7 +432,6 @@ end_loop16:
 			if ((int)*t > max) max = *t, r.qe = i / p_new + i % p_new * slen;
 			else if ((int)*t == max && (tmp = i / p_new + i % p_new * slen) < r.qe) r.qe = tmp; 
 #endif
-		//printf("%d,%d\n", max, gmax);
 		if (b) {
 			i = (r.score + q->max - 1) / q->max;
 			low = te - i; high = te + i;
@@ -1058,7 +1037,6 @@ static kswr_t ksw_align2_impl(int qlen, uint8_t *query, int tlen,
 	if (profile_matesw)
 		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_KSW_DP_FORWARD);
 	if (qry == 0) ksw_qdestroy(q);
-	//if (qry == 0) ldm_free(q, 32 << 10);
 
 	r = ksw_align2_find_start(r, size, query, tlen, target, m, mat,
 	                          o_del, e_del, o_ins, e_ins, xtra,
@@ -1360,7 +1338,6 @@ int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target,
 		beg = j;
 		for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
 		end = j + 2 < qlen? j + 2 : qlen;
-		//beg = 0; end = qlen; // uncomment this line for debugging
 	}
 	if (_qle) *_qle = max_j + 1;
 	if (_tle) *_tle = max_i + 1;

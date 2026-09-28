@@ -17,6 +17,26 @@ SWBWA is a high-accuracy, high-performance short-read aligner optimized for the 
 - `scripts/`: correctness checks, performance tests, and result-analysis scripts.
 - `correctness_results/`: run logs, correctness results, and experiment notes.
 
+### Maintained code paths
+
+The executable and command-line help use `SWBWA`; the host archive is
+`libswbwa.a`. There is one CLI entry point, `src/host/main.c`. Unused duplicate
+CPE CLI/examples, the optional upstream `bwakit` package, allocator file dumps
+and embedded BWT microbenchmarks have been removed.
+
+CPE work scheduling uses the shared atomic read/pair counter. The unsuccessful
+pool address-index, multi-queue, ticket-leasing and dispatcher backoff/barrier
+experiments are removed; their old build overrides now fail explicitly.
+Always-disabled packed-int8, batched second-pass SMEM and legacy worker LDM
+implementations are also removed. Software prefetch and dynamic CPE scheduling
+remain enabled without redundant switches.
+
+Keep correctness checks in `tests/` and experiment drivers in `scripts/`.
+Production bounds/ownership checks, full-SAM fingerprints and opt-in `-v 4`
+timing remain available. Existing kernel/LDM choices and six-MPE defaults are
+unchanged. The internal inherited `bwa_*`/`mem_*` interfaces and source license
+notices are retained; see [attribution](NOTICE.md).
+
 ## Build
 
 SWBWA supports only the next-generation Sunway platform.
@@ -52,13 +72,26 @@ The supported build variables are:
 | `CPE_ALLOCATOR` | `system`, `pool` | `system` |
 | `HOST_MALLOC_WRAPPER` | `0`, `1` | `1` |
 | `HOST_MALLOC_STATS` | `0`, `1` | `0` |
+| `HOST_MPE_THREADS` | `1`, `6` (full-chip process only) | `6` for `cgs` / `cgs_cross`; `1` for `single` |
 | `CPE_KERNEL_OPT` | `0`, `1` | `1` for non-MPI `cgs_cross + pool`; `0` otherwise |
 | `CPE_LDM_MODE` | `0` off, `1` tiered malloc pool, `2` manual | `2`; mode 1 requires non-MPI `cgs_cross + pool` |
 | `CPE_DISCARD_DIGEST` | `0`, `1` | `1` for non-MPI `cgs_cross + pool` with `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`; `0` otherwise |
 | `USE_MPI` | `0`, `1` | `1` |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
-| `OUTPUT_MODE` | `split`, `single_unordered`, `discard` | `single_unordered` with MPI; `split` otherwise |
+| `OUTPUT_MODE` | `split`, `single_unordered`, `single_ordered`, `discard` | `single_unordered` with MPI; `split` otherwise |
 | `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
+| `MPI_TAIL_PERCENT` | `0..100` | `10` |
+| `KSW_U8_MODE` | `int32_16`, `float16_16`, `float16_32` | `int32_16` |
+| `KSW_I16_MODE` | `scalar_8`, `int32_8` | `int32_8` |
+| `MATESW_DUAL_FORWARD` | `0`, `1` | `1` |
+| `CPE_PROFILE` | `0`, `1` | `0` |
+| `CPE_PROFILE_CG` | `0..5` | `0` for `single`; `5` otherwise |
+| `OUTPUT_RMA_ONLY` | `0`, `1` (dynamic MPI single-file profiling only) | `0` |
+| `DISCARD_HASH_BYTES` | nonnegative byte count; `0` hashes complete blobs | `0` |
+
+`float16_32` is experimental and is not SAM-equivalent to the default integer
+kernel. `CPE_PROFILE=1` needs an installed LWPF3 library (`LWPF3_DIR`); profiling
+and detailed runtime diagnostics are disabled unless explicitly requested.
 
 `MPI_INPUT_MODE` and `MPI_EXACT_READ_INDEX` are only effective when `USE_MPI=1`. `OUTPUT_MODE=discard` is also supported without MPI; non-MPI `split` retains the ordinary single-file writer. `single_unordered` requires MPI.
 
@@ -131,6 +164,44 @@ command and use the same run command above. Both `CPE_KERNEL_OPT` and
 ```bash
 ./build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 \
     OUTPUT_MODE=discard DISCARD_HASH_BYTES=0 CPE_PROFILE=0
+```
+
+### Chunk Output And Six-MPE Helpers
+
+The MPI `single_unordered` alignment writer reserves one contiguous RMA extent
+per nonempty input chunk. It preserves read/SAM order inside that chunk and
+never combines adjacent input chunks. Global completion order remains unordered;
+use `single_ordered` below when input order is required. The packing allocation grows
+to the largest output chunk; 64 MiB is its initial capacity, not a hard limit.
+
+`cgs` and `cgs_cross` default to `HOST_MPE_THREADS=6`, enabling five additional
+bound MPE helpers for SAM lengths, slice assignment, and packing. `single`
+defaults to `1`; an explicit `HOST_MPE_THREADS=1` also disables helpers in full-chip builds.
+Six threads require one full-chip process owning all six CGs, not six independent
+single-CG ranks per node. Helpers do not call MPI or athread. See
+[the chunk output contract and tests](tests/CHUNK_OUTPUT.md).
+
+Six-MPE builds default to six positioned `pread` readers; one-MPE builds retain
+serial `fread`. The runtime setting `SWBWA_INPUT_READERS=0` explicitly selects
+`fread`, while `1..6` selects `pread` and its reader count, limited by the build's
+`HOST_MPE_THREADS`. It partitions raw bytes within a chunk,
+without changing chunk boundaries or read order. `-v 4` adds reader CPU/fault
+accounting. Tests cover single-node serialized/pipelined execution and multi-node
+pipelined execution. Benefits depend on the filesystem and computation overlap,
+so retain the runtime override for controlled comparisons. See the
+[input tests](tests/README.md#chunk-output-and-mpe-helpers).
+
+Dynamic MPI input has an experimental runtime option,
+`SWBWA_MPI_TICKET_MODE=distributed|global`. The default `distributed` keeps
+the original queues. `global` uses rank 0's counter, reducing exhaustion scans
+but potentially increasing contention there. Chunk boundaries, IDs and exact
+read indices are unchanged. All ranks must agree. Compare both execution
+configurations with the same policy rather than attributing a policy difference
+to full-chip sharing. Regression tests are in `tests/test_fastq_scheduler.py`.
+
+```bash
+./build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=1 \
+    MPI_INPUT_MODE=dynamic OUTPUT_MODE=single_unordered HOST_MPE_THREADS=6
 ```
 
 ### Exact CPE Kernel Optimizations
@@ -220,6 +291,16 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 ```
 
 `OUTPUT_MODE=split` creates one output file per rank. `single_unordered` uses MPI RMA to atomically reserve ranges in one output file, but does not guarantee record order. `discard` writes no SAM and is useful for measuring stage 2 performance.
+
+`OUTPUT_MODE=single_ordered` is an experimental dynamic-MPI writer that preserves
+FASTQ chunk/read order without sorting. It uses global monotonic input tickets
+(automatically selected; an explicit `SWBWA_MPI_TICKET_MODE=distributed` is rejected),
+then propagates 64-bit output prefixes through RMA. Each rank keeps and writes
+its own SAM payload with `pwrite`; there is no master payload gather or per-chunk
+collective barrier. It writes no SAM header. `OUTPUT_RMA_ONLY=1` can omit only
+the disk writes while retaining ordering and prefix dependencies. This is a
+different workload from unordered output, not a claimed speedup of it.
+See [the ordered-output tests and limitations](tests/ORDERED_OUTPUT.md).
 
 The unified run entry point only submits jobs; it does not rebuild the program:
 

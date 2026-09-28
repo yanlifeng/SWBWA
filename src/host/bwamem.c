@@ -54,6 +54,7 @@
 #include "swbwa_runtime.h"
 #include "swbwa_cpe_profile.h"
 #include "swbwa_host_prep.h"
+#include "swbwa_host_workers.h"
 
 #if SWBWA_ENABLE_HOST_MALLOC_WRAPPER
 #  include "malloc_wrap.h"
@@ -236,9 +237,6 @@ typedef struct {
 typedef struct {
 	int n, m, first, rid;
 	uint32_t w:29, kept:2, is_alt:1;
-    //uint32_t w;
-    //uint32_t kept;
-    //uint32_t is_alt;
 	float frac_rep;
 	int64_t pos;
 	mem_seed_t *seeds;
@@ -338,7 +336,6 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	}
 	l_rep += e - b;
 
-    //double t0 = GetTime();
 
 	for (i = 0; i < aux->mem.n; ++i) {
 		bwtintv_t *p = &aux->mem.a[i];
@@ -370,7 +367,6 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 		}
 	}
 
-    //t_work1_3 += GetTime() - t0;
 	if (buf == 0) smem_aux_destroy(aux);
 
 	kv_resize(mem_chain_t, chain, kb_size(tree));
@@ -1305,6 +1301,7 @@ extern void SLAVE_FUN(pass_para());
 
 extern void SLAVE_FUN(copy_priv_segment());
 extern void SLAVE_FUN(change_priv_segment());
+extern void SLAVE_FUN(swbwa_cross_dispatch());
 
 unsigned long swbwa_cpe_text_start = SWBWA_CPE_TEXT_START_ADDRESS;
 unsigned long swbwa_cpe_text_size = SWBWA_CPE_TEXT_SEGMENT_BYTES;
@@ -1312,6 +1309,8 @@ unsigned long swbwa_cpe_data_start = SWBWA_CPE_DATA_START_ADDRESS;
 unsigned long swbwa_cpe_data_size = SWBWA_CPE_DATA_SEGMENT_BYTES;
 
 __uncached volatile int swbwa_cpe_completion_flags[SWBWA_CPE_COUNT];
+__uncached swbwa_cross_command_t swbwa_cross_command;
+static long swbwa_cross_dispatch_entry;
 __uncached volatile long
     swbwa_cpe_error_info[SWBWA_CPE_COUNT * SWBWA_CPE_ERROR_WORDS]
         __attribute__((aligned(64)));
@@ -1786,30 +1785,44 @@ static void swbwa_enable_cross_execution(void)
 
 static void swbwa_cross_run(long fun_addr)
 {
+    static int dispatcher_started;
+    unsigned long polls = 0;
+    double last_report = GetTime();
 
     if (bwa_verbose >= 4) fprintf(stderr, "start swbwa_cross_run 0x%lx\n", (unsigned long)fun_addr);
     for(int i = 0; i < SWBWA_CPE_COUNT; i++) {
         swbwa_cpe_completion_flags[i] = 0;
+        swbwa_cross_command.stack_pointer[i] = 0;
         swbwa_cpe_error_info[i * SWBWA_CPE_ERROR_WORDS] = SWBWA_CPE_ERR_NONE;
     }
     asm volatile("memb\n\t" ::: "memory");
 
-    for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
-        for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
-            *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 3;
+    swbwa_cross_command.entry = (unsigned long)fun_addr;
+    asm volatile("memb\n\t" ::: "memory");
+    ++swbwa_cross_command.sequence;
+    asm volatile("memb\n\t" ::: "memory");
+
+    /* Redirect PC only on initial entry. Repeated redirection used to abandon
+     * live C stack frames, consuming more LDM stack on every batch. */
+    if (!dispatcher_started) {
+        for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
+            for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
+                *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 3;
+            }
         }
-    }
-    for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
-        for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
-            *((long*)(0x800000008000 + (cg_id << 40ll) + (cpe_id << 24ll))) = fun_addr;
+        for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
+            for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
+                *((long*)(0x800000008000 + (cg_id << 40ll) + (cpe_id << 24ll))) = swbwa_cross_dispatch_entry;
+            }
         }
-    }
-    for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
-        for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
-            *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 0;
+        for(long cg_id = 0; cg_id < SWBWA_CG_COUNT; cg_id++) {
+            for(long cpe_id = 0; cpe_id < 64; cpe_id++) {
+                *((long*)(0x800000008100 + (cg_id << 40ll) + (cpe_id << 24ll))) = 0;
+            }
         }
+        asm volatile("memb\n\t" ::: "memory");
+        dispatcher_started = 1;
     }
-    asm volatile("memb\n\t":::);
 
     while(1) {
         int sum = 0;
@@ -1819,9 +1832,34 @@ static void swbwa_cross_run(long fun_addr)
         /* A failing CPE stops synchronising, so its peers never reach their
          * completion flag. Poll the error channel or this loop never ends. */
         swbwa_cpe_check_error();
+        if (bwa_verbose >= 4 && ++polls % 1024 == 0) {
+            double now = GetTime();
+            if (now - last_report >= 30.0) {
+                int returned = 0;
+                for (int i = 0; i < SWBWA_CPE_COUNT; ++i)
+                    returned += swbwa_cross_command.stack_pointer[i] != 0;
+                fprintf(stderr, "[cross-wait] task=%lu completed=%d/%d returned=%d\n",
+                        swbwa_cross_command.sequence, sum, SWBWA_CPE_COUNT, returned);
+                last_report = now;
+            }
+        }
         usleep(100);
     }
     swbwa_cpe_check_error();
+    asm volatile("memb\n\t" ::: "memory");
+    if (bwa_verbose >= 4) {
+        unsigned long low = swbwa_cross_command.stack_pointer[0];
+        unsigned long high = low;
+        int i;
+
+        for (i = 1; i < SWBWA_CPE_COUNT; ++i) {
+            unsigned long sp = swbwa_cross_command.stack_pointer[i];
+            if (sp < low) low = sp;
+            if (sp > high) high = sp;
+        }
+        fprintf(stderr, "[cross-stack] task=%lu sp_min=0x%lx sp_max=0x%lx\n",
+                swbwa_cross_command.sequence, low, high);
+    }
 }
 
 typedef struct {
@@ -1851,6 +1889,10 @@ static void swbwa_cross_runtime_init(swbwa_cross_runtime_t *runtime,
     params->private_segment_copies = swbwa_allocate_private_segment_copies();
     params->completion_flags = swbwa_cpe_completion_flags;
     params->error_info = swbwa_cpe_error_info;
+    params->cross_command = &swbwa_cross_command;
+    memset(&swbwa_cross_command, 0, sizeof(swbwa_cross_command));
+    swbwa_cross_dispatch_entry = (long)slave_swbwa_cross_dispatch -
+        (long)swbwa_cpe_text_start + (long)runtime->segments;
 
     asm volatile("mov $29, %0\n\t":"=r"(host_gp)::);
     params->relocated_gp = (void*)((unsigned long)runtime->segments + host_gp -
@@ -1884,16 +1926,58 @@ static long swbwa_cross_entry(const swbwa_cross_runtime_t *runtime,
 }
 
 
+#if SWBWA_HOST_MPE_THREADS > 1 && !SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+typedef struct {
+    bseq1_t *seqs;
+    const int *lengths;
+    char *buffer;
+    size_t sums[SWBWA_HOST_MPE_THREADS], offsets[SWBWA_HOST_MPE_THREADS];
+    int errors[SWBWA_HOST_MPE_THREADS];
+    int reads;
+} sam_layout_t;
+
+static void measure_sam_layout(void *opaque, int worker, int workers)
+{
+    sam_layout_t *task = opaque;
+    size_t begin = (size_t)task->reads * worker / workers;
+    size_t end = (size_t)task->reads * (worker + 1) / workers;
+    size_t sum = 0, i;
+    for (i = begin; i < end; ++i) {
+        int length = task->lengths[i];
+        if (length < 0 || sum > SIZE_MAX - (size_t)length - SWBWA_SAM_RECORD_SLACK_BYTES) {
+            task->errors[worker] = 1;
+            return;
+        }
+        sum += (size_t)length + SWBWA_SAM_RECORD_SLACK_BYTES;
+    }
+    task->sums[worker] = sum;
+}
+
+static void assign_sam_layout(void *opaque, int worker, int workers)
+{
+    sam_layout_t *task = opaque;
+    size_t begin = (size_t)task->reads * worker / workers;
+    size_t end = (size_t)task->reads * (worker + 1) / workers;
+    size_t pos = task->offsets[worker], i;
+    for (i = begin; i < end; ++i) {
+        task->seqs[i].sam = task->buffer + pos;
+#if !SWBWA_HOST_PREP_CPE_TERMINATORS
+        task->seqs[i].sam[task->lengths[i]] = '\0';
+#endif
+        pos += (size_t)task->lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES;
+    }
+}
+#endif
+
 void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int *n2, bseq1_t **seqs2,
-                             char* block_buffer, char* block_buffer2, long long block_size, long long block_size2, const mem_pestat_t *pes0)
+                             char* block_buffer, char* block_buffer2, long long block_size, long long block_size2, const mem_pestat_t *pes0,
+                             int **sam_lengths_out)
 {
     int n = SWBWA_MAX_READS_PER_BATCH;
-    //assert(n < (4 << 20));
     worker_t w;
     double ctime, rtime;
     ctime = cputime(); rtime = realtime();
     worker_init(&w, opt, bwt, bns, pac, n_processed, n, NULL, NULL);
-//    w.seqs = seqs;
     w.seqs = checked_malloc_array(n, sizeof(*w.seqs), "formatted reads");
 
     long nn = (opt->flag&MEM_F_PE)? n>>1 : n;
@@ -1999,7 +2083,6 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     para->work_item_count = 0;
     for(int i = 0; i < SWBWA_CPE_COUNT; i++) {
         para->work_item_count += para->formatted_read_counts[i];
-		// fprintf(stderr, "para->formatted_read_counts[%d] = %ld\n", i, para->formatted_read_counts[i]);
     }
     free(block_buffer);
     free(block_buffer2);
@@ -2036,6 +2119,24 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     if (n < 0 || (size_t)n > SWBWA_CPE_FORMAT_BUFFER_BYTES / SWBWA_DIGEST_RECORD_BYTES)
         err_fatal(__func__, "discard digests exceed the per-batch buffer");
 #endif
+#if SWBWA_HOST_MPE_THREADS > 1 && !SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+    {
+        sam_layout_t task = {0};
+        task.seqs = w.seqs;
+        task.lengths = para->sam_lengths;
+        task.buffer = f_sam_block;
+        task.reads = n;
+        if (n < 0) err_fatal(__func__, "negative SAM record count");
+        swbwa_host_workers_run_ready(measure_sam_layout, &task);
+        for (int i = 0; i < SWBWA_HOST_MPE_THREADS; ++i) {
+            if (task.errors[i] || task.sums[i] > SWBWA_CPE_FORMAT_BUFFER_BYTES - now_f_block_pos)
+                err_fatal(__func__, "SAM output exceeds the per-batch buffer");
+            task.offsets[i] = now_f_block_pos;
+            now_f_block_pos += task.sums[i];
+        }
+        swbwa_host_workers_run_ready(assign_sam_layout, &task);
+    }
+#else
     for(int i = 0; i < n; i++) {
 #if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
         if (para->sam_lengths[i] < 0)
@@ -2054,6 +2155,15 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         /* worker12_fast terminates every SE/PE record before batch publication. */
 #endif
         now_f_block_pos += para->sam_lengths[i] + SWBWA_SAM_RECORD_SLACK_BYTES;
+    }
+#endif
+    /* The next batch may reuse para->sam_lengths while stage 3 is still writing. */
+    if (sam_lengths_out != NULL) {
+        *sam_lengths_out = NULL;
+        if (n > 0) {
+            *sam_lengths_out = checked_malloc_array(n, sizeof(**sam_lengths_out), "batch SAM lengths");
+            memcpy(*sam_lengths_out, para->sam_lengths, (size_t)n * sizeof(**sam_lengths_out));
+        }
     }
     t_work1_4 += GetTime() - tt0;
 

@@ -59,11 +59,11 @@ static int usage(void)
 {
 	if (!swbwa_mpi_is_root()) return 1;
 	fprintf(stderr, "\n");
-	fprintf(stderr, "Program: SWBWA (efficient implementation of bwamem on the next-generation Sunway platform)\n");
+	fprintf(stderr, "Program: SWBWA (parallel read alignment for Sunway)\n");
 	fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
 	fprintf(stderr, "Usage:   SWBWA <command> [options]\n\n");
 	fprintf(stderr, "Command: index         index sequences in the FASTA format\n");
-	fprintf(stderr, "         mem           BWA-MEM algorithm\n");
+	fprintf(stderr, "         mem           align reads with the SWBWA pipeline\n");
 	fprintf(stderr, "\n");
 	return 1;
 }

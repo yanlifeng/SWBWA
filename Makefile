@@ -9,6 +9,7 @@ AR  = ar
 # CPE_ALLOCATOR: system | pool
 # HOST_MALLOC_WRAPPER: 0 | 1
 # HOST_MALLOC_STATS:   0 | 1 (requires HOST_MALLOC_WRAPPER=1)
+# HOST_MPE_THREADS:    1 | 6 (six requires a full-chip cgs/cgs_cross allocation)
 # CPE_PROFILE:         0 | 1
 # CPE_PROFILE_CG:      CG sampled by LWPF when CPE_PROFILE=1 (0..5)
 # KSW_U8_MODE:         int32_16 | float16_16 | float16_32 (default: int32_16)
@@ -17,7 +18,8 @@ AR  = ar
 # USE_MPI:       0 | 1
 # CPE_KERNEL_OPT: 0 | 1 (defaults on only for non-MPI cgs_cross + pool)
 # CPE_LDM_MODE:   0 (off) | 1 (tiered malloc pool) | 2 (manual, default)
-# OUTPUT_MODE:   split | single_unordered (MPI only) | discard
+# OUTPUT_MODE:   split | single_unordered | single_ordered | discard
+# OUTPUT_RMA_ONLY: 0 | 1 (dynamic single-file benchmark, no disk writes)
 # DISCARD_HASH_BYTES: 0 hashes each full SAM blob; N is profiling only
 # CPE_DISCARD_DIGEST: 0 | 1 (defaults on for FULL discard on non-MPI cross+pool)
 # MPI-only options:
@@ -28,12 +30,13 @@ EXEC_MODE           ?= single
 CPE_ALLOCATOR       ?= system
 HOST_MALLOC_WRAPPER ?= 1
 HOST_MALLOC_STATS   ?= 0
+HOST_MPE_THREADS    ?= $(if $(filter cgs cgs_cross,$(EXEC_MODE)),6,1)
 CPE_PROFILE         ?= 0
 CPE_PROFILE_CG      ?= $(if $(filter single,$(EXEC_MODE)),0,5)
 KSW_U8_MODE         ?= int32_16
 KSW_I16_MODE        ?= int32_8
 MATESW_DUAL_FORWARD ?= 1
-LWPF3_DIR            ?= /home/export/online1/mdt00/shisuan/swls-CFD/guoshi/ylf/lwpf3
+LWPF3_DIR            ?= ../lwpf3
 
 USE_MPI              ?= 1
 CPE_KERNEL_OPT       ?= $(if $(filter cgs_cross:pool:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI)),1,0)
@@ -47,6 +50,7 @@ else
 OUTPUT_MODE          ?= split
 endif
 DISCARD_HASH_BYTES   ?= 0
+OUTPUT_RMA_ONLY      ?= 0
 CPE_DISCARD_DIGEST   ?= $(if $(filter cgs_cross:pool:0:discard:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI):$(OUTPUT_MODE):$(DISCARD_HASH_BYTES)),1,0)
 
 ifeq ($(USE_MPI),1)
@@ -61,7 +65,32 @@ VALID_BOOLEAN_VALUES := 0 1
 VALID_KSW_U8_MODES    := int32_16 float16_16 float16_32
 VALID_KSW_I16_MODES   := scalar_8 int32_8
 VALID_MPI_INPUT_MODES := static dynamic
-VALID_OUTPUT_MODES   := split single_unordered discard
+VALID_OUTPUT_MODES   := split single_unordered single_ordered discard
+
+ifneq ($(words $(HOST_MPE_THREADS)),1)
+$(error HOST_MPE_THREADS must be 1 or 6)
+endif
+ifeq ($(filter 1 6,$(HOST_MPE_THREADS)),)
+$(error HOST_MPE_THREADS must be 1 or 6)
+endif
+ifeq ($(HOST_MPE_THREADS):$(EXEC_MODE),6:single)
+$(error HOST_MPE_THREADS=6 requires EXEC_MODE=cgs or cgs_cross)
+endif
+
+ifneq ($(words $(OUTPUT_RMA_ONLY)),1)
+$(error OUTPUT_RMA_ONLY must be 0 or 1)
+endif
+ifeq ($(filter $(VALID_BOOLEAN_VALUES),$(OUTPUT_RMA_ONLY)),)
+$(error OUTPUT_RMA_ONLY must be 0 or 1)
+endif
+ifeq ($(OUTPUT_RMA_ONLY),1)
+ifneq ($(USE_MPI):$(MPI_INPUT_MODE),1:dynamic)
+$(error OUTPUT_RMA_ONLY=1 requires MPI dynamic input)
+endif
+ifeq ($(filter $(OUTPUT_MODE),single_unordered single_ordered),)
+$(error OUTPUT_RMA_ONLY=1 requires single-file output)
+endif
+endif
 
 # Fail on retired options instead of silently building an unintended ablation.
 $(foreach option,CPE_LDM_ALLOC CPE_MANUAL_LDM CPE_LDM_BYTES LDM_SCRATCH_BUDGET,\
@@ -152,6 +181,11 @@ endif
 ifeq ($(USE_MPI):$(OUTPUT_MODE),0:single_unordered)
 $(error OUTPUT_MODE=single_unordered requires USE_MPI=1)
 endif
+ifeq ($(OUTPUT_MODE),single_ordered)
+ifneq ($(USE_MPI):$(MPI_INPUT_MODE),1:dynamic)
+$(error OUTPUT_MODE=single_ordered requires USE_MPI=1 MPI_INPUT_MODE=dynamic)
+endif
+endif
 ifeq ($(CPE_DISCARD_DIGEST):$(OUTPUT_MODE),1:discard)
 ifneq ($(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI),cgs_cross:pool:0)
 $(error CPE_DISCARD_DIGEST=1 requires non-MPI cgs_cross+pool)
@@ -172,6 +206,7 @@ MPI_INPUT_MODE_VALUE_static  := SWBWA_MPI_INPUT_STATIC
 MPI_INPUT_MODE_VALUE_dynamic := SWBWA_MPI_INPUT_DYNAMIC
 OUTPUT_MODE_VALUE_split            := SWBWA_OUTPUT_SPLIT
 OUTPUT_MODE_VALUE_single_unordered := SWBWA_OUTPUT_SINGLE_UNORDERED
+OUTPUT_MODE_VALUE_single_ordered   := SWBWA_OUTPUT_SINGLE_ORDERED
 OUTPUT_MODE_VALUE_discard          := SWBWA_OUTPUT_DISCARD
 KSW_U8_MODE_VALUE_int32_16         := SWBWA_KSW_U8_INT32_16
 KSW_U8_MODE_VALUE_float16_16       := SWBWA_KSW_U8_FLOAT16_16
@@ -184,6 +219,7 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_CPE_ALLOC_MODE=$(CPE_ALLOC_VALUE_$(CPE_ALLOCATOR)) \
 	-DSWBWA_ENABLE_HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER) \
 	-DSWBWA_ENABLE_HOST_MALLOC_STATS=$(HOST_MALLOC_STATS) \
+	-DSWBWA_HOST_MPE_THREADS=$(HOST_MPE_THREADS) \
 	-DSWBWA_ENABLE_CPE_MALLOC_WRAPPER=$(CPE_MALLOC_WRAPPER_$(CPE_ALLOCATOR)) \
 	-DSWBWA_ENABLE_CPE_PROFILE=$(CPE_PROFILE) \
 	-DSWBWA_CPE_PROFILE_CG=$(CPE_PROFILE_CG) \
@@ -195,6 +231,7 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_CPE_LDM_MODE=$(CPE_LDM_MODE) \
 	-DSWBWA_CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST) \
 	-DSWBWA_DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES) \
+	-DSWBWA_OUTPUT_RMA_ONLY=$(OUTPUT_RMA_ONLY) \
 	-DSWBWA_OUTPUT_MODE=$(OUTPUT_MODE_VALUE_$(OUTPUT_MODE))
 
 ifeq ($(USE_MPI),1)
@@ -247,7 +284,7 @@ APP_OBJS := $(addprefix $(HOST_DIR)/, \
 	bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o \
 	kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o \
 	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o swbwa_mpi.o \
-	swbwa_output.o swbwa_cpe_profile.o)
+	swbwa_output.o swbwa_cpe_profile.o swbwa_host_workers.o swbwa_input.o)
 
 SLAVE_DIR     := src/slave
 SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
@@ -265,6 +302,7 @@ print-config:
 	@echo "CPE_ALLOCATOR=$(CPE_ALLOCATOR)"
 	@echo "HOST_MALLOC_WRAPPER=$(HOST_MALLOC_WRAPPER)"
 	@echo "HOST_MALLOC_STATS=$(HOST_MALLOC_STATS)"
+	@echo "HOST_MPE_THREADS=$(HOST_MPE_THREADS)"
 	@echo "CPE_PROFILE=$(CPE_PROFILE)"
 	@echo "KSW_U8_MODE=$(KSW_U8_MODE)"
 ifeq ($(CPE_PROFILE),1)
@@ -276,6 +314,7 @@ endif
 	@echo "CPE_LDM_MODE=$(CPE_LDM_MODE)"
 	@echo "CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST)"
 	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
+	@echo "OUTPUT_RMA_ONLY=$(OUTPUT_RMA_ONLY)"
 	@echo "DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES)"
 ifeq ($(USE_MPI),1)
 	@echo "MPI_INPUT_MODE=$(MPI_INPUT_MODE)"
@@ -295,13 +334,13 @@ $(HOST_DIR)/%.o: $(HOST_DIR)/%.cpp $(CONFIG_HEADER)
 	$(CXX) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
 # Link and archive rules
-$(PROG): libbwa.a $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS)
+$(PROG): libswbwa.a $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS)
 
 ifeq ($(USE_MPI),1)
 	@set -e; \
 	link_cmd="$$( \
 		$(CXX) -show $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) \
-		$(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS) \
+		$(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lswbwa $(LIBS) \
 		| sed 's#/single_static#/multi_static#g' \
 	)"; \
 	case "$$link_cmd" in \
@@ -321,13 +360,10 @@ ifeq ($(USE_MPI),1)
 	echo "$$link_cmd"; \
 	eval "$$link_cmd"
 else
-	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lbwa $(LIBS)
+	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lswbwa $(LIBS)
 endif
 
-bwamem-lite: libbwa.a $(HOST_DIR)/example.o
-	$(CC) $(CFLAGS) $(LDFLAGS) $(HOST_DIR)/example.o -o $@ -L. -lbwa $(LIBS)
-
-libbwa.a: $(LIB_OBJS)
+libswbwa.a: $(LIB_OBJS)
 	$(AR) -csru $@ $(LIB_OBJS)
 
 # Maintenance

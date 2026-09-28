@@ -1,6 +1,14 @@
 #ifndef SWBWA_CONFIG_H
 #define SWBWA_CONFIG_H
 
+/* Fail old experiment commands instead of silently running a different mode. */
+#if defined(SWBWA_CPE_POOL_INDEX) || defined(SWBWA_CPE_POOL_INDEX_CAPACITY) || \
+    defined(SWBWA_CPE_TASK_LEASE) || defined(SWBWA_CPE_TASK_QUEUES) || \
+    defined(SWBWA_CROSS_FINISH_BARRIER) || defined(SWBWA_CROSS_POLL_BACKOFF) || \
+    defined(SWBWA_ENABLE_PACKED_INT8)
+#error "retired CPE experiment option; remove it from EXTRA_CPPFLAGS"
+#endif
+
 /*
  * Central build-time configuration shared by MPE and CPE code.
  *
@@ -28,6 +36,7 @@
 #ifndef SWBWA_ENABLE_CPE_KERNEL_OPT
 #define SWBWA_ENABLE_CPE_KERNEL_OPT 0
 #endif
+
 #if SWBWA_ENABLE_CPE_KERNEL_OPT != 0 && SWBWA_ENABLE_CPE_KERNEL_OPT != 1
 #error "SWBWA_ENABLE_CPE_KERNEL_OPT must be 0 or 1"
 #endif
@@ -57,6 +66,10 @@
 #define SWBWA_OUTPUT_SPLIT             1
 #define SWBWA_OUTPUT_SINGLE_UNORDERED  2
 #define SWBWA_OUTPUT_DISCARD           3
+#define SWBWA_OUTPUT_SINGLE_ORDERED    4
+#define SWBWA_OUTPUT_SINGLE_FILE \
+    (SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED || \
+     SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED)
 
 #ifndef SWBWA_OUTPUT_MODE
 #define SWBWA_OUTPUT_MODE SWBWA_OUTPUT_SPLIT
@@ -64,12 +77,30 @@
 
 #if SWBWA_OUTPUT_MODE != SWBWA_OUTPUT_SPLIT && \
     SWBWA_OUTPUT_MODE != SWBWA_OUTPUT_SINGLE_UNORDERED && \
-    SWBWA_OUTPUT_MODE != SWBWA_OUTPUT_DISCARD
+    SWBWA_OUTPUT_MODE != SWBWA_OUTPUT_DISCARD && \
+    SWBWA_OUTPUT_MODE != SWBWA_OUTPUT_SINGLE_ORDERED
 #error "invalid SWBWA_OUTPUT_MODE"
 #endif
 
-#if !SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
-#error "single_unordered output requires SWBWA_USE_MPI=1"
+#if !SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+#error "single-file MPI output requires SWBWA_USE_MPI=1"
+#endif
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && \
+    SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_DYNAMIC
+#error "single_ordered requires dynamic input with monotonic global tickets"
+#endif
+
+/* Profiling only: reserve full output extents, but do not create/write a SAM. */
+#ifndef SWBWA_OUTPUT_RMA_ONLY
+#define SWBWA_OUTPUT_RMA_ONLY 0
+#endif
+#if SWBWA_OUTPUT_RMA_ONLY != 0 && SWBWA_OUTPUT_RMA_ONLY != 1
+#error "SWBWA_OUTPUT_RMA_ONLY must be 0 or 1"
+#endif
+#if SWBWA_OUTPUT_RMA_ONLY && (!SWBWA_USE_MPI || \
+    SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_DYNAMIC || \
+    !SWBWA_OUTPUT_SINGLE_FILE)
+#error "SWBWA_OUTPUT_RMA_ONLY requires MPI dynamic single-file output"
 #endif
 
 /* Zero hashes each complete SAM blob; a positive limit is profiling only. */
@@ -102,6 +133,17 @@
 #define SWBWA_USE_CGS 1
 #define SWBWA_CPE_COUNT 384
 #define SWBWA_CG_COUNT 6
+#endif
+
+/* Use each owned MPE by default; full-chip helpers verify their CG placement. */
+#ifndef SWBWA_HOST_MPE_THREADS
+#define SWBWA_HOST_MPE_THREADS SWBWA_CG_COUNT
+#endif
+#if SWBWA_HOST_MPE_THREADS != 1 && SWBWA_HOST_MPE_THREADS != 6
+#error "SWBWA_HOST_MPE_THREADS must be 1 or 6"
+#endif
+#if SWBWA_HOST_MPE_THREADS > SWBWA_CG_COUNT
+#error "SWBWA_HOST_MPE_THREADS=6 requires full-chip cgs/cgs_cross execution"
 #endif
 
 #if SWBWA_EXEC_MODE == SWBWA_EXEC_CGS_CROSS
@@ -207,16 +249,9 @@
 #define SWBWA_KSW_U8_LOGICAL_LANES  32
 #endif
 
-/* Internal CPE tuning. These are intentionally not Makefile-level modes. */
-#define SWBWA_ENABLE_DYNAMIC_SCHEDULING 1
-#define SWBWA_ENABLE_CPE_PREFETCH       1
-#define SWBWA_ENABLE_TWO_PASS_BATCH     0
-#define SWBWA_ENABLE_WORKER2_LDM        0
-#define SWBWA_ENABLE_PACKED_INT8        0
-#define SWBWA_ENABLE_SWLU               0
+/* CPE tasks use one shared atomic counter, with one read/pair per ticket. */
 #define SWBWA_READS_PER_DYNAMIC_TASK    1
 #define SWBWA_MAX_TASKS_PER_CPE          (50 << 10)
-#define SWBWA_TWO_PASS_BATCH_SIZE        8
 #define SWBWA_PIPELINE_QUEUE_CAPACITY    4
 #define SWBWA_PIPELINE_BUFFER_COUNT      (SWBWA_PIPELINE_QUEUE_CAPACITY + 1)
 

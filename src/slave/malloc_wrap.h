@@ -9,8 +9,6 @@
 extern "C" {
 #endif
 
-void swbwa_cpe_malloc_stats_init(void);
-void swbwa_cpe_malloc_stats_print(void);
 void set_big_buffer(char *buffer, long long bytes_per_cpe);
 
 void *wrap_calloc(size_t nmemb, size_t size,

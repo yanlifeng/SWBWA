@@ -48,6 +48,8 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
                                    swbwa_fastq_range_t *assigned_range,
                                    int64_t *chunk_count);
 int64_t swbwa_mpi_fastq_scheduler_chunk_bytes(void);
+int64_t swbwa_mpi_fastq_scheduler_chunk_count(void);
+const char *swbwa_mpi_fastq_scheduler_ticket_mode(void);
 int swbwa_mpi_fastq_scheduler_tail_percent(void);
 int64_t swbwa_mpi_fastq_scheduler_micro_chunk_bytes(void);
 int64_t swbwa_mpi_fastq_scheduler_fine_chunk_bytes(void);

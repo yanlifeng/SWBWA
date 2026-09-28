@@ -87,7 +87,6 @@ extern long long s_reg_sum;
 extern long long c_px2;
 extern long long s_px2;
 
-
 static int bwa_verbose = 1;
 
 void slave_bwt_sa_s();
@@ -99,7 +98,6 @@ typedef struct{
     int step;
     bwtint_t x0;
 } Para_bwa_sa;
-
 
 mem_opt_t *mem_opt_init()
 {
@@ -316,26 +314,6 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
 	// second pass: find MEMs inside a long SMEM
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MEM_COLLECT_SPLIT);
 	old_n = a->mem.n;
-#if SWBWA_ENABLE_TWO_PASS_BATCH
-    int b_x[old_n];
-    int b_min_intv[old_n];
-    int cnt_2_pass = 0;
-    for (k = 0; k < old_n; k++) {
-        bwtintv_t *p = &a->mem.a[k];
-        int start = p->info>>32, end = (int32_t)p->info;
-        if (end - start < split_len || p->x[2] > opt->split_width) continue;
-        if(seq[(start + end)>>1] > 3) continue;
-        b_x[cnt_2_pass] = (start + end)>>1;
-        b_min_intv[cnt_2_pass++] = p->x[2]+1;
-    }
-    for (k = 0; k < cnt_2_pass; k += SWBWA_TWO_PASS_BATCH_SIZE) {
-        int cnt_now = cnt_2_pass - k >= SWBWA_TWO_PASS_BATCH_SIZE ? SWBWA_TWO_PASS_BATCH_SIZE: cnt_2_pass - k;
-        bwt_smem1_batch(cnt_now, bwt, len, seq, b_x + k, b_min_intv + k, &a->mem1);
-        for (i = 0; i < a->mem1.n; ++i)
-            if ((uint32_t)a->mem1.a[i].info - (a->mem1.a[i].info>>32) >= opt->min_seed_len)
-                kv_push(bwtintv_t, a->mem, a->mem1.a[i]);
-    }
-#else
     for (k = 0; k < old_n; ++k) {
         bwtintv_t *p = &a->mem.a[k];
         int start = p->info>>32, end = (int32_t)p->info;
@@ -345,7 +323,6 @@ static void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, co
             if ((uint32_t)a->mem1.a[i].info - (a->mem1.a[i].info>>32) >= opt->min_seed_len)
 				kv_push(bwtintv_t, a->mem, a->mem1.a[i]);
     }
-#endif
 	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MEM_COLLECT_SPLIT);
 
     // third pass: LAST-like
@@ -387,9 +364,6 @@ typedef struct {
 typedef struct {
     int n, m, first, rid;
     uint32_t w:29, kept:2, is_alt:1;
-    //uint32_t w;
-    //uint32_t kept;
-    //uint32_t is_alt;
     float frac_rep;
     int64_t pos;
     mem_seed_t *seeds;
@@ -477,7 +451,6 @@ void mem_print_chain(const bntseq_t *bns, mem_chain_v *chn)
         err_putchar('\n');
     }
 }
-
 
 mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf)
 {
@@ -982,7 +955,6 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 	uint8_t *rseq = 0;
 	uint64_t *srt;
 
-
 	if (c->n == 0) return;
 	// get the max possible span
 	rmax[0] = l_pac<<1; rmax[1] = 0;
@@ -1009,7 +981,6 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 	for (i = 0; i < c->n; ++i)
 		srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
 	ks_introsort_64(c->n, srt);
-
 
 	for (k = c->n - 1; k >= 0; --k) {
 		mem_alnreg_t *a;
@@ -1430,7 +1401,6 @@ static mem_alnreg_v mem_align1_core_impl(int id, const mem_opt_t *opt,
 	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_CHAIN_FILTER);
 	if (bwa_verbose >= 4) mem_print_chain(bns, &chn);
 
-
 	kv_init(regs);
 	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_CHAIN_EXTENSION);
 	for (i = 0; i < chn.n; ++i) {
@@ -1610,7 +1580,6 @@ void worker12_context_destroy(void *opaque_context)
 #endif
 }
 
-
 void worker1_pre_fast(void *data, int i, int tid, mem_alnreg_v* cpe_regs)
 {
 	worker_t *w = (worker_t*)data;
@@ -1652,78 +1621,6 @@ void worker1_fast(void *data, int i, int tid, mem_alnreg_v* cpe_regs)
 	}
 }
 
-
-#define SWBWA_BENCH_ADDRESS_MODULUS 2147483648ll
-
-int get_value_from_file(const char *filename) {
-    FILE *file = fopen(filename, "r");
-    if (file == NULL) {
-        perror("Error opening file");
-        return -1; 
-    }
-
-    int value;
-    if (fscanf(file, "%d", &value) != 1) {
-        perror("Error reading from file");
-        fclose(file);
-        return -1;
-    }
-
-    fclose(file);
-    return value;
-}
-
-typedef struct {
-    uint64_t state;
-} rng_t;
-
-void rng_init(rng_t *rng, uint64_t seed) {
-    rng->state = seed;
-}
-
-uint64_t rng_rand(rng_t *rng) {
-    uint64_t x = rng->state;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    rng->state = x;
-    return x;
-}
-
-
-__uncached long lock_s;
-void occ_bench(void *data) {
-    int file_value = get_value_from_file("ccc_log");
-    if(_PEN >= file_value) return;
-    worker_t *w = (worker_t*)data;
-
-	rng_t rng;
-    rng_init(&rng, 99991 * (_PEN + 1));
-	uint64_t N = 1ll << 22;
-	uint64_t pre_cnt = _PEN * rand() + rand();
-	int ggnum = 0;
-    uint64_t cntt[4];
-    for(uint64_t i = 0; i < N; i++) {
-		//uint64_t k = (pre_cnt + pre_cnt / 991) % SWBWA_BENCH_ADDRESS_MODULUS;
-		uint64_t k = (pre_cnt + rng_rand(&rng)) % SWBWA_BENCH_ADDRESS_MODULUS;
-		//if(fabs(pre_k - k) < 1024 * 1024) {
-		//    ggnum++;
-		//    fprintf(stderr, "GG pos %d %llu %llu %llu\n", i, pre_k, k, fabs(pre_k - k));
-		//}
-		//pre_k = k;
-        //bench_bwt_occ4(w->bwt, k, &cnt);
-        //pre_cnt += cnt;
-        //if(i % 100000 == 0) fprintf(stderr, "k : %llu, cnt : %llu, pre_cnt %llu\n", k, cnt, pre_cnt);
-        bwt_occ4(w->bwt, k, cntt);
-        pre_cnt += cntt[0] + cntt[1] + cntt[2] + cntt[3];
-    }
-    athread_lock(&lock_s);
-    fprintf(stderr, "slave%d pre_cnt is %" PRIu64 ", ggnum is %d\n",
-            _PEN, pre_cnt, ggnum);
-    athread_unlock(&lock_s);
-
-}
-
 void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams)
 {
     extern int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2]);
@@ -1739,12 +1636,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
         for(int id = 0; id < 2; id++) {
             tmp_reg[id].n = w->regs[i<<1|id].n;
             tmp_reg[id].m = w->regs[i<<1|id].m;
-#if SWBWA_ENABLE_WORKER2_LDM
-            //tmp_reg[id].a = ldm_malloc(tmp_reg[id].m * sizeof(mem_alnreg_t));
             tmp_reg[id].a = malloc(tmp_reg[id].m * sizeof(mem_alnreg_t));
-#else
-            tmp_reg[id].a = malloc(tmp_reg[id].m * sizeof(mem_alnreg_t));
-#endif
             memcpy(tmp_reg[id].a, w->regs[i<<1|id].a, tmp_reg[id].n * sizeof(mem_alnreg_t));
         }
 
@@ -1760,11 +1652,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             int qual_len = w->seqs[i<<1|id].qual ? strlen(w->seqs[i<<1|id].qual) : 0;
 
             if (name_len > 0) {
-#if SWBWA_ENABLE_WORKER2_LDM
-                tmp_seq[id].name = ldm_malloc((name_len + 1) * sizeof(char));
-#else
                 tmp_seq[id].name = malloc((name_len + 1) * sizeof(char));
-#endif
                 memcpy(tmp_seq[id].name, w->seqs[i<<1|id].name, name_len * sizeof(char));
                 tmp_seq[id].name[name_len] = '\0';
             } else {
@@ -1772,11 +1660,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
 
             if (comment_len > 0) {
-#if SWBWA_ENABLE_WORKER2_LDM
-                tmp_seq[id].comment = ldm_malloc((comment_len + 1) * sizeof(char));
-#else
                 tmp_seq[id].comment = malloc((comment_len + 1) * sizeof(char));
-#endif
                 memcpy(tmp_seq[id].comment, w->seqs[i<<1|id].comment, comment_len * sizeof(char));
                 tmp_seq[id].comment[comment_len] = '\0';
             } else {
@@ -1784,11 +1668,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
 
             if (seq_len > 0) {
-#if SWBWA_ENABLE_WORKER2_LDM
-                tmp_seq[id].seq = ldm_malloc((seq_len + 1) * sizeof(char));
-#else
                 tmp_seq[id].seq = malloc((seq_len + 1) * sizeof(char));
-#endif
                 memcpy(tmp_seq[id].seq, w->seqs[i<<1|id].seq, seq_len * sizeof(char));
                 tmp_seq[id].seq[seq_len] = '\0';
             } else {
@@ -1796,11 +1676,7 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
 
             if (qual_len > 0) {
-#if SWBWA_ENABLE_WORKER2_LDM
-                tmp_seq[id].qual = ldm_malloc((qual_len + 1) * sizeof(char));
-#else
                 tmp_seq[id].qual = malloc((qual_len + 1) * sizeof(char));
-#endif
                 memcpy(tmp_seq[id].qual, w->seqs[i<<1|id].qual, qual_len * sizeof(char));
                 tmp_seq[id].qual[qual_len] = '\0';
             } else {
@@ -1808,22 +1684,9 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
             }
         }
 
-
-	
-
-
-     
-//        mem_sam_pe(w->opt, w->bns, w->pac, w->pes, (w->n_processed>>1) + i, &w->seqs[i<<1], &w->regs[i<<1]);
         mem_sam_pe(w->opt, w->bns, w->pac, w->pes, (w->n_processed>>1) + i, tmp_seq, tmp_reg);
 
-     
-
-     
         for(int id = 0; id < 2; id++) {
-
-            //int mpe_sam_len = strlen(w->seqs[i<<1|id].sam);
-            //assert(mpe_sam_len == (w->seqs[i<<1|id].l_seq << 6));
-//            int mpe_sam_len = w->seqs[i<<1|id].l_seq << 6;
 
             int cpe_sam_len = strlen(tmp_seq[id].sam);
             cpe_sams[i<<1|id] = tmp_seq[id].sam;
@@ -1831,33 +1694,15 @@ void worker2_pre_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams
 
             memcpy(w->seqs[i<<1|id].seq, tmp_seq[id].seq, w->seqs[i<<1|id].l_seq * sizeof(char));
 
-
-#if SWBWA_ENABLE_WORKER2_LDM
-            int name_len = w->seqs[i<<1|id].name ? strlen(w->seqs[i<<1|id].name) : 0;
-            int comment_len = w->seqs[i<<1|id].comment ? strlen(w->seqs[i<<1|id].comment) : 0;
-            int seq_len = w->seqs[i<<1|id].l_seq;
-            int qual_len = w->seqs[i<<1|id].qual ? strlen(w->seqs[i<<1|id].qual) : 0;
-
-            //if(tmp_reg[id].a) ldm_free(tmp_reg[id].a, tmp_reg[id].m * sizeof(mem_alnreg_t));
-            if(tmp_reg[id].a) free(tmp_reg[id].a);
-            if(tmp_seq[id].name) ldm_free(tmp_seq[id].name, (name_len + 1) * sizeof(char));
-            if(tmp_seq[id].comment) ldm_free(tmp_seq[id].comment, (comment_len + 1) * sizeof(char));
-            if(tmp_seq[id].seq) ldm_free(tmp_seq[id].seq, (seq_len + 1) * sizeof(char));
-            if(tmp_seq[id].qual) ldm_free(tmp_seq[id].qual, (qual_len + 1) * sizeof(char));
-#else
             if(tmp_reg[id].a) free(tmp_reg[id].a);
             if(tmp_seq[id].name) free(tmp_seq[id].name);
             if(tmp_seq[id].comment) free(tmp_seq[id].comment);
             if(tmp_seq[id].seq) free(tmp_seq[id].seq);
             if(tmp_seq[id].qual) free(tmp_seq[id].qual);
-#endif
-//            if(tmp_seq[id].sam) free(tmp_seq[id].sam);
         }
     }
 
-     
 }
-
 
 void worker2_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams)
 {
@@ -1879,7 +1724,6 @@ void worker2_fast(void *data, int i, int tid, int *sam_lens, char **cpe_sams)
         }
     }
 }
-
 
 static int next_fastq_line(char *buffer, long long size, long long *position,
                            char **line)
@@ -2086,7 +1930,6 @@ void worker12_pre_fast(void *data, void *opaque_context, int l_pos, int r_pos,
     }
 
     mem_pestat_t pes[4];
-//    w->pes = &pes[0];
     if (w->opt->flag&MEM_F_PE) { // infer insert sizes if not provided
         if (pes0) memcpy(pes, pes0, 4 * sizeof(mem_pestat_t));
         else mem_pestat(w->opt, w->bns->l_pac, l_pos, r_pos, w->regs, pes, s_ids);
@@ -2114,7 +1957,6 @@ void worker12_pre_fast(void *data, void *opaque_context, int l_pos, int r_pos,
             for (int id = 0; id < 2; id++) {
                 tmp_seq[id] = w->seqs[i<<1|id];
             }
-//            mem_sam_pe(w->opt, w->bns, w->pac, w->pes, (w->n_processed>>1) + i, &w->seqs[i<<1], &w->regs[i<<1]);
             mem_sam_pe(w->opt, w->bns, w->pac, pes, (w->n_processed>>1) + i, tmp_seq, &w->regs[i<<1]);
             free(w->regs[i<<1|0].a); free(w->regs[i<<1|1].a);
             for(int id = 0; id < 2; id++) {
@@ -2156,7 +1998,6 @@ void worker12_fast(void *data, int l_pos, int r_pos, int tid, int *sam_lens, cha
         }
     }
 }
-
 
 void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)
 {

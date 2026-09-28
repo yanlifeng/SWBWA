@@ -186,7 +186,7 @@ int main_shm(int argc, char *argv[])
 		else if (c == 'f') tmpfn = optarg;
 	}
 	if (optind == argc && !to_list && !to_drop) {
-		fprintf(stderr, "\nUsage: bwa shm [-d|-l] [-f tmpFile] [idxbase]\n\n");
+		fprintf(stderr, "\nUsage: SWBWA shm [-d|-l] [-f tmpFile] [idxbase]\n\n");
 		fprintf(stderr, "Options: -d       destroy all indices in shared memory\n");
 		fprintf(stderr, "         -l       list names of indices in shared memory\n");
 		fprintf(stderr, "         -f FILE  temporary file to reduce peak memory\n\n");

@@ -1,5 +1,8 @@
 #include "swbwa_config.h"
 #include "swbwa_mpi.h"
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+#include "swbwa_output.h"
+#endif
 
 #include <errno.h>
 #include <inttypes.h>
@@ -195,6 +198,8 @@ typedef struct {
     int debug_enabled;
     int opened;
     int next_queue;
+    int global_tickets;
+    int exhausted;
     int tail_percent;
     int fine_tail_waves;
     unsigned long long local_ticket;
@@ -1068,6 +1073,33 @@ int swbwa_mpi_fastq_scheduler_open(const char *read1_path,
     }
     memset(&chunk_scheduler, 0, sizeof(chunk_scheduler));
     chunk_scheduler.read1_path = read1_path;
+    {
+        const char *mode = getenv("SWBWA_MPI_TICKET_MODE");
+        int local_mode = SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED;
+        int min_mode, max_mode;
+
+        if (mode != NULL && strcmp(mode, "global") == 0) local_mode = 1;
+        else if (mode != NULL) local_mode = strcmp(mode, "distributed") == 0 ? 0 : -1;
+        if (SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && local_mode != 1)
+            local_mode = -1;
+        if (MPI_Allreduce(&local_mode, &min_mode, 1, MPI_INT, MPI_MIN,
+                          MPI_COMM_WORLD) != MPI_SUCCESS ||
+            MPI_Allreduce(&local_mode, &max_mode, 1, MPI_INT, MPI_MAX,
+                          MPI_COMM_WORLD) != MPI_SUCCESS)
+            return -1;
+        if (min_mode < 0 || min_mode != max_mode) {
+            if (mpi_rank == 0)
+                fprintf(stderr, "[E::MPI input] SWBWA_MPI_TICKET_MODE must be "
+                        "distributed or global and identical on all ranks; "
+                        "single_ordered requires global\n");
+            errno = EINVAL;
+            return -1;
+        }
+        chunk_scheduler.global_tickets = local_mode;
+        if (mpi_rank == 0 && debug_enabled)
+            fprintf(stderr, "[MPI input tickets] mode=%s\n",
+                    local_mode ? "global" : "distributed");
+    }
     chunk_scheduler.debug_enabled = debug_enabled != 0;
     local_status = swbwa_fastq_chunk_bytes(
         read1_path, read2_path, bytes_per_cg, &chunk_scheduler.file_size,
@@ -1302,6 +1334,16 @@ int64_t swbwa_mpi_fastq_scheduler_chunk_bytes(void)
     return chunk_scheduler.chunk_bytes;
 }
 
+const char *swbwa_mpi_fastq_scheduler_ticket_mode(void)
+{
+    return chunk_scheduler.global_tickets ? "global" : "distributed";
+}
+
+int64_t swbwa_mpi_fastq_scheduler_chunk_count(void)
+{
+    return chunk_scheduler.opened ? chunk_scheduler.chunk_count : -1;
+}
+
 int swbwa_mpi_fastq_scheduler_tail_percent(void)
 {
     return chunk_scheduler.tail_percent;
@@ -1332,15 +1374,22 @@ int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
     }
     next_start = scheduler_debug_now();
     if (chunk_scheduler.debug_enabled) ++chunk_scheduler.next_calls;
+    if (chunk_scheduler.exhausted) {
+        scheduler_debug_finish_next(next_start);
+        return 0;
+    }
 
     for (;;) {
         /* Queue q owns chunk IDs q, q + mpi_size, ... . */
         int start_queue = chunk_scheduler.next_queue;
+        int queue_count = chunk_scheduler.global_tickets ? 1 : mpi_size;
         int claimed_valid_chunk = 0;
         int attempt;
 
-        for (attempt = 0; attempt < mpi_size; ++attempt) {
-            const int queue = (start_queue + attempt) % mpi_size;
+        for (attempt = 0; attempt < queue_count; ++attempt) {
+            const int queue = chunk_scheduler.global_tickets ? 0 :
+                              (start_queue + attempt) % mpi_size;
+            const int stride = chunk_scheduler.global_tickets ? 1 : mpi_size;
             const unsigned long long increment = 1;
             unsigned long long ticket = 0;
             int64_t index;
@@ -1393,13 +1442,13 @@ int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
             }
             if (ticket >
                 (unsigned long long)(INT64_MAX - queue) /
-                    (unsigned long long)mpi_size) {
+                    (unsigned long long)stride) {
                 errno = EOVERFLOW;
                 scheduler_debug_finish_next(next_start);
                 return -1;
             }
 
-            index = queue + (int64_t)ticket * mpi_size;
+            index = queue + (int64_t)ticket * stride;
             if (index >= chunk_scheduler.chunk_count) {
                 if (chunk_scheduler.debug_enabled)
                     ++chunk_scheduler.out_of_range_tickets;
@@ -1421,6 +1470,9 @@ int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
                 }
             }
             if (range->start == range->end) {
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+                if (swbwa_output_ordered_skip(index) != 0) return -1;
+#endif
                 if (chunk_scheduler.debug_enabled)
                     ++chunk_scheduler.empty_chunks;
                 break;
@@ -1443,6 +1495,7 @@ int swbwa_mpi_fastq_scheduler_next(swbwa_fastq_range_t *range)
             return 1;
         }
         if (!claimed_valid_chunk) {
+            chunk_scheduler.exhausted = 1;
             scheduler_debug_finish_next(next_start);
             return 0;
         }
@@ -1619,7 +1672,8 @@ static void print_scheduler_debug_report_body(void)
                 "    %5" PRId64 " %7" PRId64 " %6d"
                 "  [%12" PRId64 ", %12" PRId64 ")"
                 " %12" PRId64 " %12" PRId64 " %11.6f%s\n",
-                order, chunk_id, (int)(chunk_id % mpi_size),
+                order, chunk_id, chunk_scheduler.global_tickets ? 0 :
+                                (int)(chunk_id % mpi_size),
                 debug_chunk->start, debug_chunk->end,
                 debug_chunk->end - debug_chunk->start,
                 debug_chunk->records,

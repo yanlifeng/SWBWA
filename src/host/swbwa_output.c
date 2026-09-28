@@ -2,11 +2,13 @@
 #include "swbwa_mpi.h"
 #include "swbwa_output.h"
 #include "swbwa_discard_digest.h"
+#include "swbwa_host_workers.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +21,21 @@
 #if SWBWA_USE_MPI
 #include <mpi.h>
 #endif
+
+#if SWBWA_OUTPUT_RMA_ONLY
+enum { OUTPUT_SAMPLE_READS = 100 };
+typedef struct {
+    int64_t id, start, end;
+    int expected_reads, paired;
+    uint64_t reads, bytes, sample_reads, sample_bytes, sum, xor;
+} swbwa_output_sample_t;
+#endif
+
+typedef struct {
+    int64_t id, start, end;
+    uint64_t offset, bytes;
+    int reads;
+} swbwa_output_extent_t;
 
 typedef struct {
     unsigned char *buffer;
@@ -37,8 +54,16 @@ typedef struct {
     uint64_t posix_write_calls;
     uint64_t posix_write_bytes;
     uint64_t reservation_calls;
+    uint64_t reserved_bytes;
     uint64_t pwrite_calls;
     uint64_t pwrite_bytes;
+    uint64_t last_offset;
+    size_t *record_lengths;
+    size_t record_capacity;
+    swbwa_output_extent_t *extents;
+    size_t extent_count, extent_capacity;
+    uint64_t chunk_calls;
+    double chunk_measure_seconds, chunk_pack_seconds;
     double buffered_flush_seconds;
     double posix_write_seconds;
     double fetch_and_op_seconds;
@@ -56,9 +81,20 @@ typedef struct {
     int discard_hash_enabled;
 #endif
     char *name;
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_OUTPUT_RMA_ONLY
+    int chunk_active;
+    swbwa_output_sample_t chunk;
+    swbwa_output_sample_t *samples;
+    size_t sample_count, sample_capacity;
+#endif
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
     MPI_Win offset_window;
     uint64_t *offset_base;
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    int64_t ordered_count, last_chunk;
+    uint64_t ordered_empty_chunks, ordered_polls;
+    double ordered_wait_seconds;
+#endif
 #endif
 } swbwa_output_state_t;
 
@@ -80,7 +116,9 @@ static int discard_hash_enabled(void)
     errno = EINVAL;
     return -1;
 }
+#endif
 
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD || SWBWA_OUTPUT_RMA_ONLY
 static inline uint64_t hash_sam_word(const unsigned char *cursor)
 {
     const uint64_t multiplier = UINT64_C(0xc6a4a7935bd1e995);
@@ -145,7 +183,9 @@ static uint64_t hash_sam_record(const void *data, size_t length)
     return hash;
 #endif
 }
+#endif
 
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
 static void print_discard_hash(void)
 {
     fprintf(stderr,
@@ -158,6 +198,82 @@ static void print_discard_hash(void)
             output_state.discard_hash_enabled,
             (unsigned long long)SWBWA_DISCARD_HASH_BYTES);
     fflush(stderr);
+}
+#endif
+
+#if SWBWA_OUTPUT_RMA_ONLY
+int swbwa_output_begin_chunk(int64_t id, int64_t start, int64_t end,
+                             int reads, int paired)
+{
+    if (!output_state.opened || output_state.chunk_active || id < 0 ||
+        start < 0 || end < start || reads < 0 ||
+        (paired != 0 && paired != 1) || (paired && (reads & 1))) {
+        errno = EINVAL;
+        return -1;
+    }
+    memset(&output_state.chunk, 0, sizeof(output_state.chunk));
+    output_state.chunk.id = id;
+    output_state.chunk.start = start;
+    output_state.chunk.end = end;
+    output_state.chunk.expected_reads = reads;
+    output_state.chunk.paired = paired;
+    output_state.chunk_active = 1;
+    return 0;
+}
+
+int swbwa_output_end_chunk(void)
+{
+    if (!output_state.opened || !output_state.chunk_active ||
+        output_state.chunk.reads != (uint64_t)output_state.chunk.expected_reads) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (output_state.sample_count == output_state.sample_capacity) {
+        size_t capacity = output_state.sample_capacity ?
+                          output_state.sample_capacity * 2 : 16;
+        swbwa_output_sample_t *samples;
+
+        if (capacity < output_state.sample_capacity ||
+            capacity > SIZE_MAX / sizeof(*samples)) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        samples = realloc(output_state.samples, capacity * sizeof(*samples));
+        if (samples == NULL) return -1;
+        output_state.samples = samples;
+        output_state.sample_capacity = capacity;
+    }
+    output_state.samples[output_state.sample_count++] = output_state.chunk;
+    output_state.chunk_active = 0;
+    /* Chunk boundaries must not change the normal output flush schedule. */
+    return 0;
+}
+
+static void print_output_samples(void)
+{
+    size_t i;
+
+    for (i = 0; i < output_state.sample_count; ++i) {
+        const swbwa_output_sample_t *s = &output_state.samples[i];
+        fprintf(stderr,
+                "[SWBWA chunk sample rank %06d/%06d] chunk=%" PRId64
+                " start=%" PRId64 " end=%" PRId64 " paired=%d"
+                " reads=%" PRIu64 " sam_bytes=%" PRIu64
+                " sample_reads=%" PRIu64 " sample_bytes=%" PRIu64
+                " sum=0x%016" PRIx64 " xor=0x%016" PRIx64 "\n",
+                swbwa_mpi_rank(), swbwa_mpi_size(), s->id, s->start, s->end,
+                s->paired, s->reads, s->bytes, s->sample_reads, s->sample_bytes,
+                s->sum, s->xor);
+    }
+    fprintf(stderr,
+            "[SWBWA output RMA-only rank %06d/%06d] chunks=%zu"
+            " reads=%" PRIu64 " sam_bytes=%" PRIu64
+            " reserved_bytes=%" PRIu64 " reservations=%" PRIu64
+            " disk_bytes=%" PRIu64 " sample_limit=%d\n",
+            swbwa_mpi_rank(), swbwa_mpi_size(), output_state.sample_count,
+            output_state.write_calls, output_state.submitted_bytes,
+            output_state.reserved_bytes, output_state.reservation_calls,
+            output_state.pwrite_bytes, OUTPUT_SAMPLE_READS);
 }
 #endif
 
@@ -214,7 +330,7 @@ static int write_all(int fd, const unsigned char *data, size_t length)
     return 0;
 }
 
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
 static int pwrite_all(int fd, const unsigned char *data, size_t length,
                       uint64_t offset)
 {
@@ -256,6 +372,65 @@ static int mpi_check(int result, const char *operation)
             swbwa_mpi_rank(), operation, length, error);
     return -1;
 }
+
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+/* Global input tickets make each rank's FIFO monotonic. Therefore the first
+ * unpublished prefix cannot be blocked behind a later chunk on that rank. */
+static int reserve_ordered(int64_t id, uint64_t bytes, uint64_t *offset,
+                           int record_stats)
+{
+    uint64_t next, polls = 0;
+    double start = output_debug_now();
+    int result;
+
+    if (id < 0 || id >= output_state.ordered_count || bytes > INT64_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+    do {
+        result = MPI_Fetch_and_op(NULL, offset, MPI_UINT64_T, 0, (MPI_Aint)id,
+                                  MPI_NO_OP, output_state.offset_window);
+        if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
+        if (mpi_check(result, "read ordered prefix") != 0) return -1;
+        ++polls;
+        if (*offset == UINT64_MAX) sched_yield();
+    } while (*offset == UINT64_MAX);
+    if (*offset > (uint64_t)INT64_MAX - bytes) {
+        errno = EOVERFLOW;
+        return -1;
+    }
+    next = *offset + bytes;
+    /* Accumulate/NO_OP provides atomic access to each prefix slot; ordinary
+     * concurrent Put/Get would not provide this atomicity contract. */
+    result = MPI_Accumulate(&next, 1, MPI_UINT64_T, 0, (MPI_Aint)(id + 1),
+                            1, MPI_UINT64_T, MPI_REPLACE, output_state.offset_window);
+    if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
+    if (mpi_check(result, "publish ordered prefix") != 0) return -1;
+    if (record_stats) {
+        double seconds = output_debug_now() - start;
+        ++output_state.reservation_calls;
+        output_state.reserved_bytes += bytes;
+        output_state.ordered_polls += polls;
+        output_state.ordered_wait_seconds += seconds;
+        output_state.reservation_total_seconds += seconds;
+        output_state.last_offset = *offset;
+    }
+    return 0;
+}
+
+int swbwa_output_ordered_skip(int64_t id)
+{
+    uint64_t offset;
+    if (!output_state.opened) {
+        errno = EINVAL;
+        return -1;
+    }
+    /* Only the reader updates this counter; do not touch writer statistics. */
+    if (reserve_ordered(id, 0, &offset, 0) != 0) return -1;
+    ++output_state.ordered_empty_chunks;
+    return 0;
+}
+#endif
 
 static int write_single_unordered(const unsigned char *data, size_t length)
 {
@@ -299,12 +474,19 @@ static int write_single_unordered(const unsigned char *data, size_t length)
         errno = EOVERFLOW;
         return -1;
     }
+    output_state.reserved_bytes += increment;
+    output_state.last_offset = offset;
 
     /*
      * RMA gives every rank a disjoint file extent.  POSIX pwrite keeps those
      * writes parallel without routing bulk I/O through Sunway MPI progress.
      */
+#if SWBWA_OUTPUT_RMA_ONLY
+    (void)data;
+    return 0;
+#else
     return pwrite_all(output_state.fd, data, length, offset);
+#endif
 }
 
 static int flush_single_unordered(void)
@@ -337,7 +519,7 @@ int swbwa_output_open(const char *path, int debug_enabled)
     memset(&output_state, 0, sizeof(output_state));
     output_state.fd = -1;
     output_state.capacity = capacity;
-    output_state.debug_enabled = debug_enabled != 0;
+    output_state.debug_enabled = debug_enabled != 0 || SWBWA_OUTPUT_RMA_ONLY;
 #if !(SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
     output_state.buffer = malloc(capacity);
     if (output_state.buffer == NULL) return -1;
@@ -371,11 +553,13 @@ int swbwa_output_open(const char *path, int debug_enabled)
     output_state.fd = open(output_state.name, O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (output_state.fd < 0) goto fail;
     output_state.owns_fd = 1;
-#elif SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#elif SWBWA_OUTPUT_SINGLE_FILE
+#if !SWBWA_OUTPUT_RMA_ONLY
     int local_open_failed;
     int local_open_errno;
     int any_open_failed;
     int open_flags = O_CREAT | O_WRONLY;
+#endif
 
     if (sizeof(off_t) < sizeof(int64_t)) {
         errno = EOVERFLOW;
@@ -383,6 +567,7 @@ int swbwa_output_open(const char *path, int debug_enabled)
     }
     output_state.name = strdup(path);
     if (output_state.name == NULL) goto fail;
+#if !SWBWA_OUTPUT_RMA_ONLY
     if (swbwa_mpi_rank() == 0) open_flags |= O_TRUNC;
     output_state.fd = open(output_state.name, open_flags, 0666);
     output_state.owns_fd = output_state.fd >= 0;
@@ -400,7 +585,20 @@ int swbwa_output_open(const char *path, int debug_enabled)
         errno = EIO;
         goto fail;
     }
-    if (mpi_check(MPI_Win_allocate(swbwa_mpi_rank() == 0 ? sizeof(uint64_t) : 0,
+#endif
+    size_t window_bytes = sizeof(uint64_t);
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    output_state.ordered_count = swbwa_mpi_fastq_scheduler_chunk_count();
+    output_state.last_chunk = -1;
+    if (output_state.ordered_count < 0 ||
+        (uint64_t)output_state.ordered_count >= (uint64_t)PTRDIFF_MAX / sizeof(uint64_t) ||
+        strcmp(swbwa_mpi_fastq_scheduler_ticket_mode(), "global") != 0) {
+        errno = EINVAL;
+        goto fail;
+    }
+    window_bytes = ((size_t)output_state.ordered_count + 1) * sizeof(uint64_t);
+#endif
+    if (mpi_check(MPI_Win_allocate(swbwa_mpi_rank() == 0 ? window_bytes : 0,
                                    sizeof(uint64_t), MPI_INFO_NULL, MPI_COMM_WORLD,
                                    &output_state.offset_base,
                                    &output_state.offset_window),
@@ -409,7 +607,10 @@ int swbwa_output_open(const char *path, int debug_enabled)
     if (mpi_check(MPI_Win_lock_all(0, output_state.offset_window),
                   "MPI_Win_lock_all") != 0)
         goto fail_window;
-    if (swbwa_mpi_rank() == 0) *output_state.offset_base = 0;
+    if (swbwa_mpi_rank() == 0) {
+        memset(output_state.offset_base, 0xff, window_bytes);
+        *output_state.offset_base = 0;
+    }
     if (mpi_check(MPI_Win_sync(output_state.offset_window), "MPI_Win_sync") != 0)
         goto fail_locked_window;
     if (mpi_check(MPI_Barrier(MPI_COMM_WORLD), "MPI_Barrier") != 0)
@@ -432,7 +633,7 @@ int swbwa_output_open(const char *path, int debug_enabled)
     output_state.opened = 1;
     return 0;
 
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
 fail_locked_window:
     MPI_Win_unlock_all(output_state.offset_window);
 fail_window:
@@ -494,6 +695,29 @@ int swbwa_output_write(const void *data, size_t length)
         return -1;
     }
     if (length == 0) return 0;
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    /* A streaming write has no input chunk identity and cannot be ordered. */
+    errno = EINVAL;
+    return -1;
+#endif
+#if SWBWA_OUTPUT_RMA_ONLY
+    {
+        swbwa_output_sample_t *s = &output_state.chunk;
+        if (!output_state.chunk_active || s->reads >= (uint64_t)s->expected_reads) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (s->reads < OUTPUT_SAMPLE_READS) {
+            uint64_t hash = hash_sam_record(data, length);
+            ++s->sample_reads;
+            s->sample_bytes += (uint64_t)length;
+            s->sum += hash;
+            s->xor ^= hash;
+        }
+        ++s->reads;
+        s->bytes += (uint64_t)length;
+    }
+#endif
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     {
         ++output_state.write_calls;
@@ -526,7 +750,7 @@ int swbwa_output_write(const void *data, size_t length)
             ++output_state.direct_write_calls;
             output_state.direct_write_bytes += (uint64_t)length;
         }
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
         return write_single_unordered(source, length);
 #else
         return write_all(output_state.fd, source, length);
@@ -537,6 +761,196 @@ int swbwa_output_write(const void *data, size_t length)
     if (output_state.used == output_state.capacity)
         return swbwa_output_flush();
     return 0;
+}
+
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+typedef struct {
+    const bseq1_t *seqs;
+    const int *known_lengths;
+    size_t *lengths;
+    unsigned char *packed;
+    size_t sums[SWBWA_HOST_MPE_THREADS];
+    size_t offsets[SWBWA_HOST_MPE_THREADS];
+    int errors[SWBWA_HOST_MPE_THREADS];
+    int reads;
+} output_pack_t;
+
+static void measure_chunk(void *opaque, int worker, int workers)
+{
+    output_pack_t *task = opaque;
+    size_t begin = (size_t)task->reads * worker / workers;
+    size_t end = (size_t)task->reads * (worker + 1) / workers;
+    size_t total = 0, i;
+
+    for (i = begin; i < end; ++i) {
+        size_t length;
+        if (task->seqs[i].sam == NULL) {
+            task->errors[worker] = EINVAL;
+            return;
+        }
+        if (task->known_lengths != NULL && task->known_lengths[i] < 0) {
+            task->errors[worker] = EINVAL;
+            return;
+        }
+        length = task->known_lengths != NULL ? (size_t)task->known_lengths[i]
+                                             : strlen(task->seqs[i].sam);
+        if (length > SIZE_MAX - total) {
+            task->errors[worker] = EOVERFLOW;
+            return;
+        }
+        task->lengths[i] = length;
+        total += length;
+    }
+    task->sums[worker] = total;
+}
+
+static void pack_chunk(void *opaque, int worker, int workers)
+{
+    output_pack_t *task = opaque;
+    size_t begin = (size_t)task->reads * worker / workers;
+    size_t end = (size_t)task->reads * (worker + 1) / workers;
+    size_t pos = task->offsets[worker], i;
+
+    for (i = begin; i < end; ++i) {
+        memcpy(task->packed + pos, task->seqs[i].sam, task->lengths[i]);
+        pos += task->lengths[i];
+    }
+}
+#endif
+
+int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
+                             const bseq1_t *seqs, const int *sam_lengths,
+                             int reads, int paired)
+{
+    int i;
+    if (!output_state.opened || id < 0 || start < 0 || end < start ||
+        reads < 0 || (reads && seqs == NULL) ||
+        (paired != 0 && paired != 1) || (paired && (reads & 1))) {
+        errno = EINVAL;
+        return -1;
+    }
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+    {
+        output_pack_t task;
+        size_t bytes = 0;
+        double clock_start;
+
+#if SWBWA_OUTPUT_RMA_ONLY
+        if (output_state.chunk_active) {
+            errno = EINVAL;
+            return -1;
+        }
+#endif
+        /* Drain legacy streaming output before giving this chunk its own extent. */
+        if (swbwa_output_flush() != 0) return -1;
+        if ((size_t)reads > output_state.record_capacity) {
+            size_t *lengths;
+            if ((size_t)reads > SIZE_MAX / sizeof(*lengths)) {
+                errno = EOVERFLOW;
+                return -1;
+            }
+            lengths = realloc(output_state.record_lengths, (size_t)reads * sizeof(*lengths));
+            if (lengths == NULL) return -1;
+            output_state.record_lengths = lengths;
+            output_state.record_capacity = (size_t)reads;
+        }
+        memset(&task, 0, sizeof(task));
+        task.seqs = seqs;
+        task.known_lengths = sam_lengths;
+        task.lengths = output_state.record_lengths;
+        task.reads = reads;
+        clock_start = output_debug_now();
+        swbwa_host_workers_run_ready(measure_chunk, &task);
+        for (i = 0; i < SWBWA_HOST_MPE_THREADS; ++i) {
+            if (task.errors[i] || task.sums[i] > SIZE_MAX - bytes) {
+                errno = task.errors[i] ? task.errors[i] : EOVERFLOW;
+                return -1;
+            }
+            task.offsets[i] = bytes;
+            bytes += task.sums[i];
+        }
+        output_state.chunk_measure_seconds += output_debug_now() - clock_start;
+        if ((uint64_t)bytes > INT64_MAX) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        if (bytes > output_state.capacity) {
+            unsigned char *buffer = realloc(output_state.buffer, bytes);
+            if (buffer == NULL) return -1;
+            output_state.buffer = buffer;
+            output_state.capacity = bytes;
+        }
+        if (output_state.debug_enabled && output_state.extent_count == output_state.extent_capacity) {
+            size_t capacity = output_state.extent_capacity ? output_state.extent_capacity * 2 : 16;
+            swbwa_output_extent_t *extents;
+            if (capacity < output_state.extent_capacity || capacity > SIZE_MAX / sizeof(*extents)) {
+                errno = EOVERFLOW;
+                return -1;
+            }
+            extents = realloc(output_state.extents, capacity * sizeof(*extents));
+            if (extents == NULL) return -1;
+            output_state.extents = extents;
+            output_state.extent_capacity = capacity;
+        }
+        task.packed = output_state.buffer;
+        clock_start = output_debug_now();
+        swbwa_host_workers_run_ready(pack_chunk, &task);
+        output_state.chunk_pack_seconds += output_debug_now() - clock_start;
+#if SWBWA_OUTPUT_RMA_ONLY
+        if (swbwa_output_begin_chunk(id, start, end, reads, paired) != 0) return -1;
+        for (i = 0; i < reads && i < OUTPUT_SAMPLE_READS; ++i) {
+            uint64_t hash = hash_sam_record(seqs[i].sam, task.lengths[i]);
+            ++output_state.chunk.sample_reads;
+            output_state.chunk.sample_bytes += task.lengths[i];
+            output_state.chunk.sum += hash;
+            output_state.chunk.xor ^= hash;
+        }
+        output_state.chunk.reads = (uint64_t)reads;
+        output_state.chunk.bytes = bytes;
+#endif
+        ++output_state.chunk_calls;
+        output_state.write_calls += (uint64_t)reads;
+        output_state.submitted_bytes += bytes;
+        output_state.used = bytes;
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+        uint64_t offset;
+        if (id <= output_state.last_chunk) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (reserve_ordered(id, bytes, &offset, 1) != 0) return -1;
+#if !SWBWA_OUTPUT_RMA_ONLY
+        if (pwrite_all(output_state.fd, output_state.buffer, bytes, offset) != 0)
+            return -1;
+#endif
+        output_state.used = 0;
+        output_state.last_chunk = id;
+#else
+        if (swbwa_output_flush() != 0) return -1;
+#endif
+        if (output_state.debug_enabled) {
+            swbwa_output_extent_t *extent = &output_state.extents[output_state.extent_count++];
+            extent->id = id;
+            extent->start = start;
+            extent->end = end;
+            extent->reads = reads;
+            extent->bytes = bytes;
+            extent->offset = bytes || SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+                           ? output_state.last_offset : 0;
+        }
+#if SWBWA_OUTPUT_RMA_ONLY
+        if (swbwa_output_end_chunk() != 0) return -1;
+#endif
+        return 0;
+    }
+#else
+    (void)sam_lengths;
+    for (i = 0; i < reads; ++i) {
+        if (seqs[i].sam && swbwa_output_write(seqs[i].sam, strlen(seqs[i].sam)) != 0)
+            return -1;
+    }
+    return swbwa_output_flush();
+#endif
 }
 
 int swbwa_output_flush(void)
@@ -556,7 +970,10 @@ int swbwa_output_flush(void)
         ++output_state.buffered_flush_calls;
         output_state.buffered_flush_bytes += (uint64_t)bytes;
     }
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    errno = EINVAL;
+    result = -1;
+#elif SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
     result = flush_single_unordered();
 #elif SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     output_state.used = 0;
@@ -572,7 +989,14 @@ int swbwa_output_flush(void)
 
 static const char *output_debug_mode_name(void)
 {
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    return SWBWA_OUTPUT_RMA_ONLY ? "MPI single_ordered RMA-only (no disk writes; sampled validation)"
+                                : "MPI single_ordered";
+#endif
+#if SWBWA_OUTPUT_RMA_ONLY
+    return "MPI single_unordered RMA-only (no disk writes; sampled validation)";
+#endif
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
     return "MPI single_unordered";
 #elif SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SPLIT
     return "MPI split";
@@ -645,8 +1069,12 @@ static void print_output_debug_report_body(void)
         "buffered flush total",
         output_state.buffered_flush_seconds,
         output_state.buffered_flush_calls, 4);
+    print_output_debug_time("chunk length pass", output_state.chunk_measure_seconds,
+                            output_state.chunk_calls, 4);
+    print_output_debug_time("chunk packing", output_state.chunk_pack_seconds,
+                            output_state.chunk_calls, 4);
 
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
     fprintf(stderr,
             "\n"
             "  Global offset reservation\n"
@@ -659,6 +1087,14 @@ static void print_output_debug_report_body(void)
         "reservation total",
         output_state.reservation_total_seconds,
         output_state.reservation_calls, 4);
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    fprintf(stderr, "    ordered prefix polls                         %12" PRIu64 "\n"
+                    "    ordered empty chunks                         %12" PRIu64 "\n",
+            output_state.ordered_polls, output_state.ordered_empty_chunks);
+    print_output_debug_time("ordered prefix wait and publication",
+                            output_state.ordered_wait_seconds,
+                            output_state.reservation_calls, 6);
+#else
     print_output_debug_time(
         "MPI_Fetch_and_op",
         output_state.fetch_and_op_seconds,
@@ -671,6 +1107,7 @@ static void print_output_debug_report_body(void)
         "reservation call overhead (derived)",
         reservation_overhead,
         output_state.reservation_calls, 6);
+#endif
 
     fprintf(stderr,
             "\n"
@@ -706,13 +1143,14 @@ static void print_output_debug_report_body(void)
 #endif
 
     fprintf(stderr, "\n  Output close timing\n");
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
     print_output_debug_time(
         "MPI_Win_unlock_all", output_state.win_unlock_all_seconds, 1, 4);
     print_output_debug_time(
         "MPI_Win_free", output_state.win_free_seconds, 1, 4);
     print_output_debug_time(
-        "POSIX close", output_state.file_close_seconds, 1, 4);
+        "POSIX close", output_state.file_close_seconds,
+        output_state.owns_fd ? 1 : 0, 4);
 #else
     print_output_debug_time(
         "POSIX close", output_state.file_close_seconds,
@@ -721,6 +1159,15 @@ static void print_output_debug_report_body(void)
     fprintf(stderr,
             "================================================================\n"
             "\n");
+    for (size_t i = 0; i < output_state.extent_count; ++i) {
+        const swbwa_output_extent_t *extent = &output_state.extents[i];
+        fprintf(stderr,
+                "[SWBWA output extent rank %06d/%06d] chunk=%" PRId64
+                " start=%" PRId64 " end=%" PRId64 " reads=%d"
+                " offset=%" PRIu64 " bytes=%" PRIu64 "\n",
+                swbwa_mpi_rank(), swbwa_mpi_size(), extent->id,
+                extent->start, extent->end, extent->reads, extent->offset, extent->bytes);
+    }
 }
 
 static void output_debug_report(void)
@@ -736,9 +1183,27 @@ int swbwa_output_close(void)
     double start;
 
     if (!output_state.opened) return 0;
+#if SWBWA_OUTPUT_RMA_ONLY
+    if (output_state.chunk_active) {
+        errno = EINVAL;
+        return -1;
+    }
+#endif
     if (swbwa_output_flush() != 0) status = -1;
 
-#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    {
+        uint64_t local = output_state.reservation_calls + output_state.ordered_empty_chunks;
+        uint64_t total = 0;
+        if (mpi_check(MPI_Allreduce(&local, &total, 1, MPI_UINT64_T, MPI_SUM,
+                                    MPI_COMM_WORLD), "validate ordered chunk count") != 0 ||
+            total != (uint64_t)output_state.ordered_count) {
+            errno = EINVAL;
+            status = -1;
+        }
+    }
+#endif
     start = output_debug_now();
     result = MPI_Win_unlock_all(output_state.offset_window);
     if (output_state.debug_enabled)
@@ -753,11 +1218,13 @@ int swbwa_output_close(void)
     if (mpi_check(result, "MPI_Win_free") != 0)
         status = -1;
 
-    start = output_debug_now();
-    result = close(output_state.fd);
-    if (output_state.debug_enabled)
-        output_state.file_close_seconds += output_debug_now() - start;
-    if (result != 0) status = -1;
+    if (output_state.owns_fd) {
+        start = output_debug_now();
+        result = close(output_state.fd);
+        if (output_state.debug_enabled)
+            output_state.file_close_seconds += output_debug_now() - start;
+        if (result != 0) status = -1;
+    }
 #else
     if (output_state.owns_fd) {
         start = output_debug_now();
@@ -773,8 +1240,14 @@ int swbwa_output_close(void)
 #else
     output_debug_report();
 #endif
+#if SWBWA_OUTPUT_RMA_ONLY
+    swbwa_mpi_print_rank_ordered(print_output_samples);
+    free(output_state.samples);
+#endif
     free(output_state.name);
     free(output_state.buffer);
+    free(output_state.record_lengths);
+    free(output_state.extents);
     memset(&output_state, 0, sizeof(output_state));
     output_state.fd = -1;
     return status;

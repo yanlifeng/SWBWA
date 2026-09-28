@@ -137,7 +137,7 @@ int bwa_pac2bwt(int argc, char *argv[]) // the "pac2bwt" command; IMPORTANT: bwt
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: bwa pac2bwt [-d] <in.pac> <out.bwt>\n");
+		fprintf(stderr, "Usage: SWBWA pac2bwt [-d] <in.pac> <out.bwt>\n");
 		return 1;
 	}
 	bwt = bwt_pac2bwt(argv[optind], use_is);
@@ -176,7 +176,7 @@ int bwa_bwtupdate(int argc, char *argv[]) // the "bwtupdate" command
 {
 	bwt_t *bwt;
 	if (argc != 2) {
-		fprintf(stderr, "Usage: bwa bwtupdate <the.bwt>\n");
+		fprintf(stderr, "Usage: SWBWA bwtupdate <the.bwt>\n");
 		return 1;
 	}
 	bwt = bwt_restore_bwt(argv[1]);
@@ -197,7 +197,7 @@ int bwa_bwt2sa(int argc, char *argv[]) // the "bwt2sa" command
 		}
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: bwa bwt2sa [-i %d] <in.bwt> <out.sa>\n", sa_intv);
+		fprintf(stderr, "Usage: SWBWA bwt2sa [-i %d] <in.bwt> <out.sa>\n", sa_intv);
 		return 1;
 	}
 	bwt = bwt_restore_bwt(argv[optind]);
@@ -233,7 +233,7 @@ int bwa_index(int argc, char *argv[]) // the "index" command
 
 	if (optind + 1 > argc) {
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Usage:   bwa index [options] <in.fasta>\n\n");
+		fprintf(stderr, "Usage:   SWBWA index [options] <in.fasta>\n\n");
 		fprintf(stderr, "Options: -a STR    BWT construction algorithm: bwtsw, is or rb2 [auto]\n");
 		fprintf(stderr, "         -p STR    prefix of the index [same as fasta name]\n");
 		fprintf(stderr, "         -b INT    block size for the bwtsw algorithm (effective with -a bwtsw) [%d]\n", block_size);

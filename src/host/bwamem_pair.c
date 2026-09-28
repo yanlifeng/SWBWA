@@ -94,12 +94,9 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *
 		uint64_v *q = &isize[d];
 		int p25, p75, x;
 		if (q->n < MIN_DIR_CNT) {
-			//fprintf(stderr, "[M::%s] skip orientation %c%c as there are not enough pairs\n", __func__, "FR"[d>>1&1], "FR"[d&1]);
 			r->failed = 1;
 			free(q->a);
 			continue;
-		} else {
-            //fprintf(stderr, "[M::%s] analyzing insert size distribution for orientation %c%c...\n", __func__, "FR"[d>>1&1], "FR"[d&1]);
 		}
         ks_introsort_64(q->n, q->a);
 		p25 = q->a[(int)(.25 * q->n + .499)];
@@ -107,8 +104,6 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *
 		r->low  = (int)(p25 - OUTLIER_BOUND * (p75 - p25) + .499);
 		if (r->low < 1) r->low = 1;
 		r->high = (int)(p75 + OUTLIER_BOUND * (p75 - p25) + .499);
-		//fprintf(stderr, "[M::%s] (25, 75) percentile: (%d, %d)\n", __func__, p25, p75);
-		//fprintf(stderr, "[M::%s] low and high boundaries for computing mean and std.dev: (%d, %d)\n", __func__, r->low, r->high);
 		for (i = x = 0, r->avg = 0; i < q->n; ++i)
 			if (q->a[i] >= r->low && q->a[i] <= r->high)
 				r->avg += q->a[i], ++x;
@@ -117,13 +112,11 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *
 			if (q->a[i] >= r->low && q->a[i] <= r->high)
 				r->std += (q->a[i] - r->avg) * (q->a[i] - r->avg);
 		r->std = sqrt(r->std / x);
-		//fprintf(stderr, "[M::%s] mean and std.dev: (%.2f, %.2f)\n", __func__, r->avg, r->std);
 		r->low  = (int)(p25 - MAPPING_BOUND * (p75 - p25) + .499);
 		r->high = (int)(p75 + MAPPING_BOUND * (p75 - p25) + .499);
 		if (r->low  > r->avg - MAX_STDDEV * r->std) r->low  = (int)(r->avg - MAX_STDDEV * r->std + .499);
 		if (r->high < r->avg + MAX_STDDEV * r->std) r->high = (int)(r->avg + MAX_STDDEV * r->std + .499);
 		if (r->low < 1) r->low = 1;
-		//fprintf(stderr, "[M::%s] low and high boundaries for proper pairs: (%d, %d)\n", __func__, r->low, r->high);
 		free(q->a);
 	}
 	for (d = 0, max = 0; d < 4; ++d)
@@ -131,7 +124,6 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *
 	for (d = 0; d < 4; ++d)
 		if (pes[d].failed == 0 && isize[d].n < max * MIN_DIR_RATIO) {
 			pes[d].failed = 1;
-			//fprintf(stderr, "[M::%s] skip orientation %c%c\n", __func__, "FR"[d>>1&1], "FR"[d&1]);
 		}
 }
 
@@ -188,7 +180,6 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 				b.csub = aln.score2;
 				b.secondary = -1;
 				b.seedcov = (b.re - b.rb < b.qe - b.qb? b.re - b.rb : b.qe - b.qb) >> 1;
-//				printf("*** %d, [%lld,%lld], %d:%d, (%lld,%lld), (%lld,%lld) == (%lld,%lld)\n", aln.score, rb, re, is_rev, is_larger, a->rb, a->re, ma->a[0].rb, ma->a[0].re, b.rb, b.re);
 				kv_push(mem_alnreg_t, *ma, b); // make room for a new element
 				// move b s.t. ma is sorted
 				for (i = 0; i < ma->n - 1; ++i) // find the insertion point
@@ -224,7 +215,6 @@ int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, cons
 	}
 	ks_introsort_128(v.n, v.a);
 	y[0] = y[1] = y[2] = y[3] = -1;
-	//for (i = 0; i < v.n; ++i) printf("[%d]\t%d\t%c%ld\n", i, (int)(v.a[i].y&1)+1, "+-"[v.a[i].y>>1&1], (long)v.a[i].x);
 	for (i = 0; i < v.n; ++i) {
 		for (r = 0; r < 2; ++r) { // loop through direction
 			int dir = r<<1 | (v.a[i].y>>1&1), which;
@@ -238,7 +228,6 @@ int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, cons
 				pair64_t *p;
 				if ((v.a[k].y&3) != which) continue;
 				dist = (int64_t)v.a[i].x - v.a[k].x;
-				//printf("%d: %lld\n", k, dist);
 				if (dist > pes[dir].high) break;
 				if (dist < pes[dir].low)  continue;
                 if(fabs(pes[dir].std) < 1e-6) {
@@ -251,7 +240,6 @@ int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, cons
 				p = kv_pushp(pair64_t, u);
 				p->y = (uint64_t)k<<32 | i;
 				p->x = (uint64_t)q<<32 | (hash_64(p->y ^ id<<8) & 0xffffffffU);
-				//printf("[%lld,%lld]\t%d\tdist=%ld\n", v.a[k].x, v.a[i].x, q, (long)dist);
 			}
 		}
 		y[v.a[i].y&3] = i;
@@ -325,7 +313,6 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		if (is_multi[0] || is_multi[1]) goto no_pairing; // TODO: in rare cases, the true hit may be long but with low score
 		// compute mapQ for the best SE hit
 		score_un = a[0].a[0].score + a[1].a[0].score - opt->pen_unpaired;
-		//q_pe = o && subo < o? (int)(MEM_MAPQ_COEF * (1. - (double)subo / o) * log(a[0].a[z[0]].seedcov + a[1].a[z[1]].seedcov) + .499) : 0;
 		subo = subo > score_un? subo : score_un;
 		q_pe = raw_mapq(o - subo, opt->a);
 		if (n_sub > 0) q_pe -= (int)(4.343 * log(n_sub+1) + .499);

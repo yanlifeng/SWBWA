@@ -27,6 +27,7 @@
 #include <zlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -46,6 +47,8 @@
 #include "swbwa_runtime.h"
 #include "swbwa_mpi.h"
 #include "swbwa_output.h"
+#include "swbwa_host_workers.h"
+#include "swbwa_input.h"
 #include "swbwa_discard_digest.h"
 #include "swbwa_cpe_profile.h"
 
@@ -54,6 +57,7 @@
 KSEQ_DECLARE(int)
 
 extern unsigned char nst_nt4_table[256];
+extern void kt_pipeline_wait_report(void);
 
 extern void SLAVE_FUN(state_init());
 
@@ -103,6 +107,7 @@ typedef struct {
     double seek_seconds;
     double seek_max_seconds;
     double read_seconds;
+    double read_worker_seconds;
     double read_max_seconds;
     double boundary_seconds;
     double boundary_max_seconds;
@@ -110,10 +115,12 @@ typedef struct {
     int slowest_read_input;
     int64_t slowest_read_offset;
     uint64_t slowest_read_bytes;
+    swbwa_input_usage_t usage;
 } stage1_timing_t;
 
 /* Stage 1 has exactly one producer, even in the threaded pipeline. */
 static stage1_timing_t stage1_timing;
+static int input_readers;
 
 long long s_reg_sum = 0;
 long long c_px2 = 0;
@@ -196,9 +203,28 @@ static void print_timing_report_body(void)
     print_timing_stat("FASTQ fseeko calls", stage1_timing.seek_seconds,
                       stage1_timing.seek_calls,
                       stage1_timing.seek_max_seconds, 4);
-    print_timing_stat("FASTQ fread calls", stage1_timing.read_seconds,
+    print_timing_line("FASTQ read wall time", stage1_timing.read_seconds, 4);
+    print_timing_stat(input_readers ? "pread calls (worker time sum)" : "FASTQ fread calls",
+                      stage1_timing.read_worker_seconds,
                       stage1_timing.read_calls,
-                      stage1_timing.read_max_seconds, 4);
+                      stage1_timing.read_max_seconds, 6);
+    fprintf(stderr, "    read API / readers                            %s / %d\n",
+            input_readers ? "pread" : "fread", input_readers ? input_readers : 1);
+    if (bwa_verbose >= 4) {
+        const swbwa_input_usage_t *u = &stage1_timing.usage;
+        fprintf(stderr, "    thread resource samples                       %u\n", u->samples);
+        if (u->samples) {
+            print_timing_line("reader user CPU (worker sum)", u->user_seconds, 6);
+            print_timing_line("reader system CPU (worker sum)", u->system_seconds, 6);
+            fprintf(stderr,
+                    "      reader minor / major faults                 %" PRId64 " / %" PRId64 "\n"
+                    "      reader voluntary / involuntary switches     %" PRId64 " / %" PRId64 "\n",
+                    u->minor_faults, u->major_faults,
+                    u->voluntary_switches, u->involuntary_switches);
+        } else {
+            fprintf(stderr, "      thread resource accounting unavailable\n");
+        }
+    }
     print_timing_stat("align chunk ends to FASTQ record boundaries",
                       stage1_timing.boundary_seconds,
                       stage1_timing.boundary_calls,
@@ -211,7 +237,7 @@ static void print_timing_report_body(void)
             stage1_timing.read_bytes, stage1_read_mib);
     if (stage1_timing.read_seconds > 0.0)
         fprintf(stderr,
-                "    effective fread bandwidth                     %10.3f MiB/s\n",
+                "    effective read bandwidth                      %10.3f MiB/s\n",
                 stage1_read_mib / stage1_timing.read_seconds);
     if (stage1_timing.allocation_calls > 0)
         fprintf(stderr,
@@ -221,7 +247,7 @@ static void print_timing_report_body(void)
                 stage1_timing.slowest_allocation_bytes);
     if (stage1_timing.read_calls > 0)
         fprintf(stderr,
-                "    slowest fread                                 %10.3f s"
+                "    slowest read call                             %10.3f s"
                 "  (R%d offset=%" PRId64 ", bytes=%" PRIu64 ")\n",
                 stage1_timing.read_max_seconds,
                 stage1_timing.slowest_read_input,
@@ -284,10 +310,12 @@ typedef struct {
 typedef struct {
 	int n_seqs;
 	bseq1_t *seqs;
+	int *sam_lengths;
 	int64_t chunk_id;
 	int64_t n_processed;
 	char *fastq_buffer[2];
 	long long fastq_size[2];
+	int64_t chunk_start, chunk_end;
 } ktp_data_t;
 
 static void skip_to_line_end(char *data_, long long *pos_, const long long size_) {
@@ -338,8 +366,10 @@ static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
     int64_t bytes_read;
     int64_t record_bytes;
     int seek_result;
+    int read_error;
     double start;
     double elapsed;
+    swbwa_input_usage_t before = {0}, after;
 
     if (*file_offset >= file_end) return 0;
     bytes_to_read = capacity;
@@ -360,11 +390,18 @@ static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
     if (seek_result != 0)
         err_fatal(__func__, "failed to seek FASTQ input: %s", strerror(errno));
 
+    if (bwa_verbose >= 4) swbwa_input_usage_sample(&before);
     start = GetTime();
     bytes_read = (int64_t)fread(buffer, 1, (size_t)bytes_to_read, file);
+    read_error = errno;
     elapsed = GetTime() - start;
+    if (bwa_verbose >= 4) {
+        swbwa_input_usage_sample(&after);
+        swbwa_input_usage_add(&stage1_timing.usage, &before, &after);
+    }
     ++stage1_timing.read_calls;
     stage1_timing.read_seconds += elapsed;
+    stage1_timing.read_worker_seconds += elapsed;
     if (bytes_read > 0)
         stage1_timing.read_bytes += (uint64_t)bytes_read;
     if (elapsed > stage1_timing.read_max_seconds) {
@@ -381,7 +418,7 @@ static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
                 " elapsed=%.3f s\n",
                 input_index, read_offset, bytes_to_read, bytes_read, elapsed);
     if (ferror(file))
-        err_fatal(__func__, "failed to read FASTQ input: %s", strerror(errno));
+        err_fatal(__func__, "failed to read FASTQ input: %s", strerror(read_error));
 
     record_bytes = bytes_read;
     if (bytes_read == capacity && *file_offset + bytes_read < file_end) {
@@ -402,12 +439,66 @@ static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
     return record_bytes;
 }
 
+static void read_fastq_parallel(ktp_aux_t *aux, char *buffer, char *buffer2,
+                                int64_t capacity, long long *size,
+                                long long *size2)
+{
+    swbwa_input_slice_t inputs[2];
+    swbwa_input_result_t result;
+    int count = aux->is_paired ? 2 : 1;
+    int i;
+    char *buffers[2] = {buffer, buffer2};
+    FILE *files[2] = {file1_ptr, file2_ptr};
+    long long *sizes[2] = {size, size2};
+
+    for (i = 0; i < count; ++i) {
+        int64_t remaining = aux->input_end[i] - aux->input_position[i];
+        inputs[i].fd = fileno(files[i]);
+        inputs[i].buffer = buffers[i];
+        inputs[i].offset = aux->input_position[i];
+        inputs[i].length = remaining <= 0 ? 0 :
+            (size_t)(remaining < capacity ? remaining : capacity);
+    }
+    if (swbwa_input_read(inputs, count, input_readers, bwa_verbose >= 4, &result) != 0)
+        err_fatal(__func__, "positioned FASTQ read failed: %s", strerror(errno));
+    stage1_timing.read_calls += result.calls;
+    stage1_timing.read_bytes += result.bytes;
+    stage1_timing.read_seconds += result.wall_seconds;
+    stage1_timing.read_worker_seconds += result.syscall_seconds;
+    if (result.max_seconds > stage1_timing.read_max_seconds) {
+        stage1_timing.read_max_seconds = result.max_seconds;
+        stage1_timing.slowest_read_input = result.max_input;
+        stage1_timing.slowest_read_offset = result.max_offset;
+        stage1_timing.slowest_read_bytes = result.max_bytes;
+    }
+    stage1_timing.usage.samples += result.usage.samples;
+    stage1_timing.usage.user_seconds += result.usage.user_seconds;
+    stage1_timing.usage.system_seconds += result.usage.system_seconds;
+    stage1_timing.usage.minor_faults += result.usage.minor_faults;
+    stage1_timing.usage.major_faults += result.usage.major_faults;
+    stage1_timing.usage.voluntary_switches += result.usage.voluntary_switches;
+    stage1_timing.usage.involuntary_switches += result.usage.involuntary_switches;
+    for (i = 0; i < count; ++i) {
+        int64_t bytes = (int64_t)inputs[i].length;
+        if (bytes == capacity && inputs[i].offset + bytes < aux->input_end[i]) {
+            double start = GetTime(), elapsed;
+            bytes = get_next_fastq(buffers[i], bytes - (1 << 10), bytes);
+            elapsed = GetTime() - start;
+            ++stage1_timing.boundary_calls;
+            stage1_timing.boundary_seconds += elapsed;
+            if (elapsed > stage1_timing.boundary_max_seconds)
+                stage1_timing.boundary_max_seconds = elapsed;
+        }
+        aux->input_position[i] += bytes;
+        *sizes[i] = bytes;
+    }
+}
+
 
 static void *process(void *shared, int step, void *_data)
 {
 	ktp_aux_t *aux = (ktp_aux_t*)shared;
 	ktp_data_t *data = (ktp_data_t*)_data;
-	int i;
 	if (step == 0) {
 		double t0 = GetTime();
 		double allocation_start;
@@ -498,9 +589,22 @@ static void *process(void *shared, int step, void *_data)
 			        __func__, (long long)aux->fastq_bytes_per_cg,
 			        SWBWA_CG_COUNT, block_capacity);
 
-		real_size = read_fastq_block(file1_ptr, &aux->input_position[0],
+		ret->chunk_start = aux->input_position[0];
+#if !SWBWA_USE_MPI || SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_DYNAMIC
+        ret->chunk_id = ret->chunk_start;
+#endif
+		if (input_readers) {
+			read_fastq_parallel(aux, block_buffer, block_buffer2,
+			                    block_capacity, &real_size, &real_size2);
+		} else {
+			real_size = read_fastq_block(file1_ptr, &aux->input_position[0],
 		                             aux->input_end[0], block_buffer,
 		                             block_capacity);
+			if (is_paired)
+				real_size2 = read_fastq_block(
+					file2_ptr, &aux->input_position[1], aux->input_end[1],
+					block_buffer2, block_capacity);
+		}
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 		if (real_size != block_capacity)
@@ -508,9 +612,6 @@ static void *process(void *shared, int step, void *_data)
 			          real_size, block_capacity);
 #endif
 		if (is_paired) {
-			real_size2 = read_fastq_block(
-				file2_ptr, &aux->input_position[1], aux->input_end[1],
-				block_buffer2, block_capacity);
 			if (real_size != real_size2)
 				err_fatal(__func__,
 				          "paired FASTQ blocks have different sizes:"
@@ -528,6 +629,7 @@ static void *process(void *shared, int step, void *_data)
 		ret->fastq_buffer[1] = block_buffer2;
 		ret->fastq_size[0] = real_size;
 		ret->fastq_size[1] = real_size2;
+		ret->chunk_end = aux->input_position[0];
 		++stage1_timing.completed_batches;
 		t_step1 += GetTime() - t0;
 		return ret;
@@ -544,7 +646,11 @@ static void *process(void *shared, int step, void *_data)
 		if (opt->flag & MEM_F_SMARTPE) {
 			err_fatal(__func__, "smart pairing is not supported by SWBWA");
 		} else {
-			mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, n_processed, &(data->n_seqs), &(data->seqs), data->fastq_buffer[0], data->fastq_buffer[1], data->fastq_size[0], data->fastq_size[1], aux->pes);
+            int **output_lengths = NULL;
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+            output_lengths = &data->sam_lengths;
+#endif
+			mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, n_processed, &(data->n_seqs), &(data->seqs), data->fastq_buffer[0], data->fastq_buffer[1], data->fastq_size[0], data->fastq_size[1], aux->pes, output_lengths);
 		}
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
@@ -568,19 +674,22 @@ static void *process(void *shared, int step, void *_data)
 	} else if (step == 2) {
         double t0 = GetTime();
 		double write_start = GetTime();
-		for (i = 0; i < data->n_seqs; ++i) {
-			if (data->seqs[i].sam) {
 #if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
+		for (int i = 0; i < data->n_seqs; ++i) {
+			if (data->seqs[i].sam) {
                 if (swbwa_output_write_digest(data->seqs[i].sam) != 0)
-#else
-                if (swbwa_output_write(data->seqs[i].sam,
-                                       strlen(data->seqs[i].sam)) != 0)
-#endif
                     err_fatal(__func__, "failed to write SAM output: %s",
                               strerror(errno));
             }
 		}
+#else
+        if (swbwa_output_write_chunk(data->chunk_id, data->chunk_start,
+                                     data->chunk_end, data->seqs, data->sam_lengths,
+                                     data->n_seqs, aux->is_paired) != 0)
+            err_fatal(__func__, "failed to write output chunk: %s", strerror(errno));
+#endif
 		t_step3_1 += GetTime() - write_start;
+		free(data->sam_lengths);
 		free(data->seqs); free(data);
         t_step3 += GetTime() - t0;
 		return 0;
@@ -665,6 +774,9 @@ int main_mem(int argc, char *argv[])
 {
 	mem_opt_t *opt, opt0;
     int i, c, ignore_alt = 0, no_mt_io = 0;
+#if SWBWA_OUTPUT_RMA_ONLY
+    int saved_report_stderr = -1;
+#endif
 	int64_t fastq_bytes_per_cg = SWBWA_DEFAULT_FASTQ_BYTES_PER_CG;
 	char *p, *rg_line = 0, *hdr_line = 0;
 	const char *mode = 0;
@@ -710,7 +822,6 @@ int main_mem(int argc, char *argv[])
 		else if (c == 'G') opt->max_chain_gap = atoi(optarg), opt0.max_chain_gap = 1;
 		else if (c == 'N') opt->max_chain_extend = atoi(optarg), opt0.max_chain_extend = 1;
 		else if (c == 'o' || c == 'f') output_path = optarg;
-        //xreopen(optarg, "wb", stdout);
         else if (c == 'W') opt->min_chain_weight = atoi(optarg), opt0.min_chain_weight = 1;
         else if (c == 'y') opt->max_mem_intv = atol(optarg), opt0.max_mem_intv = 1;
 		else if (c == 'K') {
@@ -815,7 +926,6 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "       -d INT        off-diagonal X-dropoff [%d]\n", opt->zdrop);
 		fprintf(stderr, "       -r FLOAT      look for internal seeds inside a seed longer than {-k} * FLOAT [%g]\n", opt->split_factor);
 		fprintf(stderr, "       -y INT        seed occurrence for the 3rd round seeding [%ld]\n", (long)opt->max_mem_intv);
-//		fprintf(stderr, "       -s INT        look for internal seeds inside a seed with less than INT occ [%d]\n", opt->split_width);
 		fprintf(stderr, "       -c INT        skip seeds with more than INT occurrences [%d]\n", opt->max_occ);
 		fprintf(stderr, "       -D FLOAT      drop chains shorter than FLOAT fraction of the longest overlapping chain [%.2f]\n", opt->drop_ratio);
 		fprintf(stderr, "       -W INT        discard a chain if seeded bases shorter than INT [0]\n");
@@ -926,7 +1036,7 @@ int main_mem(int argc, char *argv[])
 			        " cg_count=%d chunk_bytes=%lld micro_chunk_bytes=%lld"
 			        " fine_chunk_bytes=%lld tail_percent=%d"
 			        " fine_tail_waves=%d file_bytes=%lld"
-			        " scheduler=distributed"
+			        " scheduler=%s"
 #if SWBWA_MPI_EXACT_READ_INDEX
 			        " read_index=exact\n",
 #else
@@ -939,7 +1049,8 @@ int main_mem(int argc, char *argv[])
 			        (long long)swbwa_mpi_fastq_scheduler_fine_chunk_bytes(),
 			        swbwa_mpi_fastq_scheduler_tail_percent(),
 			        swbwa_mpi_fastq_scheduler_fine_tail_waves(),
-			        (long long)assigned_range.file_size);
+			        (long long)assigned_range.file_size,
+			        swbwa_mpi_fastq_scheduler_ticket_mode());
 	}
 #else
 	{
@@ -1006,7 +1117,6 @@ int main_mem(int argc, char *argv[])
 			opt->flag |= MEM_F_PE;
 		}
 	}
-	//bwa_print_sam_hdr(aux.idx->bns, hdr_line);
 #if SWBWA_USE_MPI
 	if (output_path == NULL || strcmp(output_path, "-") == 0)
 		err_fatal(__func__, "MPI output requires an explicit -o FILE path");
@@ -1022,6 +1132,15 @@ int main_mem(int argc, char *argv[])
 #endif
 	}
 
+	{
+		const char *value = getenv("SWBWA_INPUT_READERS");
+		input_readers = swbwa_input_reader_count(value);
+		if (input_readers < 0)
+			err_fatal(__func__, "SWBWA_INPUT_READERS must be 0..%d (0=fread)",
+			          SWBWA_HOST_MPE_THREADS);
+	}
+	if (swbwa_host_workers_init() != 0)
+        err_fatal(__func__, "failed to initialize MPE helpers: %s", strerror(errno));
 	init_cpe_allocator();
 	swbwa_cpe_profile_init();
 
@@ -1035,7 +1154,7 @@ int main_mem(int argc, char *argv[])
 	swbwa_cpe_progress_debug_enable(bwa_verbose >= 4);
 #if SWBWA_USE_MPI && \
     (SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC || \
-     SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED)
+     SWBWA_OUTPUT_SINGLE_FILE)
 	if (swbwa_mpi_progress_thread_start(bwa_verbose >= 4) != 0)
 		err_fatal(__func__, "failed to start MPI progress thread: %s",
 		          strerror(errno));
@@ -1043,6 +1162,33 @@ int main_mem(int argc, char *argv[])
 	double t0 = GetTime();
 	if (no_mt_io) kt_pipeline_single(1, process, &aux, 3);
 	else kt_pipeline_queue(3, process, &aux, 3);
+    /* Stage 3 has flushed; exclude rank-ordered reports and MPI teardown. */
+    t_tot += GetTime() - t0;
+    swbwa_host_workers_destroy();
+#if SWBWA_OUTPUT_RMA_ONLY
+    {
+        const char *prefix = getenv("SWBWA_RANK_REPORT_PREFIX");
+        if (prefix != NULL && *prefix != '\0') {
+            char path[PATH_MAX];
+            int report_fd;
+            int length = snprintf(path, sizeof(path), "%s.rank%06d.log",
+                                  prefix, swbwa_mpi_rank());
+            if (length < 0 || (size_t)length >= sizeof(path))
+                err_fatal(__func__, "rank report path is too long");
+            err_fflush(stderr);
+            /* Keep the launcher's stderr pipe alive until normal shutdown. */
+            saved_report_stderr = dup(STDERR_FILENO);
+            if (saved_report_stderr < 0)
+                err_fatal(__func__, "failed to save stderr: %s", strerror(errno));
+            report_fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0666);
+            if (report_fd < 0)
+                err_fatal(__func__, "failed to open rank report: %s", strerror(errno));
+            if (dup2(report_fd, STDERR_FILENO) < 0)
+                err_fatal(__func__, "failed to redirect rank report: %s", strerror(errno));
+            close(report_fd);
+        }
+    }
+#endif
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 	{
@@ -1062,19 +1208,24 @@ int main_mem(int argc, char *argv[])
 		err_fatal(__func__, "failed to close SAM output: %s", strerror(errno));
 #if SWBWA_USE_MPI && \
     (SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC || \
-     SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_UNORDERED)
+     SWBWA_OUTPUT_SINGLE_FILE)
 	if (swbwa_mpi_progress_thread_stop() != 0)
 		err_fatal(__func__, "MPI progress thread failed: %s", strerror(errno));
 #endif
-
-    t_tot += GetTime() - t0;
-
 
 	swbwa_mpi_progress_thread_report();
 	swbwa_cpe_progress_debug_report();
 	swbwa_cpe_profile_report(stderr);
     print_timing_report();
-
+    if (bwa_verbose >= 4 && !no_mt_io) kt_pipeline_wait_report();
+#if SWBWA_OUTPUT_RMA_ONLY
+    if (saved_report_stderr >= 0) {
+        err_fflush(stderr);
+        if (dup2(saved_report_stderr, STDERR_FILENO) < 0)
+            err_fatal(__func__, "failed to restore stderr: %s", strerror(errno));
+        close(saved_report_stderr);
+    }
+#endif
 
 	free(hdr_line);
 	free(opt);

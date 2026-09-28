@@ -25,7 +25,6 @@
    SOFTWARE.
 */
 
-/* Contact: Heng Li <hli@jimmy.harvard.edu> */
 
 #ifndef BWA_BWT_H
 #define BWA_BWT_H

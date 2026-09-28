@@ -393,17 +393,13 @@ static int cal_sub(const mem_opt_t *opt, mem_alnreg_v *r)
 	return j < r->n? r->a[j].score : opt->min_seed_len * opt->a;
 }
 
-__uncached long lock_f;
-
 void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int l_pos, int r_pos, const mem_alnreg_v *regs, mem_pestat_t pes[4], int* s_ids)
 {
 	int d, max;
 	uint64_v isize[4];
 	memset(pes, 0, 4 * sizeof(mem_pestat_t));
 	memset(isize, 0, sizeof(kvec_t(int)) * 4);
-	//for (int sid = 0; sid < n>>1; ++sid) {
 	for (int sid = l_pos; sid < r_pos; ++sid) {
-        //int i = s_ids[sid];
         int i = sid;
 		int dir;
 		int64_t is;
@@ -423,27 +419,16 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int l_pos, int r_pos, const
 		uint64_v *q = &isize[d];
 		int p25, p75, x, i;
 		if (q->n < MIN_DIR_CNT) {
-            //athread_lock(&lock_f);
-			//printf("[M::%s] skip orientation %c%c as there are not enough pairs\n", __func__, "FR"[d>>1&1], "FR"[d&1]);
-            //athread_unlock(&lock_f);
 			r->failed = 1;
 			free(q->a);
 			continue;
-		} else {
-            //athread_lock(&lock_f);
-            //printf("[M::%s] analyzing insert size distribution for orientation %c%c...\n", __func__, "FR"[d>>1&1], "FR"[d&1]);
-            //athread_unlock(&lock_f);
-        }
+		}
 		ks_introsort_64(q->n, q->a);
 		p25 = q->a[(int)(.25 * q->n + .499)];
 		p75 = q->a[(int)(.75 * q->n + .499)];
 		r->low  = (int)(p25 - OUTLIER_BOUND * (p75 - p25) + .499);
 		if (r->low < 1) r->low = 1;
 		r->high = (int)(p75 + OUTLIER_BOUND * (p75 - p25) + .499);
-        //athread_lock(&lock_f);
-		//printf("[M::%s] (25, 75) percentile: (%d, %d)\n", __func__, p25, p75);
-		//printf("[M::%s] low and high boundaries for computing mean and std.dev: (%d, %d)\n", __func__, r->low, r->high);
-        //athread_unlock(&lock_f);
 		for (i = x = 0, r->avg = 0; i < q->n; ++i)
 			if (q->a[i] >= r->low && q->a[i] <= r->high)
 				r->avg += q->a[i], ++x;
@@ -452,17 +437,11 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int l_pos, int r_pos, const
 			if (q->a[i] >= r->low && q->a[i] <= r->high)
 				r->std += (q->a[i] - r->avg) * (q->a[i] - r->avg);
 		r->std = sqrt(r->std / x);
-        //athread_lock(&lock_f);
-		//printf("[M::%s] mean and std.dev: (%.2f, %.2f)\n", __func__, r->avg, r->std);
-        //athread_unlock(&lock_f);
 		r->low  = (int)(p25 - MAPPING_BOUND * (p75 - p25) + .499);
 		r->high = (int)(p75 + MAPPING_BOUND * (p75 - p25) + .499);
 		if (r->low  > r->avg - MAX_STDDEV * r->std) r->low  = (int)(r->avg - MAX_STDDEV * r->std + .499);
 		if (r->high < r->avg + MAX_STDDEV * r->std) r->high = (int)(r->avg + MAX_STDDEV * r->std + .499);
 		if (r->low < 1) r->low = 1;
-        //athread_lock(&lock_f);
-		//printf("[M::%s] low and high boundaries for proper pairs: (%d, %d)\n", __func__, r->low, r->high);
-        //athread_unlock(&lock_f);
 		free(q->a);
 	}
 	for (d = 0, max = 0; d < 4; ++d)
@@ -470,9 +449,6 @@ void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int l_pos, int r_pos, const
 	for (d = 0; d < 4; ++d)
 		if (pes[d].failed == 0 && isize[d].n < max * MIN_DIR_RATIO) {
 			pes[d].failed = 1;
-            //athread_lock(&lock_f);
-			//printf("[M::%s] skip orientation %c%c\n", __func__, "FR"[d>>1&1], "FR"[d&1]);
-            //athread_unlock(&lock_f);
 		}
 }
 
@@ -779,7 +755,6 @@ int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, cons
 	}
 	ks_introsort_128(v.n, v.a);
 	y[0] = y[1] = y[2] = y[3] = -1;
-	//for (i = 0; i < v.n; ++i) printf("[%d]\t%d\t%c%ld\n", i, (int)(v.a[i].y&1)+1, "+-"[v.a[i].y>>1&1], (long)v.a[i].x);
 	for (i = 0; i < v.n; ++i) {
 		for (r = 0; r < 2; ++r) { // loop through direction
 			int dir = r<<1 | (v.a[i].y>>1&1), which;
@@ -793,29 +768,18 @@ int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, cons
 				pair64_t *p;
 				if ((v.a[k].y&3) != which) continue;
 				dist = (int64_t)v.a[i].x - v.a[k].x;
-				//printf("%d: %lld\n", k, dist);
 				if (dist > pes[dir].high) break;
 				if (dist < pes[dir].low)  continue;
 				if(fabs(pes[dir].std) < 1e-6) {
                     q = 0;
                 } else {
                     ns = (dist - pes[dir].avg) / pes[dir].std;
-//                    double log_val, result;
-//                    double erfc_val = erfc(fabs(ns) * M_SQRT1_2);
-//                    double tmp = 2.0 * erfc_val;
-//                    if (tmp <= 0.0) tmp = 1e-10;
-//                    log_val = log(tmp);
-//                    result = (v.a[i].y >> 32) + (v.a[k].y >> 32) + 0.721 * log_val * opt->a + 0.499;
-//                    if (result > INT_MAX) result = INT_MAX;
-//                    if (result < INT_MIN) result = INT_MIN;
-//                    q = (int)llround(result);
                     q = (int)((v.a[i].y >> 32) + (v.a[k].y >> 32) + .721 * log(2. * erfc(fabs(ns) * M_SQRT1_2)) * opt->a + 0.499); // .721 = 1/log(4)
                 }
                 if (q < 0) q = 0;
 				p = kv_pushp(pair64_t, u);
 				p->y = (uint64_t)k<<32 | i;
 				p->x = (uint64_t)q<<32 | (hash_64(p->y ^ id<<8) & 0xffffffffU);
-				//printf("[%lld,%lld]\t%d\tdist=%ld\n", v.a[k].x, v.a[i].x, q, (long)dist);
 			}
 		}
 		y[v.a[i].y&3] = i;
@@ -946,7 +910,6 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	if (opt->flag&MEM_F_NOPAIRING) goto no_pairing;
 
 	// pairing single-end hits
-	//if (n_pri[0] && n_pri[1] && (o = mem_pair(opt, bns, pac, pes, s, a, id, &subo, &n_sub, z, n_pri)) > 0) {
 	if (n_pri[0] && n_pri[1]) {
         swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_PAIRING);
         o = mem_pair(opt, bns, pac, pes, s, a, id, &subo, &n_sub, z, n_pri);
@@ -963,7 +926,6 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		if (is_multi[0] || is_multi[1]) goto no_pairing; // TODO: in rare cases, the true hit may be long but with low score
 		// compute mapQ for the best SE hit
 		score_un = a[0].a[0].score + a[1].a[0].score - opt->pen_unpaired;
-		//q_pe = o && subo < o? (int)(MEM_MAPQ_COEF * (1. - (double)subo / o) * log(a[0].a[z[0]].seedcov + a[1].a[z[1]].seedcov) + .499) : 0;
 		subo = subo > score_un? subo : score_un;
 		q_pe = raw_mapq(o - subo, opt->a);
 		if (n_sub > 0) q_pe -= (int)(4.343 * log(n_sub+1) + .499);

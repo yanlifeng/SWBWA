@@ -17,6 +17,22 @@ SWBWA 是面向新一代神威平台优化的高精度、高性能短序列比�
 - `scripts/`：正确性检查、性能测试和结果分析脚本。
 - `correctness_results/`：运行日志、正确性结果和测试说明。
 
+### 维护范围
+
+程序与命令行帮助统一使用 `SWBWA`，主核库为 `libswbwa.a`，CLI 入口只有
+`src/host/main.c`。删除未使用的从核 CLI/示例、上游可选 `bwakit` 工具包、
+从核 allocator 单独写统计文件的旧代码和内嵌 BWT 微基准。
+
+CPE 使用共享原子计数器，逐 read/pair 领取任务。无稳定收益的 pool 地址索引、
+多队列、批量领任务、dispatcher backoff/barrier 实验已删除，旧实验编译参数
+会明确报错。始终关闭的 packed-int8、SMEM 第二遍批量实现和旧 worker LDM 分支
+也已移除；软件预取、CPE 动态调度直接保留启用路径，不再设置冗余开关。
+
+独立正确性测试保留在 `tests/`，实验脚本保留在 `scripts/`。生产路径的边界/
+所有权检查、完整 SAM 指纹以及 `-v 4` 性能诊断继续保留。现有 kernel/LDM 选项
+和六主核默认配置不变。内部继承的 `bwa_*` / `mem_*` 接口不机械改名，源文件
+版权和许可证声明保留，来源说明见 [NOTICE.md](NOTICE.md)。
+
 ## 构建
 
 SWBWA 仅支持新一代神威平台。
@@ -52,13 +68,26 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `CPE_ALLOCATOR` | `system`、`pool` | `system` |
 | `HOST_MALLOC_WRAPPER` | `0`、`1` | `1` |
 | `HOST_MALLOC_STATS` | `0`、`1` | `0` |
+| `HOST_MPE_THREADS` | `1`、`6`（六线程须每进程占用整片六个 CG） | `cgs` / `cgs_cross` 为 `6`；`single` 为 `1` |
 | `CPE_KERNEL_OPT` | `0`、`1` | 非 MPI `cgs_cross + pool` 为 `1`，其他为 `0` |
 | `CPE_LDM_MODE` | `0` 全关、`1` 分级 malloc 池、`2` 手工优化 | `2`；模式1仅支持非 MPI `cgs_cross + pool` |
 | `CPE_DISCARD_DIGEST` | `0`、`1` | 非 MPI `cgs_cross + pool` 且 `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0` 时为 `1`，其他为 `0` |
 | `USE_MPI` | `0`、`1` | `1` |
 | `MPI_INPUT_MODE` | `static`、`dynamic` | MPI 构建时为 `dynamic` |
-| `OUTPUT_MODE` | `split`、`single_unordered`、`discard` | MPI 为 `single_unordered`，非 MPI 为 `split` |
+| `OUTPUT_MODE` | `split`、`single_unordered`、`single_ordered`、`discard` | MPI 为 `single_unordered`，非 MPI 为 `split` |
 | `MPI_EXACT_READ_INDEX` | `0`、`1` | `1` |
+| `MPI_TAIL_PERCENT` | `0..100` | `10` |
+| `KSW_U8_MODE` | `int32_16`、`float16_16`、`float16_32` | `int32_16` |
+| `KSW_I16_MODE` | `scalar_8`、`int32_8` | `int32_8` |
+| `MATESW_DUAL_FORWARD` | `0`、`1` | `1` |
+| `CPE_PROFILE` | `0`、`1` | `0` |
+| `CPE_PROFILE_CG` | `0..5` | `single` 为 `0`，其他为 `5` |
+| `OUTPUT_RMA_ONLY` | `0`、`1`（仅限 MPI dynamic 单文件输出 profiling） | `0` |
+| `DISCARD_HASH_BYTES` | 非负字节数；`0` 检查完整 SAM blob | `0` |
+
+`float16_32` 属于实验实现，不保证与默认整数 kernel 的 SAM 等价。
+`CPE_PROFILE=1` 需要已安装的 LWPF3（`LWPF3_DIR`）；默认关闭从核 profiling，
+详细运行诊断需显式使用 `-v 4`。
 
 `MPI_INPUT_MODE` 和 `MPI_EXACT_READ_INDEX` 仅在 `USE_MPI=1` 时生效。
 非 MPI 也支持 `OUTPUT_MODE=discard`；非 MPI 的 `split` 保持普通单文件输出，
@@ -113,6 +142,39 @@ KSW profile 和 mate-dedup 的单次 LDM 上限各为 16 KiB。这不包含完�
 `SWBWA_DISCARD_HASH=0` 同时关闭 CPE 哈希，保留 calls/bytes，但不构成 FULL 正确性证据。
 构建时传 Make 变量 `CPE_DISCARD_DIGEST`，不要在 `EXTRA_CPPFLAGS` 中重复定义；
 修改开关后仍须完整执行两遍构建。
+
+### 按 Chunk 输出与六主核辅助
+
+MPI `single_unordered` 的比对输出以输入 chunk 为单位：一个非空 chunk 只申请
+一次 RMA 文件区间，块内保持 read/SAM 顺序，不再将不同 chunk 合并到同一个
+64 MiB 区间。该模式全局依然无序；需要输入顺序时使用下文的 `single_ordered`。
+打包缓冲按最大块的 SAM 大小增长，64 MiB 只是初始容量。
+
+`cgs` / `cgs_cross` 默认 `HOST_MPE_THREADS=6`，使用另外五个 MPE 并行完成主核的 SAM
+长度统计、地址分配及输出打包。`single` 默认 `1`；大共享模式也可显式传
+`HOST_MPE_THREADS=1` 关闭辅助线程。六线程配置要求
+每个进程独占整片六个 CG，不能在每节点六 rank 的单 CG 模式使用。
+辅助线程不调用 MPI/athread。详见 [chunk 接口与测试](tests/CHUNK_OUTPUT.md)。
+
+六 MPE 构建默认使用六路 positioned `pread`，单 MPE 构建默认保留串行 `fread`。
+运行时可用 `SWBWA_INPUT_READERS=0` 单独关闭并行读取；`1..6` 选择 `pread`
+及读线程数，但不能超过构建时的 `HOST_MPE_THREADS`。
+它仅在同一 chunk 内分摊原始字节读取，不改变 chunk 划分或 read 顺序。
+`-v 4` 增加读线程 CPU/缺页统计；已测试单节点 has1/no1 和多节点 no1，
+收益取决于文件系统与计算重叠程度，可保留显式关闭用于消融或特定存储环境。见
+[输入测试说明](tests/README.md#chunk-output-and-mpe-helpers)。
+
+动态 MPI 输入的 `SWBWA_MPI_TICKET_MODE=distributed|global` 是实验性运行选项，
+默认 `distributed` 保持原来的分布式队列。`global` 用 rank 0 的统一 ticket，
+减少结束时的空队列扫描，也可能增加 rank 0 竞争。它不改变 chunk 边界、ID 或
+精确 read 索引；所有 rank 必须设置一致。A/B 性能比较应同时启用同一种策略，
+不能将不同策略的差异全部归因于大共享模式。回归测试见
+`tests/test_fastq_scheduler.py`。
+
+```bash
+./build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=1 \
+    MPI_INPUT_MODE=dynamic OUTPUT_MODE=single_unordered HOST_MPE_THREADS=6
+```
 
 ### 单进程 CPE 核心优化
 
@@ -216,6 +278,14 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 ```
 
 `OUTPUT_MODE=split` 为每个 rank 生成独立输出；`single_unordered` 使用 MPI RMA 原子申请单文件区间，但不保证记录顺序；`discard` 不写 SAM，适合测量 stage2 性能。
+
+新增实验模式 `OUTPUT_MODE=single_ordered`：需要 MPI dynamic，自动选择全局单调
+input ticket；若显式设置 `SWBWA_MPI_TICKET_MODE=distributed` 则报错，避免有界
+队列等待前缀时发生环形依赖。它通过 RMA 传递64位 chunk offset，每个 rank 保留
+自己的 SAM 并直接 pwrite，不需要排序、不搬运 SAM 到 master，也不逐chunk做全局
+barrier。暂不写header。`OUTPUT_RMA_ONLY=1` 可以仅关闭磁盘写出，保留有序依赖。
+有序与无序是不同工作负载，不能将二者混作加速比。详见
+[实现与验证限制](tests/ORDERED_OUTPUT.md)。
 
 统一运行入口只负责提交作业，不负责重新编译：
 

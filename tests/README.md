@@ -16,6 +16,11 @@ heap 回退前提、按批统计、pool 增长/扩容及错误路径；同时检
 不提交远端作业，不生成数据集的 SAM 结果；输出测试只在临时目录生成小型样本并清理。
 这些检查不能代替 Sunway 的 cross 两遍编译和比对回归。
 
+测试不链接到正式程序。生产路径保留错误/边界检查与可选性能统计；不要为了
+精简代码删除 SAM 校验或 allocator 所有权检查。已移除实验分支对应的独立测试
+也一并移除；`test_optimization_defaults.py` 额外检查三个执行模式的构建对象清单
+及 `libswbwa.a` 链接名称，防止重新引入重复 CPE CLI/示例。
+
 新增的输出检查覆盖非 MPI discard、完整哈希、正常 SAM 输出，以及
 `CPE_DISCARD_DIGEST` 的 SE/PE 元数据生命周期、边界和错误状态。启用 CPE
 digest 时检查的是生成的 SAM 字节，不包含被跳过的最终 SAM 拷贝。
@@ -50,3 +55,73 @@ calls. It is not part of the native test runner or SWBWA build, and does not
 validate the custom cross-segment runtime's PC/SP handling. Keep it as a
 hardware diagnostic, not as evidence that arbitrary cross-runtime lifetimes
 or large LDM arenas are safe.
+
+`python3 tests/test_output_rma.py` uses a native MPI installation (`MPICC` and
+`MPIEXEC` may select it) and three local ranks. It compares normal and
+`OUTPUT_RMA_ONLY=1` writer buffering/reservations, verifies complete-SAM samples
+for the first 100 reads per chunk, oversized writes, an idle rank, and absence
+of a disk output. It is separate from the non-MPI host checks.
+
+## Cross Runtime Stack Regression
+
+`python3 tests/test_cross_stack.py RUN_LOG` checks the `-v 4` cross-dispatch
+trace: consecutive task IDs, three completed phases per batch, and stable
+post-return stack ranges across all CPEs. With no arguments it tests the
+log parser locally. Run the hardware check with at least 300 batches (a small
+`-K` is useful), in addition to the normal chunk-size run. Compare full SAM
+hashes against a `cgs` build using the same input and chunk configuration;
+stable stack traces alone are not a correctness check. Cross binaries and
+relocation files must come from the complete two-pass `build.sh` workflow.
+Use `--min-batches 300` for the stress acceptance check. The parser requires
+identical per-core extrema and an aligned LDM stack address (`bsub -b`); it
+checks post-return stack accumulation, not peak stack usage inside a kernel.
+# Chunk Output And MPE Helpers
+
+`test_parallel_input.py` checks exact positioned input with 1--6 readers,
+unaligned slices, empty input, short reads, `EINTR`, EOF, errors and offsets
+beyond 4 GiB using ASan/UBSan. It does not measure Sunway I/O performance.
+
+Six-MPE builds default to six `pread` readers; one-MPE builds default to serial
+`fread`. `SWBWA_INPUT_READERS=0` explicitly selects serial `fread`. Runtime values
+1--6 select `pread` with that many readers, limited by the build's
+`HOST_MPE_THREADS` (default 6 for `cgs`/`cgs_cross`, 1 for `single`).
+`test_optimization_defaults.py` checks Make/header defaults and explicit overrides;
+`test_parallel_input.py` exercises reader selection and input under both defaults
+and overrides. Multiple readers require `HOST_MPE_THREADS=6` and a
+full-chip allocation. Byte slices are reassembled before FASTQ parsing;
+MPI chunk IDs, boundaries and ticket reservations are unchanged.
+
+`test_pipeline_queue.cpp` exercises the bounded, condition-variable queues
+with empty input, repeated reuse, slow readers and slow writers. The test
+checks FIFO delivery, one final flush and SAM ring ownership under ASan/UBSan.
+Output capacity is reserved before Stage 2 starts using a ring slot.
+`test_host_workers.c` also checks concurrent callers and a held input task:
+short SAM preparation/packing tasks can run on their caller instead of waiting
+for that input task. Serial fallback preserves the six logical byte slices so
+measurement and packing can safely take different dispatch paths.
+
+At `-v 4`, Stage 1 reports thread user/system CPU, faults and context switches
+when `RUSAGE_THREAD` is available. `FASTQ read wall time` includes dispatch
+and waiting; `pread calls (worker time sum)` sums concurrent calls and must
+not be added to wall time. Changing defaults does not establish performance
+gains for every storage environment; retain explicit overrides for comparisons.
+In pipelined mode, queue wait times are reported separately from stage callback
+times; concurrent waits overlap and must not be summed as elapsed time.
+
+See [CHUNK_OUTPUT.md](CHUNK_OUTPUT.md) for the batch output contract,
+`HOST_MPE_THREADS=1|6`, and local/target-platform validation.
+## Ordered Output
+
+`python3 tests/test_output_ordered.py` runs real local-MPI tests of the
+experimental `single_ordered` writer. See [ORDERED_OUTPUT.md](ORDERED_OUTPUT.md)
+for prefix dependencies, monotonic scheduling, bounded buffering and limitations.
+
+`check_ordered_sam.py --fastq reads.fq --reference reference.sam --candidate output.sam`
+compares **all** SAM bytes after excluding headers, without sorting. Add `--paired`
+for PE input. It also checks FASTQ name order, primary alignment multiplicity,
+record count, byte count and MD5; supplementary records are retained. This small
+fixture checker expects unique FASTQ names (both mates share one name). Run it
+where the data reside; SAM files need not be transferred for validation.
+`test_ordered_sam_check.py` verifies that reordered, truncated, duplicated and
+modified records are rejected. A non-MPI SWBWA reference checks output-path
+consistency, not independent agreement with upstream BWA.

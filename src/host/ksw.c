@@ -210,7 +210,6 @@ kswr_t ksw_u8(kswq_t *q, int tlen, const uint8_t *target, int _o_del, int _e_del
 			}
 		}
 end_loop16:
-		//int k;for (k=0;k<16;++k)printf("%d ", ((uint8_t*)&max)[k]);printf("\n");
 		__max_16(imax, max); // imax is the maximum number in max
 		if (imax >= minsc) { // write the b array; this condition adds branching unfornately
 			if (n_b == 0 || (int32_t)b[n_b-1] + 1 != i) { // then append
@@ -237,7 +236,6 @@ end_loop16:
 		for (i = 0; i < qlen; ++i, ++t)
 			if ((int)*t > max) max = *t, r.qe = i / 16 + i % 16 * slen;
 			else if ((int)*t == max && (tmp = i / 16 + i % 16 * slen) < r.qe) r.qe = tmp; 
-		//printf("%d,%d\n", max, gmax);
 		if (b) {
 			i = (r.score + q->max - 1) / q->max;
 			low = te - i; high = te + i;
@@ -503,7 +501,6 @@ int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target,
 		beg = j;
 		for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
 		end = j + 2 < qlen? j + 2 : qlen;
-		//beg = 0; end = qlen; // uncomment this line for debugging
 	}
 	free(eh); free(qp);
 	if (_qle) *_qle = max_j + 1;

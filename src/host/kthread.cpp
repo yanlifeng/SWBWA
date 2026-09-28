@@ -1,16 +1,15 @@
 #include <iostream>
 #include <vector>
 #include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <functional>
 #include <cstdlib>
 #include <cstdint>
 #include <climits>
 #include <pthread.h>
 #include <cstring>
+#include <chrono>
+#include <cstdio>
 
-#include <atomic>
 #include <cassert>
 
 
@@ -151,98 +150,138 @@ static_assert(SWBWA_PIPELINE_BUFFER_COUNT >=
 
 
 
-std::atomic_int queue2_P1;
-std::atomic_int queue2_P2;
-std::atomic_int queue2_Num;
-
-struct MyQueue {
-    DataType* q_data;
-    std::atomic_int q_p1;
-    std::atomic_int q_p2;
-    std::atomic_int q_num;
+struct QueueWait {
+    uint64_t events = 0;
+    double seconds = 0;
 };
 
-std::mutex mtx;
+static struct {
+    QueueWait reader_full, processor_empty, processor_full, writer_empty;
+    bool enabled = false;
+} pipeline_waits;
 
-void reader_thread(ktp_t* p, MyQueue& queue, std::atomic<bool>& done_reading) {
-    //set_thread_affinity(1);
-    DataType data = nullptr;
-    while (true) {
-        while (queue.q_num >= read_queue_item_limit) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        {
-            //std::lock_guard<std::mutex> lock(mtx);
-            data = p->func(p->shared, 0, nullptr);
-        }
-        if (data == nullptr) break;
+/* Single producer/consumer; closure and the last item share one mutex.
+ * Direct pthread references also prevent unresolved weak gthread symbols
+ * in the Sunway static libstdc++ link (notably cond_broadcast). */
+class BatchQueue {
+    std::vector<DataType> items;
+    size_t head = 0, tail = 0, count = 0;
+    bool closed = false;
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t changed = PTHREAD_COND_INITIALIZER;
 
-        queue.q_data[queue.q_p2++] = data;
-        queue.q_num++;
-        printf("step1 %p\n", data);
+    static void checked(int error)
+    {
+        if (error == 0) return;
+        fprintf(stderr, "pipeline queue synchronization failed: %s\n", strerror(error));
+        abort();
     }
-    done_reading = true;
+
+    template<class Predicate>
+    void wait(Predicate ready, QueueWait& stats)
+    {
+        if (ready()) return;
+        const auto start = std::chrono::steady_clock::now();
+        while (!ready()) checked(pthread_cond_wait(&changed, &mutex));
+        ++stats.events;
+        stats.seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    }
+
+public:
+    explicit BatchQueue(size_t capacity) : items(capacity) { assert(capacity > 0); }
+    ~BatchQueue()
+    {
+        checked(pthread_cond_destroy(&changed));
+        checked(pthread_mutex_destroy(&mutex));
+    }
+    BatchQueue(const BatchQueue&) = delete;
+    BatchQueue& operator=(const BatchQueue&) = delete;
+
+    void wait_for_space(QueueWait& stats)
+    {
+        checked(pthread_mutex_lock(&mutex));
+        wait([this] { return count < items.size(); }, stats);
+        checked(pthread_mutex_unlock(&mutex));
+    }
+
+    void push(DataType item)
+    {
+        checked(pthread_mutex_lock(&mutex));
+        assert(!closed && count < items.size());
+        items[tail] = item;
+        tail = (tail + 1) % items.size();
+        ++count;
+        checked(pthread_cond_broadcast(&changed));
+        checked(pthread_mutex_unlock(&mutex));
+    }
+
+    bool pop(DataType& item, QueueWait& stats)
+    {
+        checked(pthread_mutex_lock(&mutex));
+        wait([this] { return count != 0 || closed; }, stats);
+        if (!count) {
+            checked(pthread_mutex_unlock(&mutex));
+            return false;
+        }
+        item = items[head];
+        head = (head + 1) % items.size();
+        --count;
+        checked(pthread_cond_broadcast(&changed));
+        checked(pthread_mutex_unlock(&mutex));
+        return true;
+    }
+
+    void close()
+    {
+        checked(pthread_mutex_lock(&mutex));
+        closed = true;
+        checked(pthread_cond_broadcast(&changed));
+        checked(pthread_mutex_unlock(&mutex));
+    }
+};
+
+static void reader_thread(ktp_t* p, BatchQueue& queue)
+{
+    for (;;) {
+        queue.wait_for_space(pipeline_waits.reader_full);
+        DataType item = p->func(p->shared, 0, nullptr);
+        if (!item) break;
+        queue.push(item);
+    }
+    queue.close();
 }
 
-
-void processor_thread(ktp_t* p, MyQueue& read_queue, MyQueue& write_queue, std::atomic<bool>& done_reading, std::atomic<bool>& done_processing) {
-    DataType item = nullptr;
-    bool overWhile = 0;
-    while (true) {
-        while (read_queue.q_num == 0) {
-            if (done_reading) {
-                overWhile = 1;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        if (overWhile) break;
-        item = read_queue.q_data[read_queue.q_p1++];
-        read_queue.q_num--;
-        printf("step2 get %p\n", item);
-
-        /*
-         * Reserve room before stage 2 writes its ring-buffered SAM batch.
-         * q_num excludes the batch currently consumed by the writer, so
-         * delaying this check until after processing could leave one writer,
-         * a full queue, and a new batch sharing too few SAM buffers.
-         */
-        while (write_queue.q_num >= write_queue_item_limit) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        DataType processed_data = item;
-        processed_data = p->func(p->shared, 1, item);
-        printf("step2 put %p\n", processed_data);
-
-        write_queue.q_data[write_queue.q_p2++] = processed_data;
-        write_queue.q_num++;
+static void processor_thread(ktp_t* p, BatchQueue& input, BatchQueue& output)
+{
+    DataType item;
+    while (input.pop(item, pipeline_waits.processor_empty)) {
+        /* Reserve before touching a SAM ring slot, not after producing it.
+         * The writer's active item is outside the queue and still owns a slot. */
+        output.wait_for_space(pipeline_waits.processor_full);
+        output.push(p->func(p->shared, 1, item));
     }
-    done_processing = true;
+    output.close();
 }
 
-void writer_thread(ktp_t* p, MyQueue& queue, std::atomic<bool>& done_processing) {
-    //set_thread_affinity(4);
-    DataType item = nullptr;
-    bool overWhile = 0;
-    while (true) {
-        while (queue.q_num == 0) {
-            if (done_processing) {
-                overWhile = 1;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        if (overWhile) break;
-        item = queue.q_data[queue.q_p1++];
-        queue.q_num--;
-        printf("step3 %p\n", item);
-        {
-            //std::lock_guard<std::mutex> lock(mtx);
-            p->func(p->shared, 2, item);
-        }
-    }
-    p->func(p->shared, 3, item);
+static void writer_thread(ktp_t* p, BatchQueue& queue)
+{
+    DataType item;
+    while (queue.pop(item, pipeline_waits.writer_empty)) p->func(p->shared, 2, item);
+    p->func(p->shared, 3, nullptr);
+}
+
+extern "C" void kt_pipeline_wait_report(void)
+{
+    if (!pipeline_waits.enabled) return;
+    const QueueWait* rows[] = {&pipeline_waits.reader_full, &pipeline_waits.processor_empty,
+                              &pipeline_waits.processor_full, &pipeline_waits.writer_empty};
+    const char* labels[] = {"reader waits for input queue space", "processor waits for input",
+                            "processor waits for SAM buffer space", "writer waits for output"};
+    fprintf(stderr, "\n  Pipeline queue waits (outside stage callback timers)\n");
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i)
+        fprintf(stderr, "    %-43s %10.3f s  (%llu waits)\n", labels[i], rows[i]->seconds,
+                (unsigned long long)rows[i]->events);
+    fprintf(stderr, "    Concurrent waits overlap; do not add them to stage times.\n");
 }
 
 extern "C" void kt_pipeline_queue(int n_threads, void* (*func)(void*, int, void*), void* shared_data, int n_steps) {
@@ -254,32 +293,13 @@ extern "C" void kt_pipeline_queue(int n_threads, void* (*func)(void*, int, void*
     assert(n_threads == 3);
     assert(n_steps == 3);
 
-    MyQueue read_queue;
-    MyQueue write_queue;
-    
-    read_queue.q_p1 = 0;
-    read_queue.q_p2 = 0;
-    read_queue.q_num = 0;
-    read_queue.q_data= new DataType[1 << 20];
+    BatchQueue read_queue(read_queue_item_limit), write_queue(write_queue_item_limit);
+    pipeline_waits = {};
+    pipeline_waits.enabled = true;
+    std::thread reader(reader_thread, &aux, std::ref(read_queue));
+    std::thread writer(writer_thread, &aux, std::ref(write_queue));
 
-    write_queue.q_p1 = 0;
-    write_queue.q_p2 = 0;
-    write_queue.q_num = 0;
-    write_queue.q_data = new DataType[1 << 20];
-
-    std::atomic<bool> done_reading{false};
-    std::atomic<bool> done_processing{false};
-
-    std::thread reader(reader_thread, &aux, std::ref(read_queue), std::ref(done_reading));
-    //std::thread processor(processor_thread, &aux, std::ref(read_queue), std::ref(write_queue), std::ref(done_reading), std::ref(done_processing));
-    std::thread writer(writer_thread, &aux, std::ref(write_queue), std::ref(done_processing));
-
-    processor_thread(&aux, read_queue, write_queue, done_reading, done_processing);
+    processor_thread(&aux, read_queue, write_queue);
     reader.join();
-    //processor.join();
     writer.join();
-
-
-    delete[] read_queue.q_data;
-    delete[] write_queue.q_data;
 }

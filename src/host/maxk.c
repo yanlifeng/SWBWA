@@ -23,7 +23,7 @@ int main_maxk(int argc, char *argv[])
 		if (c == 's') self = 1;
 	}
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: bwa maxk [-s] <index.prefix> <seq.fa>\n");
+		fprintf(stderr, "Usage: SWBWA maxk [-s] <index.prefix> <seq.fa>\n");
 		return 1;
 	}
 	fp = strcmp(argv[optind+1], "-")? gzopen(argv[optind+1], "rb") : gzdopen(fileno(stdin), "rb");

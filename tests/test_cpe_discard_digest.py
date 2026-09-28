@@ -68,9 +68,13 @@ def main(argv=None):
         host = (source_root / "src/host/bwamem.c").read_text()
         output = (source_root / "src/host/fastmap.c").read_text()
         (work / "actual_worker.inc").write_text(between(slave, "void worker12_fast(", "\nvoid mem_process_seqs("))
+        layout_end = host.index("void mem_process_seqs_merge2(")
+        layout_start = host.index("#if SWBWA_HOST_MPE_THREADS > 1 && !SWBWA_CPE_DISCARD_DIGEST_ACTIVE")
+        (work / "actual_host_layout.inc").write_text(host[layout_start:layout_end])
         merge = host[host.index("void mem_process_seqs_merge2("):]
         (work / "actual_slices.inc").write_text(between(merge, "    size_t now_f_block_pos = 0;", "    t_work1_4 +="))
-        (work / "actual_output_loop.inc").write_text(between(output, "\t\tfor (i = 0; i < data->n_seqs; ++i)", "\t\tt_step3_1 +="))
+        writer = output[output.index("} else if (step == 2) {"):]
+        (work / "actual_output_loop.inc").write_text(between(writer, "#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE", "\t\tt_step3_1 +="))
         includes = ["-I"+str(work), "-I"+str(source_root / "include"), "-I"+str(source_root / "src/host")]
         (work / "athread.h").write_text("#pragma once\n#define SLAVE_FUN(x) slave_##x\n#define __uncached\n"
             "void athread_init(void); void athread_init_cgs(void);\n"
@@ -79,12 +83,13 @@ def main(argv=None):
             "void __real_athread_spawn_cgs(void *, void *, int);\n")
         expected = expected_sam()
         assert len(expected) == 17300
-        for digest, reuse, terminators, mode in itertools.product((0, 1), (0, 1), (0, 1), ("DISCARD", "SPLIT")):
+        for digest, reuse, terminators, mode, threads in itertools.product((0, 1), (0, 1), (0, 1), ("DISCARD", "SPLIT"), (1, 6)):
             defines = [f"-DSWBWA_CPE_DISCARD_DIGEST={digest}", f"-DSWBWA_HOST_PREP_REUSE={reuse}",
-                       f"-DSWBWA_HOST_PREP_CPE_TERMINATORS={terminators}", f"-DSWBWA_OUTPUT_MODE=SWBWA_OUTPUT_{mode}"]
+                       f"-DSWBWA_HOST_PREP_CPE_TERMINATORS={terminators}", f"-DSWBWA_OUTPUT_MODE=SWBWA_OUTPUT_{mode}", f"-DSWBWA_HOST_MPE_THREADS={threads}"]
             executable = work / "test"
             run(cc + common + sanitizer + defines + includes +
-                [str(ROOT / "tests/cpe_discard_digest_harness.c"), str(source_root / "src/host/swbwa_output.c"), "-o", str(executable)])
+                [str(ROOT / "tests/cpe_discard_digest_harness.c"), str(source_root / "src/host/swbwa_output.c"),
+                 str(source_root / "src/host/swbwa_host_workers.c"), "-pthread", "-o", str(executable)])
             for policy in (None, "", "0", "1") if mode == "DISCARD" else ("1",):
                 env = dict(os.environ, ASAN_OPTIONS="detect_leaks=1:halt_on_error=1")
                 env.pop("SWBWA_DISCARD_HASH", None)
@@ -106,7 +111,7 @@ def main(argv=None):
                 assert invalid.returncode == 9 and not (work / "invalid.sam").exists()
             for name in ("bwamem.c", "fastmap.c"):
                 run(cc + common + defines + includes + ["-D_GNU_SOURCE", "-fsyntax-only", str(source_root / "src/host" / name)])
-            print(f"PASS digest={digest} reuse={reuse} terminators={terminators} mode={mode}: SE/PE, scalar reference, actual output loop, native host syntax")
+            print(f"PASS digest={digest} reuse={reuse} terminators={terminators} mode={mode} threads={threads}: SE/PE, scalar reference, actual output loop, native host syntax")
         guards = [([], True), (["-DSWBWA_CPE_DISCARD_DIGEST=1"], True),
                   (["-DSWBWA_CPE_DISCARD_DIGEST=2"], False),
                   (["-DSWBWA_CPE_DISCARD_DIGEST=1", "-USWBWA_DISCARD_HASH_BYTES", "-DSWBWA_DISCARD_HASH_BYTES=64"], False),

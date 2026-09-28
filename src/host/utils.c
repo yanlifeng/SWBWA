@@ -258,8 +258,6 @@ int err_fputs(const char *s, FILE *stream)
 
 #define BS_size (4 << 20)
 
-//char align_write_buf[BS_size] __attribute__((aligned(4096)));
-//int buf_used_size = 0;
 
 void my_align_write(char *s, int out_fd, int tag, char *out_file) {
 
@@ -303,26 +301,18 @@ void my_align_write(char *s, int out_fd, int tag, char *out_file) {
         size_t to_copy = (len < space_left) ? len : space_left;
 
         memcpy(align_write_buf + buf_used_size, s, to_copy);
-        //printf("len %d, space_left %d, to_copy %d, buf_used_size %d\n", len, space_left, to_copy, buf_used_size);
 
         buf_used_size += to_copy;
         s += to_copy;
         len -= to_copy;
 
         if (buf_used_size == BS_size) {
-            //printf("output chunk to %d\n", out_fd);
             write(out_fd, align_write_buf, BS_size);
             buf_used_size = 0;
         }
     }
 }
 
-//void flush_align_write(int out_fd) {
-//    if (buf_used_size > 0) {
-//        write(out_fd, align_write_buf, buf_used_size);
-//        buf_used_size = 0;
-//    }
-//}
 
 int err_puts(const char *s)
 {

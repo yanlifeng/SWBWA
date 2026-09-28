@@ -23,7 +23,6 @@
    SOFTWARE.
 */
 
-/* Contact: Heng Li <lh3@sanger.ac.uk> */
 
 #include <stdlib.h>
 #include <stdio.h>

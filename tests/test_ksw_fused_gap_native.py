@@ -94,7 +94,7 @@ HARNESS = r'''
 #include "swbwa_config.h"
 #include "src/slave/scalar_sse.h"
 
-#if !SWBWA_KSW_FUSED_GAP_UPDATE || SWBWA_ENABLE_FLOAT16_VECTOR || SWBWA_ENABLE_PACKED_INT8
+#if !SWBWA_KSW_FUSED_GAP_UPDATE || SWBWA_ENABLE_FLOAT16_VECTOR
 #error "this test requires fused integer word helpers"
 #endif
 

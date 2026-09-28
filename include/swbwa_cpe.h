@@ -13,6 +13,13 @@ typedef struct {
     long long bytes_per_cpe;
 } swbwa_cpe_pool_params_t;
 
+/* MPE-owned uncached mailbox. Publish entry before sequence; one task at a time. */
+typedef struct {
+    volatile unsigned long entry;
+    volatile unsigned long sequence;
+    volatile unsigned long stack_pointer[SWBWA_CPE_COUNT];
+} swbwa_cross_command_t;
+
 /*
  * Shared MPE/CPE task parameters. Keep this structure pointer-only where
  * possible: it is passed directly between the two architectures.
@@ -51,6 +58,7 @@ typedef struct {
 #if SWBWA_CPE_LDM_ALLOC
     swbwa_ldm_alloc_stats_t ldm_alloc_stats[SWBWA_CPE_COUNT];
 #endif
+    swbwa_cross_command_t *cross_command;
 } swbwa_cpe_task_t;
 
 #endif /* SWBWA_CPE_H */

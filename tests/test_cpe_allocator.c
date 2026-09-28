@@ -37,6 +37,55 @@ void *cpe_pool_malloc(size_t size);
 void cpe_pool_free(void *ptr);
 void *cpe_pool_realloc(void *ptr, size_t size);
 
+static void exercise_pool(char *pool)
+{
+    unsigned seed = 42;
+    void *live[64] = {0};
+    size_t sizes[64] = {0};
+    int i;
+
+    set_big_buffer(pool, 16 << 20);
+    cpe_pool_free(NULL);
+    for (i = 0; i < 17; ++i) {
+        size_t size = (size_t)4 << i;
+        void *p = cpe_pool_malloc(size);
+        memset(p, i, size);
+        assert(((unsigned char *)p)[size - 1] == i);
+        cpe_pool_free(p);
+        if (size > 4) {
+            p = cpe_pool_malloc(size - 1);
+            memset(p, 1, size - 1);
+            cpe_pool_free(p);
+        }
+    }
+    for (i = 0; i < 30000; ++i) {
+        unsigned slot, j;
+        size_t size;
+        void *p;
+        seed = seed * 1664525u + 1013904223u;
+        slot = (seed >> 16) % 64;
+        for (j = 0; j < sizes[slot]; ++j)
+            assert(((unsigned char *)live[slot])[j] == slot);
+        seed = seed * 1664525u + 1013904223u;
+        size = (seed >> 12) % 8193;
+        p = cpe_pool_realloc(live[slot], size);
+        for (j = 0; j < sizes[slot] && j < size; ++j)
+            assert(((unsigned char *)p)[j] == slot);
+        if (size != 0) memset(p, slot, size);
+        live[slot] = p;
+        sizes[slot] = size;
+    }
+    for (i = 0; i < 64; ++i) cpe_pool_free(live[i]);
+    /* Pointers outside the pool still belong to the system allocator. */
+    {
+        unsigned char *p = cpe_pool_malloc((1 << 18) + 1);
+        p[0] = 17;
+        p = cpe_pool_realloc(p, (1 << 18) + 64);
+        assert(p != NULL && p[0] == 17);
+        cpe_pool_free(p);
+    }
+}
+
 int main(void)
 {
     void *p, *q;
@@ -96,6 +145,8 @@ int main(void)
         l_calloc(SIZE_MAX, 1);
         assert(0);
     }
+    exercise_pool(pool);
+    exercise_pool(pool); /* Pool reset must permit a second independent run. */
     free(pool);
     puts("CPE allocator host tests passed");
     return 0;

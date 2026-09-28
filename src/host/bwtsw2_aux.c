@@ -186,16 +186,6 @@ static void gen_cigar(const bsw2opt_t *opt, int lq, uint8_t *seq[2], int64_t l_p
 		end = (p->flag & 0x10)? lq - p->beg : p->end;
 		query = seq[(p->flag & 0x10)? 1 : 0] + beg;
 		q->cigar = bwa_gen_cigar(mat, opt->q, opt->r, opt->bw, l_pac, pac, end - beg, query, p->k, p->k + p->len, &score, &q->n_cigar, &q->nm);
-#if 0
-		if (name && score != p->G) { // debugging only
-			int j, glen = 0;
-			for (j = 0; j < q->n_cigar; ++j)
-				if ((q->cigar[j]&0xf) == 1 || (q->cigar[j]&0xf) == 2)
-					glen += q->cigar[j]>>4;
-			fprintf(stderr, "[E::%s] %s - unequal score: %d != %d; (qlen, aqlen, arlen, glen, bw) = (%d, %d, %d, %d, %d)\n",
-					__func__, name, score, p->G, lq, end - beg, p->len, glen, opt->bw);
-		}
-#endif
 		if (q->cigar && (beg != 0 || end < lq)) { // write soft clipping
 			q->cigar = realloc(q->cigar, 4 * (q->n_cigar + 2));
 			if (beg != 0) {
@@ -208,18 +198,6 @@ static void gen_cigar(const bsw2opt_t *opt, int lq, uint8_t *seq[2], int64_t l_p
 				++q->n_cigar;
 			}
 		}
-	}
-}
-
-/* this is for the debugging purpose only */
-void bsw2_debug_hits(const bwtsw2_t *b)
-{
-	int i;
-	printf("# raw hits: %d\n", b->n);
-	for (i = 0; i < b->n; ++i) {
-		bsw2hit_t *p = b->hits + i;
-		if (p->G > 0)
-			printf("G=%d, G2=%d, len=%d, [%d,%d), k=%lu, l=%lu, #seeds=%d, is_rev=%d\n", p->G, p->G2, p->len, p->beg, p->end, (long)p->k, (long)p->l, p->n_seeds, p->is_rev);
 	}
 }
 

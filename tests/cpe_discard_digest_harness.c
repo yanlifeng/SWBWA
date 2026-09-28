@@ -9,6 +9,9 @@
 #include "swbwa_output.h"
 #include "swbwa_discard_digest.h"
 #include "swbwa_host_prep.h"
+#include "swbwa_host_workers.h"
+
+#include "actual_host_layout.inc"
 
 /* Only the members used by the extracted copy worker are needed here. */
 typedef struct { const mem_opt_t *opt; bseq1_t *seqs; } worker_t;
@@ -58,19 +61,35 @@ static uint64_t reference_hash(const void *data, size_t length)
 
 #include "actual_worker.inc"
 
+static void *checked_malloc_array(size_t count, size_t size, const char *name)
+{
+    (void)name;
+    void *ptr = malloc(count * size);
+    assert(ptr != NULL);
+    return ptr;
+}
+
 static void allocate_slices(worker_t w, int n, int *lengths, char *block)
 {
+    int *saved_lengths = NULL;
+    int **sam_lengths_out = &saved_lengths;
     struct { int *sam_lengths; } parameters = {lengths}, *para = &parameters;
     char *sam_blocks_static[SWBWA_PIPELINE_BUFFER_COUNT];
     unsigned long batch_number = 1;
     sam_blocks_static[0] = block;
 #include "actual_slices.inc"
+    if (n > 0) {
+        assert(saved_lengths != lengths);
+        assert(memcmp(saved_lengths, lengths, (size_t)n * sizeof(int)) == 0);
+    } else assert(saved_lengths == NULL);
+    free(saved_lengths);
 }
 
 static void consume_records(bseq1_t *seqs, int n)
 {
-    struct { bseq1_t *seqs; int n_seqs; } batch = {seqs, n}, *data = &batch;
-    int i;
+    struct { bseq1_t *seqs; int n_seqs; int64_t chunk_id, chunk_start, chunk_end; int *sam_lengths; }
+        batch = {seqs, n, 0, 0, 1, NULL}, *data = &batch;
+    struct { int is_paired; } options = {0}, *aux = &options;
 #include "actual_output_loop.inc"
 }
 
@@ -130,6 +149,7 @@ int main(int argc, char **argv)
     assert(swbwa_output_write_digest(NULL) == -1);
 #endif
     if (swbwa_output_open(argv[1], 0) != 0) return 9;
+    assert(swbwa_host_workers_init() == 0);
 #if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
     assert(swbwa_output_discard_hash_active() == enabled);
     check_hash_and_state(enabled);
@@ -184,6 +204,8 @@ int main(int argc, char **argv)
             allocate_slices(w, SWBWA_CPE_FORMAT_BUFFER_BYTES / SWBWA_DIGEST_RECORD_BYTES + 1, lengths, (char *)block);
             abort();
         }
+#endif
+#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE || SWBWA_HOST_MPE_THREADS > 1
         lengths[0] = -1;
         if (setjmp(expected_failure) == 0) { allocate_slices(w, 1, lengths, (char *)block); abort(); }
 #endif
@@ -194,6 +216,7 @@ int main(int argc, char **argv)
     assert(swbwa_output_flush() == 0);
     assert(swbwa_output_close() == 0);
     assert(swbwa_output_close() == 0);
+    swbwa_host_workers_destroy();
 #if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
     assert(swbwa_output_write_digest(NULL) == -1);
 #endif

@@ -70,7 +70,7 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `HOST_MALLOC_STATS` | `0`、`1` | `0` |
 | `HOST_MPE_THREADS` | `1`、`6`（六线程须每进程占用整片六个 CG） | `cgs` / `cgs_cross` 为 `6`；`single` 为 `1` |
 | `CPE_KERNEL_OPT` | `0`、`1` | 非 MPI `cgs_cross + pool` 为 `1`，其他为 `0` |
-| `CPE_LDM_MODE` | `0` 全关、`1` 分级 malloc 池、`2` 手工优化 | `2`；模式1仅支持非 MPI `cgs_cross + pool` |
+| `CPE_LDM_MODE` | `0` 全关、`1` 旧分级池、`2` 手工优化、`3` 统一池 | 非 MPI `cgs_cross + pool` 默认 `3`，其他配置默认 `2` |
 | `CPE_DISCARD_DIGEST` | `0`、`1` | 非 MPI `cgs_cross + pool` 且 `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0` 时为 `1`，其他为 `0` |
 | `USE_MPI` | `0`、`1` | `1` |
 | `MPI_INPUT_MODE` | `static`、`dynamic` | MPI 构建时为 `dynamic` |
@@ -97,14 +97,23 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 模式0关闭新池和历史手工 LDM 申请；模式1关闭旧手工放置，使用每 CPE 32 KiB
 分级池接管 malloc/calloc/realloc/free，不适合或放不下的请求回退原交叉段 pool；
 模式2关闭新池，保留已验证的手工工作区/阶段复用优化。模式1的 SAM 和公共缓存
-query 仍走 heap，不是无条件将所有 malloc 放入 LDM。池元数据计入统一40 KiB预算。
+query 仍走 heap，不是无条件将所有 malloc 放入 LDM。模式1/2保留40 KiB预算。
+模式3是新统一池（B）：保留旧 scratch 复用，并接纳已审计的小对象和紧凑分配器索引；
+56 KiB payload及元数据合计受72 KiB预算约束，cache仍由运行参数决定。
+B的参数已经内置，正常运行不需要额外环境变量。C的离线参数选择工具保留在
+`tools/ldm_policy.py`，不会在程序启动时训练或替换B默认值。
 旧的 `CPE_LDM_ALLOC`、`CPE_MANUAL_LDM`、`CPE_LDM_BYTES`、`LDM_SCRATCH_BUDGET`
 不再是 Makefile 参数，使用时会明确报错。详细约束见 [LDM 说明](docs/LDM_ALLOCATOR.md)。
 
 ```bash
-# 将 CPE_LDM_MODE 换成 0/1/2；cgs_cross 必须完整两遍编译。
-bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 CPE_LDM_MODE=2
+# 可显式选择 0/1/2/3；下面默认B，cgs_cross 必须完整两遍编译。
+bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0
 ```
+
+大数据有序正确性验证可编译非MPI `OUTPUT_MODE=split`，运行时设置
+`SWBWA_OUTPUT_MD5=1`。程序完整生成并搬运SAM，在输出接口计算去开头header后的
+逐字节MD5，不排序、不创建SAM文件，结束时报告MD5、字节数和记录数。
+不能与MPI、discard或OUTPUT_RMA_ONLY组合；详见[流式校验](docs/SAM_STREAM_MD5.md)。
 
 `MPI_EXACT_READ_INDEX=1` 用于正确性检查。程序会在比对前由 rank 0 扫描完整 FASTQ，建立精确的记录前缀索引。
 
@@ -117,7 +126,7 @@ bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 CPE_LDM_MODE=2
 `EXTRA_CPPFLAGS` 可传递受 `#ifndef` 保护的实验参数；修改参数后必须完整重编译，
 cross 构建仍需 `build.sh` 的两遍流程。
 
-当前 CPE 分配器对已包装的 LDM scratch 使用 40 KiB 总预算，分配失败回退 heap，
+手工模式对已包装的 LDM scratch 使用 40 KiB 总预算，统一池模式使用72 KiB，分配失败回退 heap，
 KSW profile 和 mate-dedup 的单次 LDM 上限各为 16 KiB。这不包含完整栈/静态数据用量。
 关闭 `CPE_KERNEL_OPT` 时，context + SMEM 会使独立的 24 KiB chain arena 通常回退 heap。
 开启后，chain arena 复用收集阶段结束后不再使用的 16 KiB SMEM scratch；
@@ -187,7 +196,7 @@ MPI `single_unordered` 的比对输出以输入 chunk 为单位：一个非空 c
 - 整数 SIMD 合并 gap 下限截断，利用 predicate/XOR 实现选择。
 - 主核复用 SAM 指针/长度 scratch，消除主核重复写入终止符。
 
-不改变 lane 数量、打分、lazy-F 终止、tie 比较、任务划分，也不提高 40 KiB LDM 总预算。
+不改变 lane 数量、打分、lazy-F 终止、tie 比较、任务划分；该kernel开关本身不提高LDM预算，预算由LDM模式决定。
 用 `CPE_KERNEL_OPT=0` 构建核心对照组；输出 hash 加速和按批次计时独立于此开关。
 
 纯核心示例：单进程六 CG 的 stage2 测量与 FULL 最终复制校验，显式设置 `CPE_DISCARD_DIGEST=0`：

@@ -5,6 +5,16 @@ The entries below record the main Sunway-specific development milestones
 after the original BWA code base. Hashes are the corresponding repository
 commits.
 
+2026-10-01
+----------
+Default non-MPI cgs_cross+pool to unified LDM policy B; retain the optional
+offline policy selector C and explicit off/legacy/manual modes. Share audited
+scratch and small heap objects under one budget; cache compact heap bitmaps
+and ownership descriptors with suspend/resume writeback and safe fallback.
+Restore per-direction mate-rescue deduplication semantics, including failed
+alignment attempts. Add exact header-free streaming SAM MD5 output, allocator
+sanitizer/differential checks, policy tests and user-facing configuration docs.
+
 2026-09-09
 ----------
 0a08920  docs: clarify repository result layout

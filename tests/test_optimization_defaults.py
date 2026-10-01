@@ -14,7 +14,8 @@ class OptimizationDefaultsTest(unittest.TestCase):
         env = {key: value for key, value in os.environ.items()
                if key not in {"MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
                               "CPE_KERNEL_OPT", "CPE_DISCARD_DIGEST",
-                              "CPE_PROFILE", "HOST_MALLOC_STATS", "HOST_MPE_THREADS"}}
+                              "CPE_PROFILE", "HOST_MALLOC_STATS", "HOST_MPE_THREADS",
+                              "CPE_LDM_MODE"}}
         return subprocess.run(
             ["make", "-s", "--no-print-directory", "print-config",
              *[f"{key}={value}" for key, value in options.items()]],
@@ -38,6 +39,7 @@ class OptimizationDefaultsTest(unittest.TestCase):
                 core = execution == "cgs_cross" and allocator == "pool" and mpi == 0
                 digest = core and output == "discard" and prefix == 0
                 self.assertEqual(values["CPE_KERNEL_OPT"], str(int(core)))
+                self.assertEqual(values["CPE_LDM_MODE"], "3" if core else "2")
                 self.assertEqual(values["CPE_DISCARD_DIGEST"], str(int(digest)))
                 self.assertEqual(values["HOST_MPE_THREADS"], "1" if execution == "single" else "6")
 

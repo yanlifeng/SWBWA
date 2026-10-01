@@ -12,12 +12,23 @@
 
 #include "malloc_wrap.h"
 
+#if SWBWA_LDM_UNIFIED
+struct pool_bitmap {
+    unsigned used, first_word;
+    uint64_t words[];
+};
+#endif
+
 struct swbwa_segment_tree {
     int *tree;
     int seg_size;
     int leaf_offset;
     char *start_address;
     char *end_address;
+#if SWBWA_LDM_UNIFIED
+    struct pool_bitmap *bitmap;
+    struct pool_bitmap *bitmap_home;
+#endif
 };
 
 enum {
@@ -51,9 +62,133 @@ static char *pool_starts[SWBWA_CPE_COUNT];
 static size_t pool_offsets[SWBWA_CPE_COUNT];
 static size_t pool_sizes[SWBWA_CPE_COUNT];
 
+#if SWBWA_LDM_UNIFIED
+static unsigned bitmap_modes[SWBWA_CPE_COUNT];
+enum { POOL_BITMAP_CACHE_BYTES = 4096 };
+static unsigned char *bitmap_caches[SWBWA_CPE_COUNT];
+static unsigned bitmap_offsets[SWBWA_CPE_COUNT];
+
+static size_t bitmap_bytes(int count)
+{
+    return sizeof(struct pool_bitmap) + ((count + 63u) / 64u) * sizeof(uint64_t);
+}
+
+static void bitmap_cache_add(struct swbwa_segment_tree *tree)
+{
+    unsigned char *cache = bitmap_caches[_MYID];
+    size_t bytes = bitmap_bytes(tree->seg_size);
+    if (!cache || !tree->bitmap_home || tree->bitmap != tree->bitmap_home ||
+        bytes > POOL_BITMAP_CACHE_BYTES - bitmap_offsets[_MYID]) return;
+    tree->bitmap = (struct pool_bitmap *)(cache + bitmap_offsets[_MYID]);
+    memcpy(tree->bitmap, tree->bitmap_home, bytes);
+    bitmap_offsets[_MYID] += bytes;
+}
+
+void swbwa_pool_bitmap_begin(unsigned mode)
+{
+    assert(!bitmap_caches[_MYID]);
+    if (SWBWA_ALLOC_INITIALIZED && mode != bitmap_modes[_MYID])
+        swbwa_cpe_fail(SWBWA_CPE_ERR_LDM_ALLOC_STATE, mode, bitmap_modes[_MYID], 104);
+    bitmap_modes[_MYID] = mode;
+    bitmap_offsets[_MYID] = 0;
+    if (mode != 2) return;
+    bitmap_caches[_MYID] = swbwa_ldm_alloc(POOL_BITMAP_CACHE_BYTES, 4);
+    if (!SWBWA_ALLOC_INITIALIZED) return;
+    for (int i = 0; i < SWBWA_ALLOC_SIZE_CLASS_COUNT; ++i)
+        for (int j = 0; j < SWBWA_ALLOC_TREE_COUNTS[i]; ++j)
+            bitmap_cache_add(SWBWA_ALLOC_TREES[i][j]);
+}
+
+void swbwa_pool_bitmap_end(void)
+{
+    unsigned char *cache = bitmap_caches[_MYID];
+    if (!cache) return;
+    if (SWBWA_ALLOC_INITIALIZED) {
+        for (int i = 0; i < SWBWA_ALLOC_SIZE_CLASS_COUNT; ++i) {
+            for (int j = 0; j < SWBWA_ALLOC_TREE_COUNTS[i]; ++j) {
+                struct swbwa_segment_tree *t = SWBWA_ALLOC_TREES[i][j];
+                if (t->bitmap == t->bitmap_home) continue;
+                memcpy(t->bitmap_home, t->bitmap, bitmap_bytes(t->seg_size));
+                t->bitmap = t->bitmap_home;
+            }
+        }
+    }
+    bitmap_caches[_MYID] = NULL;
+    swbwa_ldm_release(cache, POOL_BITMAP_CACHE_BYTES);
+}
+#endif
+
+#if SWBWA_LDM_UNIFIED
+enum { POOL_CACHE_ENTRIES = 64 };
+typedef struct {
+    uintptr_t begin, end;
+    unsigned short size_class, index;
+} pool_cache_entry_t;
+typedef struct {
+    unsigned count;
+    pool_cache_entry_t entry[POOL_CACHE_ENTRIES];
+} pool_cache_t;
+static pool_cache_t *pool_caches[SWBWA_CPE_COUNT];
+
+static void pool_cache_add(struct swbwa_segment_tree *tree, int size_class, int index)
+{
+    pool_cache_t *cache = pool_caches[_MYID];
+    unsigned i;
+    if (!cache || cache->count == POOL_CACHE_ENTRIES) return;
+    i = cache->count++;
+    while (i && cache->entry[i - 1].begin > (uintptr_t)tree->start_address) {
+        cache->entry[i] = cache->entry[i - 1];
+        --i;
+    }
+    cache->entry[i].begin = (uintptr_t)tree->start_address;
+    cache->entry[i].end = (uintptr_t)tree->end_address;
+    cache->entry[i].size_class = size_class;
+    cache->entry[i].index = index;
+}
+
+void swbwa_pool_cache_begin(void)
+{
+    pool_cache_t *cache;
+    assert(!pool_caches[_MYID]);
+    cache = swbwa_ldm_alloc(sizeof(*cache), 4);
+    if (!cache) return;
+    cache->count = 0;
+    pool_caches[_MYID] = cache;
+    if (!SWBWA_ALLOC_INITIALIZED) return;
+    for (int i = 0; i < SWBWA_ALLOC_SIZE_CLASS_COUNT; ++i)
+        for (int j = 0; j < SWBWA_ALLOC_TREE_COUNTS[i]; ++j)
+            pool_cache_add(SWBWA_ALLOC_TREES[i][j], i, j);
+}
+
+void swbwa_pool_cache_end(void)
+{
+    pool_cache_t *cache = pool_caches[_MYID];
+    pool_caches[_MYID] = NULL;
+    if (cache) swbwa_ldm_release(cache, sizeof(*cache));
+}
+#endif
+
 static int find_pool_tree(const void *ptr, int *size_class, int *tree_index)
 {
     uintptr_t address = (uintptr_t)ptr;
+#if SWBWA_LDM_UNIFIED
+    /* Only descriptors are cached. Escaping SAM payload remains on the heap,
+     * and a full/refused cache safely falls back to the original search. */
+    const pool_cache_t *cache = pool_caches[_MYID];
+    if (cache) {
+        unsigned left = 0, right = cache->count;
+        while (left < right) {
+            unsigned mid = left + (right - left) / 2;
+            if (cache->entry[mid].begin <= address) left = mid + 1;
+            else right = mid;
+        }
+        if (left && address < cache->entry[left - 1].end) {
+            *size_class = cache->entry[left - 1].size_class;
+            *tree_index = cache->entry[left - 1].index;
+            return 1;
+        }
+    }
+#endif
     for (int i = 0; i < SWBWA_ALLOC_SIZE_CLASS_COUNT; ++i) {
         for (int j = 0; j < SWBWA_ALLOC_TREE_COUNTS[i]; ++j) {
             const struct swbwa_segment_tree *tree = SWBWA_ALLOC_TREES[i][j];
@@ -111,7 +246,13 @@ void *swbwa_ldm_alloc(unsigned long bytes, int site)
 #elif !SWBWA_CPE_MANUAL_LDM
     /* Ablation: disable explicit scratch placement, not the new arena or
      * SIMD/algorithm changes. All old callers already have heap fallbacks. */
-    if (site != SWBWA_LDM_AUTO_ARENA_SITE) return NULL;
+    if (site != SWBWA_LDM_AUTO_ARENA_SITE) {
+#if SWBWA_LDM_UNIFIED
+        return swbwa_ldm_scratch_try(bytes, (unsigned)site);
+#else
+        return NULL;
+#endif
+    }
 #else
     (void)site;
 #endif
@@ -135,6 +276,9 @@ void *swbwa_ldm_alloc(unsigned long bytes, int site)
 void swbwa_ldm_release(void *ptr, unsigned long bytes)
 {
     if (ptr == NULL) return;
+#if SWBWA_LDM_UNIFIED
+    if (swbwa_ldm_scratch_release(ptr)) return;
+#endif
     ldm_free(ptr, bytes);
     ldm_outstanding_bytes[_MYID] -= (long)bytes;
 }
@@ -199,6 +343,21 @@ static struct swbwa_segment_tree *build_segment_tree(int bind_length, int seg_si
     now_tree->seg_size = seg_size;
     int tree_size = seg_size << 1;
     now_tree->tree = (int *) l_calloc(tree_size * sizeof(int), 1);
+#if SWBWA_LDM_UNIFIED
+    if (bitmap_modes[_MYID]) {
+        /* Keep the payload and tree capacity unchanged. Only the free-index
+         * representation changes; find_free still returns the lowest slot. */
+        size_t bytes = bitmap_bytes(seg_size);
+        now_tree->bitmap_home = bytes <= tree_size * sizeof(int)
+            ? (struct pool_bitmap *)now_tree->tree : l_calloc(bytes, 1);
+        now_tree->bitmap = now_tree->bitmap_home;
+        if (seg_size % 64)
+            now_tree->bitmap->words[seg_size / 64] =
+                ~((UINT64_C(1) << (seg_size % 64)) - 1);
+        bitmap_cache_add(now_tree);
+        return now_tree;
+    }
+#endif
     for (int i = 1; i <= seg_size; ++i)
         now_tree->tree[i + now_tree->leaf_offset] = 0;
     for (int i = now_tree->leaf_offset; i; --i)
@@ -207,15 +366,46 @@ static struct swbwa_segment_tree *build_segment_tree(int bind_length, int seg_si
 }
 
 static void update_segment_tree(struct swbwa_segment_tree *now_tree, int pos, int value) {
+#if SWBWA_LDM_UNIFIED
+    if (now_tree->bitmap) {
+        struct pool_bitmap *b = now_tree->bitmap;
+        unsigned word = (unsigned)(pos - 1) / 64;
+        uint64_t bit = UINT64_C(1) << ((pos - 1) % 64);
+        assert(pos >= 1 && pos <= now_tree->seg_size);
+        if (value == 1) {
+            assert(!(b->words[word] & bit));
+            b->words[word] |= bit;
+            ++b->used;
+        } else {
+            assert(value == -1 && (b->words[word] & bit));
+            b->words[word] &= ~bit;
+            --b->used;
+            if (word < b->first_word) b->first_word = word;
+        }
+        return;
+    }
+#endif
     for (int i = pos + now_tree->leaf_offset; i; i >>= 1)
         now_tree->tree[i] += value;
 }
 
 static int segment_allocation_state(struct swbwa_segment_tree *now_tree, int pos) {
+#if SWBWA_LDM_UNIFIED
+    if (now_tree->bitmap)
+        return (now_tree->bitmap->words[(pos - 1) / 64] >> ((pos - 1) % 64)) & 1;
+#endif
     return now_tree->tree[pos + now_tree->leaf_offset];
 }
 
 static int find_free_segment(struct swbwa_segment_tree *now_tree) {
+#if SWBWA_LDM_UNIFIED
+    if (now_tree->bitmap) {
+        struct pool_bitmap *b = now_tree->bitmap;
+        if (b->used == (unsigned)now_tree->seg_size) return -1;
+        while (b->words[b->first_word] == UINT64_MAX) ++b->first_word;
+        return (int)(b->first_word * 64 + __builtin_ctzll(~b->words[b->first_word]) + 1);
+    }
+#endif
     int l = 1, r = now_tree->seg_size;
     assert(now_tree->tree[1] <= now_tree->seg_size);
     if (now_tree->tree[1] == now_tree->seg_size) return -1;
@@ -239,6 +429,9 @@ static void allocator_init(void) {
         SWBWA_ALLOC_TREE_COUNTS[i] = 0;
         struct swbwa_segment_tree *now_tree = build_segment_tree(block_sizes[i], initial_tree_sizes[i]);
         SWBWA_ALLOC_TREES[i][SWBWA_ALLOC_TREE_COUNTS[i]++] = now_tree;
+#if SWBWA_LDM_UNIFIED
+        pool_cache_add(now_tree, i, SWBWA_ALLOC_TREE_COUNTS[i] - 1);
+#endif
         SWBWA_ALLOC_NEXT_TREE_SIZES[i] = initial_tree_sizes[i] << 1;
     }
     SWBWA_ALLOC_INITIALIZED = 1;
@@ -289,6 +482,9 @@ static void *pool_malloc(size_t size) {
         struct swbwa_segment_tree *now_tree = build_segment_tree(block_sizes[length_type], next_size);
         SWBWA_ALLOC_NEXT_TREE_SIZES[length_type] = next_size << 1;
         SWBWA_ALLOC_TREES[length_type][SWBWA_ALLOC_TREE_COUNTS[length_type]++] = now_tree;
+#if SWBWA_LDM_UNIFIED
+        pool_cache_add(now_tree, length_type, SWBWA_ALLOC_TREE_COUNTS[length_type] - 1);
+#endif
         find_pos = SWBWA_ALLOC_TREE_COUNTS[length_type] - 1;
         first_zero_pos = 1;
     }

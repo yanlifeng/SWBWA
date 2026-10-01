@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from test_output_discard import reference_hash, MASK
+from test_sam_stream_md5 import build_md5_object
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,6 +29,7 @@ class OutputRmaTest(unittest.TestCase):
     def test_chunk_extents_and_parallel_packing(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
+            md5_link = build_md5_object(directory)
             for threads in (1, 6):
                 for only in (0, 1):
                     with self.subTest(threads=threads, rma_only=only):
@@ -39,7 +41,7 @@ class OutputRmaTest(unittest.TestCase):
                             "-DSWBWA_OUTPUT_BUFFER_BYTES=128", f"-DSWBWA_OUTPUT_RMA_ONLY={only}",
                             f"-DSWBWA_HOST_MPE_THREADS={threads}", "-DTEST_CHUNK_OUTPUT=1",
                             "tests/test_output_rma.c", "src/host/swbwa_output.c",
-                            "src/host/swbwa_host_workers.c", "-pthread", "-o", str(exe)],
+                            "src/host/swbwa_host_workers.c", "-pthread", "-o", str(exe)] + md5_link,
                             cwd=ROOT, check=True)
                         path = directory / f"chunks-{threads}-{only}.sam"
                         run = subprocess.run(shlex.split(os.environ.get("MPIEXEC", "mpiexec")) + [
@@ -87,6 +89,7 @@ class OutputRmaTest(unittest.TestCase):
     def test_same_extents_without_file_and_chunk_samples(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
+            md5_link = build_md5_object(directory)
             outputs = []
             for only in (0, 1):
                 exe = directory / f"writer{only}"
@@ -96,7 +99,7 @@ class OutputRmaTest(unittest.TestCase):
                     "-DSWBWA_EXEC_MODE=SWBWA_EXEC_SINGLE_CG",
                     "-DSWBWA_OUTPUT_MODE=SWBWA_OUTPUT_SINGLE_UNORDERED",
                     "-DSWBWA_OUTPUT_BUFFER_BYTES=128", f"-DSWBWA_OUTPUT_RMA_ONLY={only}",
-                    "tests/test_output_rma.c", "src/host/swbwa_output.c", "-o", str(exe)],
+                    "tests/test_output_rma.c", "src/host/swbwa_output.c", "-o", str(exe)] + md5_link,
                     cwd=ROOT, check=True)
                 path = directory / f"result{only}.sam"
                 run = subprocess.run(shlex.split(os.environ.get("MPIEXEC", "mpiexec")) + [

@@ -22,6 +22,10 @@ enum {
 
 typedef struct {
     unsigned long requests, bytes, small, placed;
+#if SWBWA_LDM_UNIFIED
+    unsigned long histogram[6], placed_histogram[6];
+    unsigned long peak_live, live, max_request, lifetime_events, releases;
+#endif
 } swbwa_ldm_site_stats_t;
 
 typedef struct {
@@ -30,10 +34,38 @@ typedef struct {
 } swbwa_ldm_alloc_stats_t;
 
 #if SWBWA_CPE_LDM_ALLOC
-/* GCC folds the comparisons against __func__ at the allocation call site.
- * In auto mode these sites form the admission whitelist. In full mode they
- * are statistics labels only: unknown sites and SAM strings are eligible.
- * Tiered mode additionally labels audited worker-local objects. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+#if SWBWA_LDM_UNIFIED
+typedef struct {
+    unsigned cap[SWBWA_LDM_SITE_COUNT];
+    unsigned reserve[SWBWA_LDM_SITE_COUNT];
+    unsigned profile;
+    unsigned fast_realloc;
+    unsigned scratch_hints;
+    unsigned heap_cache;
+    unsigned pool_bitmap;
+} swbwa_ldm_policy_t;
+/* Frozen production policy (B). Offline tuning is opt-in and never changes it. */
+static inline void swbwa_ldm_policy_default(swbwa_ldm_policy_t *policy)
+{
+    const swbwa_ldm_policy_t defaults = {
+        {0, 4096, 1024, 4096, 256, 0, 0, 0, 0, 0, 0},
+        {0, 4096, 4096, 0, 4096, 0, 0, 0, 0, 0, 0},
+        0, 1, 255, 1, 2
+    };
+    *policy = defaults;
+}
+void swbwa_pool_bitmap_begin(unsigned mode);
+void swbwa_pool_bitmap_end(void);
+void swbwa_ldm_set_policy(const swbwa_ldm_policy_t *policy);
+void *swbwa_ldm_scratch_try(size_t size, unsigned legacy_site);
+int swbwa_ldm_scratch_release(void *ptr);
+#endif
+/* GCC folds comparisons against __func__ at the allocation call site.
+ * Only audited owner-local objects are eligible; unknown sites and SAM
+ * strings stay on the heap. Scratch hints use a separate explicit path. */
 static inline __attribute__((always_inline)) unsigned swbwa_ldm_alloc_site(const char *func)
 {
     if (__builtin_strcmp(func, "mem_chain2aln") == 0 ||
@@ -59,6 +91,20 @@ static inline __attribute__((always_inline)) unsigned swbwa_ldm_alloc_site(const
         return SWBWA_LDM_SITE_CONTEXT;
     if (SWBWA_LDM_FUNC(mem_sort_dedup_patch))
         return SWBWA_LDM_SITE_DEDUP_SORT;
+#if SWBWA_LDM_UNIFIED
+    /* These containers are consumed and destroyed by the same CPE during
+     * the first worker pass. The chain result stores values, not B-tree
+     * node pointers. SAM strings and returned CIGAR storage stay excluded. */
+    if (SWBWA_LDM_FUNC(kb_init_chn) || SWBWA_LDM_FUNC(__kb_split_chn) ||
+        SWBWA_LDM_FUNC(kb_putp_chn) || SWBWA_LDM_FUNC(kb_destroy_chn) ||
+        SWBWA_LDM_FUNC(mem_chain) || SWBWA_LDM_FUNC(mem_chain_flt) ||
+        SWBWA_LDM_FUNC(mem_pair) || SWBWA_LDM_FUNC(mem_mark_primary_se_core) ||
+        SWBWA_LDM_FUNC(mem_mark_primary_se) || SWBWA_LDM_FUNC(mem_sam_pe) ||
+        SWBWA_LDM_FUNC(mem_reg2sam))
+        return SWBWA_LDM_SITE_CHAIN;
+    if (SWBWA_LDM_FUNC(swbwa_matesw_prepare))
+        return SWBWA_LDM_SITE_REFERENCE;
+#endif
 #undef SWBWA_LDM_FUNC
 #endif
     return SWBWA_LDM_SITE_OTHER;
@@ -86,9 +132,6 @@ static inline unsigned swbwa_ldm_alloc_tier(unsigned site)
     }
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 void swbwa_ldm_allocator_begin(void);
 void swbwa_ldm_allocator_end(void);
 void swbwa_ldm_allocator_suspend(void);

@@ -458,6 +458,7 @@ typedef struct {
 	int64_t rb;
 	int64_t re;
 	int is_rev;
+	int dedup_runs;
 } swbwa_matesw_candidate_t;
 
 typedef struct {
@@ -468,7 +469,6 @@ typedef struct {
 	int l_ms;
 	uint8_t *rev;
 	int candidate_count;
-	int added;
 	int direction;
 	swbwa_matesw_candidate_t candidates[4];
 } swbwa_matesw_task_t;
@@ -538,6 +538,10 @@ static void swbwa_matesw_prepare(swbwa_matesw_task_t *task,
 			swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_REF_FETCH);
 		}
 		if (anchor->rid != rid || re - rb < opt->min_seed_len) {
+			/* BWA deduplicates later non-skipped directions after any SW attempt,
+			 * even if this direction has no usable reference window. */
+			if (task->candidate_count > 0)
+				++task->candidates[task->candidate_count - 1].dedup_runs;
 			free(ref);
 			continue;
 		}
@@ -548,6 +552,7 @@ static void swbwa_matesw_prepare(swbwa_matesw_task_t *task,
 		candidate->rb = rb;
 		candidate->re = re;
 		candidate->is_rev = is_rev;
+		candidate->dedup_runs = 1;
 #if SWBWA_ENABLE_CPE_PROFILE
 		candidate_work[task->candidate_count] =
 			((l_ms + 15) >> 4) * (int)(re - rb);
@@ -594,7 +599,23 @@ static void swbwa_matesw_apply(swbwa_matesw_task_t *task, int index,
 	for (i = alignments->n - 1; i > insertion; --i)
 		alignments->a[i] = alignments->a[i - 1];
 	alignments->a[insertion] = b;
-	task->added = 1;
+}
+
+static void swbwa_matesw_dedup(swbwa_matesw_task_t *task, int index)
+{
+	extern int mem_sort_dedup_patch(const mem_opt_t *opt,
+		const bntseq_t *bns, const uint8_t *pac, uint8_t *query,
+		int n, mem_alnreg_t *a);
+	int i;
+
+	/* A failed SW attempt still triggers BWA's greedy deduplication. Keep
+	 * these passes before the next candidate is inserted, not at task exit. */
+	swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_DEDUP);
+	for (i = 0; i < task->candidates[index].dedup_runs; ++i)
+		task->alignments->n = mem_sort_dedup_patch(
+			task->opt, NULL, NULL, NULL, task->alignments->n,
+			task->alignments->a);
+	swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_DEDUP);
 }
 
 static void swbwa_matesw_run_one(swbwa_matesw_task_t *task, int index)
@@ -624,6 +645,7 @@ static void swbwa_matesw_run_one(swbwa_matesw_task_t *task, int index)
 	}
 #endif
 	swbwa_matesw_apply(task, index, aln);
+	swbwa_matesw_dedup(task, index);
 }
 
 static void swbwa_matesw_run_pair(swbwa_matesw_task_t tasks[2], int index)
@@ -662,25 +684,17 @@ static void swbwa_matesw_run_pair(swbwa_matesw_task_t tasks[2], int index)
 #endif
 	swbwa_matesw_apply(&tasks[0], index, results[0]);
 	swbwa_matesw_apply(&tasks[1], index, results[1]);
+	swbwa_matesw_dedup(&tasks[0], index);
+	swbwa_matesw_dedup(&tasks[1], index);
 }
 
 static void swbwa_matesw_finish(swbwa_matesw_task_t *task)
 {
-	extern int mem_sort_dedup_patch(const mem_opt_t *opt,
-		const bntseq_t *bns, const uint8_t *pac, uint8_t *query,
-		int n, mem_alnreg_t *a);
 	int i;
 
 	for (i = 0; i < task->candidate_count; ++i)
 		free(task->candidates[i].ref);
 	free(task->rev);
-	if (task->added) {
-		swbwa_cpe_profile_start(SWBWA_CPE_PROFILE_MATE_DEDUP);
-		task->alignments->n = mem_sort_dedup_patch(
-			task->opt, NULL, NULL, NULL, task->alignments->n,
-			task->alignments->a);
-		swbwa_cpe_profile_stop(SWBWA_CPE_PROFILE_MATE_DEDUP);
-	}
 }
 
 static int swbwa_mem_matesw_one(const mem_opt_t *opt, const bntseq_t *bns,

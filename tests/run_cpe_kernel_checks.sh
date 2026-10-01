@@ -5,6 +5,11 @@ export PYTHONDONTWRITEBYTECODE=1
 for test in \
     test_ldm_modes.py \
     test_ldm_allocator.py \
+    test_unified_ldm.py \
+    test_pool_bitmap.py \
+    test_ldm_policy_allocator.py \
+    test_ldm_policy_config.py \
+    test_ldm_policy.py \
     test_ksw_fused_gap.py \
     test_ksw_fused_gap_native.py \
     test_ksw_xor_select_native.py \
@@ -13,6 +18,7 @@ for test in \
     test_ksw_extend2_qp_native.py \
     test_ksw_extend2_ldm_native.py \
     test_chain_reuse_smem_ldm.py \
+    test_matesw_dedup.py \
     test_ksw_modes_compile.py
 do
     printf '\n[CHECK] %s\n' "$test"

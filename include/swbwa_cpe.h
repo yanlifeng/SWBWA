@@ -58,6 +58,9 @@ typedef struct {
 #if SWBWA_CPE_LDM_ALLOC
     swbwa_ldm_alloc_stats_t ldm_alloc_stats[SWBWA_CPE_COUNT];
 #endif
+#if SWBWA_LDM_UNIFIED
+    swbwa_ldm_policy_t ldm_policy;
+#endif
     swbwa_cross_command_t *cross_command;
 } swbwa_cpe_task_t;
 

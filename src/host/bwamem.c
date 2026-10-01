@@ -1969,6 +1969,80 @@ static void assign_sam_layout(void *opaque, int worker, int workers)
 }
 #endif
 
+#if SWBWA_LDM_UNIFIED
+static unsigned ldm_policy_flag(const char *name, unsigned fallback)
+{
+    const char *value = getenv(name);
+    if (value == NULL) return fallback;
+    if (!strcmp(value, "0")) return 0;
+    if (!strcmp(value, "1")) return 1;
+    fprintf(stderr, "[E::LDM] %s must be 0 or 1\n", name);
+    exit(EXIT_FAILURE);
+}
+
+static void ldm_policy_values(const char *name, unsigned *values)
+{
+    const char *text = getenv(name);
+    if (text == NULL) return;
+    for (int i = 0; i < SWBWA_LDM_SITE_COUNT; ++i) {
+        char *end;
+        unsigned long value = strtoul(text, &end, 10);
+        if (*text < '0' || *text > '9' || end == text ||
+            value > SWBWA_CPE_LDM_BYTES ||
+            (i + 1 < SWBWA_LDM_SITE_COUNT ? *end != ',' : *end != '\0')) {
+            fprintf(stderr, "[E::LDM] %s requires %d byte limits in [0,%d]\n",
+                    name, SWBWA_LDM_SITE_COUNT, SWBWA_CPE_LDM_BYTES);
+            exit(EXIT_FAILURE);
+        }
+        values[i] = (unsigned)value;
+        text = end + (i + 1 < SWBWA_LDM_SITE_COUNT);
+    }
+}
+
+static void ldm_policy_init(swbwa_ldm_policy_t *policy)
+{
+    const char *hints = getenv("SWBWA_LDM_SCRATCH_HINTS");
+    const char *bitmap = getenv("SWBWA_LDM_POOL_BITMAP");
+    swbwa_ldm_policy_default(policy);
+    policy->profile = ldm_policy_flag("SWBWA_LDM_PROFILE", policy->profile);
+    policy->heap_cache = ldm_policy_flag("SWBWA_LDM_POOL_CACHE", policy->heap_cache);
+    policy->fast_realloc = ldm_policy_flag("SWBWA_LDM_GROW_IN_PLACE", policy->fast_realloc);
+    if (bitmap) {
+        if (strcmp(bitmap, "0") && strcmp(bitmap, "1") && strcmp(bitmap, "2")) {
+            fprintf(stderr, "[E::LDM] pool bitmap must be 0, 1 or 2\n");
+            exit(EXIT_FAILURE);
+        }
+        policy->pool_bitmap = (unsigned)(bitmap[0] - '0');
+    }
+    if (hints) {
+        char *end;
+        unsigned long value = strtoul(hints, &end, 0);
+        if (!*hints || *end || value > 255) {
+            fprintf(stderr, "[E::LDM] scratch hints must be a mask in [0,255]\n");
+            exit(EXIT_FAILURE);
+        }
+        policy->scratch_hints = (unsigned)value;
+    }
+    ldm_policy_values("SWBWA_LDM_CAPS", policy->cap);
+    ldm_policy_values("SWBWA_LDM_RESERVES", policy->reserve);
+    /* Objects outside the audited owner-local sites may escape to the MPE. */
+    if (policy->cap[SWBWA_LDM_SITE_OTHER]) {
+        fprintf(stderr, "[E::LDM] unaudited allocations cannot enter private LDM\n");
+        exit(EXIT_FAILURE);
+    }
+    if (bwa_verbose < 3) return;
+    fprintf(stderr, "[CPE LDM policy] payload=%d profile=%u inplace=%u hints=%u heap_cache=%u bitmap=%u caps=",
+            SWBWA_CPE_LDM_BYTES, policy->profile, policy->fast_realloc,
+            policy->scratch_hints, policy->heap_cache, policy->pool_bitmap);
+    for (int i = 0; i < SWBWA_LDM_SITE_COUNT; ++i)
+        fprintf(stderr, "%s%u", i ? "," : "", policy->cap[i]);
+    fprintf(stderr, " reserves=");
+    for (int i = 0; i < SWBWA_LDM_SITE_COUNT; ++i)
+        fprintf(stderr, "%s%u", i ? "," : "", policy->reserve[i]);
+    fprintf(stderr, "\n");
+}
+#endif
+
 void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int *n2, bseq1_t **seqs2,
                              char* block_buffer, char* block_buffer2, long long block_size, long long block_size2, const mem_pestat_t *pes0,
                              int **sam_lengths_out)
@@ -2012,6 +2086,9 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         }
         para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
         memset(para, 0, sizeof(*para));
+#if SWBWA_LDM_UNIFIED
+        ldm_policy_init(&para->ldm_policy);
+#endif
     }
 
     para->work_item_count = nn;
@@ -2225,9 +2302,32 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
                     const swbwa_ldm_site_stats_t *s = &para->ldm_alloc_stats[i].site[j];
                     sum.requests += s->requests; sum.bytes += s->bytes;
                     sum.small += s->small; sum.placed += s->placed;
+#if SWBWA_LDM_UNIFIED
+                    for (int k = 0; k < 6; ++k) {
+                        sum.histogram[k] += s->histogram[k];
+                        sum.placed_histogram[k] += s->placed_histogram[k];
+                    }
+                    if (s->peak_live > sum.peak_live) sum.peak_live = s->peak_live;
+                    if (s->max_request > sum.max_request) sum.max_request = s->max_request;
+                    sum.lifetime_events += s->lifetime_events;
+                    sum.releases += s->releases;
+#endif
                 }
                 fprintf(stderr, "[CPE LDM alloc] batch=%lu site=%s requests=%lu bytes=%lu small=%lu placed=%lu\n",
                         batch_number, names[j], sum.requests, sum.bytes, sum.small, sum.placed);
+#if SWBWA_LDM_UNIFIED
+                if (para->ldm_policy.profile) {
+                    fprintf(stderr, "[LDM objects] batch=%lu site=%s peak_live=%lu max_request=%lu lifetime_events=%lu releases=%lu hist=",
+                            batch_number, names[j], sum.peak_live, sum.max_request,
+                            sum.lifetime_events, sum.releases);
+                    for (int k = 0; k < 6; ++k)
+                        fprintf(stderr, "%s%lu", k ? "," : "", sum.histogram[k]);
+                    fprintf(stderr, " placed=");
+                    for (int k = 0; k < 6; ++k)
+                        fprintf(stderr, "%s%lu", k ? "," : "", sum.placed_histogram[k]);
+                    fprintf(stderr, "\n");
+                }
+#endif
             }
             for (int i = 0; i < SWBWA_CPE_COUNT; ++i) {
                 const swbwa_ldm_alloc_stats_t *s = &para->ldm_alloc_stats[i];

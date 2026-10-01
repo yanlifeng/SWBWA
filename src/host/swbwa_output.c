@@ -3,6 +3,7 @@
 #include "swbwa_output.h"
 #include "swbwa_discard_digest.h"
 #include "swbwa_host_workers.h"
+#include "swbwa_sam_md5.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -77,6 +78,7 @@ typedef struct {
     int opened;
     int fd;
     int owns_fd;
+    int stream_md5;
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     int discard_hash_enabled;
 #endif
@@ -306,6 +308,8 @@ static char *make_split_name(const char *path, int rank)
 
 static int write_all(int fd, const unsigned char *data, size_t length)
 {
+    if (output_state.stream_md5)
+        return swbwa_sam_md5_update(data, length);
     while (length > 0) {
         double start = output_debug_now();
         ssize_t written = write(fd, data, length);
@@ -500,6 +504,8 @@ static int flush_single_unordered(void)
 
 int swbwa_output_open(const char *path, int debug_enabled)
 {
+    const char *md5_option = getenv("SWBWA_OUTPUT_MD5");
+    int stream_md5 = md5_option != NULL && strcmp(md5_option, "1") == 0;
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     size_t capacity = 0;
 #else
@@ -510,6 +516,18 @@ int swbwa_output_open(const char *path, int debug_enabled)
         errno = EALREADY;
         return -1;
     }
+    if (md5_option && strcmp(md5_option, "0") && strcmp(md5_option, "1")) {
+        fprintf(stderr, "[E::output] SWBWA_OUTPUT_MD5 must be 0 or 1\n");
+        errno = EINVAL;
+        return -1;
+    }
+#if SWBWA_USE_MPI || SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD || SWBWA_OUTPUT_RMA_ONLY
+    if (stream_md5) {
+        fprintf(stderr, "[E::output] streaming MD5 requires non-MPI file output\n");
+        errno = ENOTSUP;
+        return -1;
+    }
+#endif
 #if !(SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
     if (capacity == 0 || capacity > INT_MAX) {
         errno = EINVAL;
@@ -524,6 +542,14 @@ int swbwa_output_open(const char *path, int debug_enabled)
     output_state.buffer = malloc(capacity);
     if (output_state.buffer == NULL) return -1;
 #endif
+
+    if (stream_md5) {
+        output_state.name = strdup("(ordered SAM streaming MD5; no file)");
+        if (!output_state.name || swbwa_sam_md5_open() != 0) goto fail;
+        output_state.stream_md5 = 1;
+        output_state.opened = 1;
+        return 0;
+    }
 
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     (void)path;
@@ -1240,6 +1266,10 @@ int swbwa_output_close(void)
 #else
     output_debug_report();
 #endif
+    if (output_state.stream_md5) {
+        if (status == 0) status = swbwa_sam_md5_close(stderr);
+        if (status != 0) swbwa_sam_md5_abort();
+    }
 #if SWBWA_OUTPUT_RMA_ONLY
     swbwa_mpi_print_rank_ordered(print_output_samples);
     free(output_state.samples);

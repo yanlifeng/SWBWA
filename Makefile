@@ -17,7 +17,8 @@ AR  = ar
 # MATESW_DUAL_FORWARD: 0 | 1 (150 bp same-PE forward KSW 16+16 path)
 # USE_MPI:       0 | 1
 # CPE_KERNEL_OPT: 0 | 1 (defaults on only for non-MPI cgs_cross + pool)
-# CPE_LDM_MODE:   0 (off) | 1 (tiered malloc pool) | 2 (manual, default)
+# CPE_LDM_MODE:   0 (off) | 1 (legacy tiered pool) | 2 (manual) | 3 (unified pool)
+# Unified pool defaults on for non-MPI cgs_cross+pool; other builds use manual.
 # OUTPUT_MODE:   split | single_unordered | single_ordered | discard
 # OUTPUT_RMA_ONLY: 0 | 1 (dynamic single-file benchmark, no disk writes)
 # DISCARD_HASH_BYTES: 0 hashes each full SAM blob; N is profiling only
@@ -40,7 +41,7 @@ LWPF3_DIR            ?= ../lwpf3
 
 USE_MPI              ?= 1
 CPE_KERNEL_OPT       ?= $(if $(filter cgs_cross:pool:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI)),1,0)
-CPE_LDM_MODE         ?= 2
+CPE_LDM_MODE         ?= $(if $(filter cgs_cross:pool:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI)),3,2)
 ifeq ($(USE_MPI),1)
 MPI_INPUT_MODE       ?= dynamic
 OUTPUT_MODE          ?= single_unordered
@@ -94,16 +95,16 @@ endif
 
 # Fail on retired options instead of silently building an unintended ablation.
 $(foreach option,CPE_LDM_ALLOC CPE_MANUAL_LDM CPE_LDM_BYTES LDM_SCRATCH_BUDGET,\
-  $(if $(filter undefined,$(origin $(option))),,$(error $(option) is retired; use CPE_LDM_MODE=0, 1 or 2)))
+  $(if $(filter undefined,$(origin $(option))),,$(error $(option) is retired; use CPE_LDM_MODE=0, 1, 2 or 3)))
 ifneq ($(words $(CPE_LDM_MODE)),1)
-$(error CPE_LDM_MODE must be 0, 1 or 2)
+$(error CPE_LDM_MODE must be 0, 1, 2 or 3)
 endif
-ifeq ($(filter 0 1 2,$(CPE_LDM_MODE)),)
-$(error CPE_LDM_MODE must be 0, 1 or 2)
+ifeq ($(filter 0 1 2 3,$(CPE_LDM_MODE)),)
+$(error CPE_LDM_MODE must be 0, 1, 2 or 3)
 endif
-ifeq ($(CPE_LDM_MODE),1)
+ifneq ($(filter 1 3,$(CPE_LDM_MODE)),)
 ifneq ($(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI),cgs_cross:pool:0)
-$(error CPE_LDM_MODE=1 requires non-MPI cgs_cross+pool)
+$(error CPE_LDM_MODE=$(CPE_LDM_MODE) requires non-MPI cgs_cross+pool)
 endif
 endif
 
@@ -284,7 +285,7 @@ APP_OBJS := $(addprefix $(HOST_DIR)/, \
 	bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o bwape.o \
 	kopen.o pemerge.o maxk.o bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o \
 	bwt_lite.o bwtsw2_chain.o fastmap.o bwtsw2_pair.o swbwa_mpi.o \
-	swbwa_output.o swbwa_cpe_profile.o swbwa_host_workers.o swbwa_input.o)
+	swbwa_output.o swbwa_sam_md5.o swbwa_cpe_profile.o swbwa_host_workers.o swbwa_input.o)
 
 SLAVE_DIR     := src/slave
 SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)

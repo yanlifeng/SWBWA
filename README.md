@@ -74,7 +74,7 @@ The supported build variables are:
 | `HOST_MALLOC_STATS` | `0`, `1` | `0` |
 | `HOST_MPE_THREADS` | `1`, `6` (full-chip process only) | `6` for `cgs` / `cgs_cross`; `1` for `single` |
 | `CPE_KERNEL_OPT` | `0`, `1` | `1` for non-MPI `cgs_cross + pool`; `0` otherwise |
-| `CPE_LDM_MODE` | `0` off, `1` tiered malloc pool, `2` manual | `2`; mode 1 requires non-MPI `cgs_cross + pool` |
+| `CPE_LDM_MODE` | `0` off, `1` legacy pool, `2` manual, `3` unified pool | `3` for non-MPI `cgs_cross + pool`, otherwise `2` |
 | `CPE_DISCARD_DIGEST` | `0`, `1` | `1` for non-MPI `cgs_cross + pool` with `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`; `0` otherwise |
 | `USE_MPI` | `0`, `1` | `1` |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
@@ -101,15 +101,27 @@ LDM allocation. Mode 1 disables manual placement and routes wrapped allocation
 through the existing 32 KiB lifetime/access-tier pool, with cross-segment heap
 fallback. SAM and public/cached query profiles stay on the heap. Mode 2 disables
 the new pool and retains the validated manual workspace/phase-reuse paths.
-Pool metadata counts against the shared 40 KiB budget. The old Makefile options
+Mode 3 is the unified pool (policy B): existing scratch reuse, audited small
+heap objects and compact allocator indices share a 56 KiB payload within a
+72 KiB tracked budget, including metadata. Modes 1/2 retain their 40 KiB budget.
+Policy B is built in; no environment setup or training is needed. The optional
+offline selector (C) is retained in `tools/ldm_policy.py`, not enabled at startup.
+The old Makefile options
 `CPE_LDM_ALLOC`, `CPE_MANUAL_LDM`, `CPE_LDM_BYTES` and `LDM_SCRATCH_BUDGET`
 now fail explicitly instead of silently mixing policies.
 See [LDM configuration](docs/LDM_ALLOCATOR.md) for ownership and safety limits.
 
 ```bash
-# Select 0/1/2; cross mode always requires the complete two-pass build.
-bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 CPE_LDM_MODE=2
+# Select 0/1/2/3; cross mode always requires the complete two-pass build.
+bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0
 ```
+
+For exact ordered validation without writing a SAM, build non-MPI
+`OUTPUT_MODE=split` and run with `SWBWA_OUTPUT_MD5=1`. This consumes every output
+byte, removes only the leading SAM header and reports MD5, bytes and record
+count on successful close. It does not sort and creates no output file.
+It cannot be combined with MPI, discard or output-RMA-only benchmarking.
+See [streaming validation](docs/SAM_STREAM_MD5.md).
 
 `MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the complete FASTQ once before alignment to build exact record prefixes.
 
@@ -216,7 +228,8 @@ counts, scoring, lazy-F termination, tie comparisons, or read scheduling:
 - Fuse integer SIMD gap clamps and use predicate-based XOR selection.
 - Reuse MPE SAM pointer/length scratch and leave terminators to the CPE copy.
 
-The existing 40 KiB tracked LDM budget is unchanged. This switch does not
+`CPE_KERNEL_OPT` itself does not increase the tracked LDM budget; the selected
+LDM mode determines that budget. This switch does not
 enable experimental FP16 lane layouts. Use `CPE_KERNEL_OPT=0` for the kernel
 control build and always repeat the complete `build.sh` workflow for cross
 execution. The single-process discard writer and batch-level output timing

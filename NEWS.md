@@ -1,6 +1,14 @@
 SWBWA development history
 -------------------------
 
+ * 2026-10-01: make the unified per-CPE LDM pool (policy B) the default for
+   non-MPI cgs_cross+pool, retaining manual/legacy ablations and the optional
+   offline admission selector (C). Preserve scratch reuse and add compact
+   heap indices with safe main-memory fallback. Include the mate-rescue
+   direction-by-direction deduplication fix and ordered streaming SAM MD5
+   validation without writing a SAM file. See docs/LDM_ALLOCATOR.md and
+   docs/SAM_STREAM_MD5.md for supported configurations and validation limits.
+
 This repository started from BWA and was progressively extended for the
 Sunway heterogeneous platform. The following milestones summarize the
 post-BWA development work:

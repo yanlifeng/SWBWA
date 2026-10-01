@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import tempfile
 import unittest
+from test_sam_stream_md5 import build_md5_object
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,6 +15,7 @@ class OrderedOutputTest(unittest.TestCase):
     def test_prefix_and_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
+            md5_link = build_md5_object(tmp)
             for exact, only, workers in ((0, 0, 1), (1, 0, 6), (0, 1, 6)):
                 exe = tmp / f"ordered-{exact}-{only}-{workers}"
                 subprocess.run(shlex.split(os.getenv("MPICC", "mpicc")) + [
@@ -25,7 +27,7 @@ class OrderedOutputTest(unittest.TestCase):
                     f"-DSWBWA_MPI_EXACT_READ_INDEX={exact}", f"-DSWBWA_HOST_MPE_THREADS={workers}",
                     "tests/test_output_ordered.c", "src/host/swbwa_mpi.c",
                     "src/host/swbwa_output.c", "src/host/swbwa_host_workers.c", "-pthread",
-                    "-o", str(exe)], cwd=ROOT, check=True)
+                    "-o", str(exe)] + md5_link, cwd=ROOT, check=True)
                 for records, size, tail in ((0, 173, 0), (1, 10000, 0),
                                             (97, 173, 0), (11, 5, 0), (97, 173, 10)):
                     with self.subTest(exact=exact, only=only, records=records, size=size, tail=tail):

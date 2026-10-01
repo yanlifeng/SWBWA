@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import tempfile
 import unittest
+from test_sam_stream_md5 import build_md5_object
 
 ROOT = Path(__file__).resolve().parents[1]
 MASK = (1 << 64) - 1
@@ -40,13 +41,14 @@ class OutputDiscardTest(unittest.TestCase):
             expected_xor ^= value
         with tempfile.TemporaryDirectory() as directory:
             executable = str(Path(directory) / "discard_test")
+            md5_link = build_md5_object(directory)
             subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
                 "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function",
                 "-Iinclude", "-DSWBWA_USE_MPI=0",
                 "-DSWBWA_OUTPUT_MODE=SWBWA_OUTPUT_DISCARD",
                 "-DSWBWA_ENABLE_HOST_MALLOC_WRAPPER=0",
                 "tests/test_output_discard.c", "src/host/swbwa_output.c",
-                "-o", executable], cwd=ROOT, check=True)
+                "-o", executable] + md5_link, cwd=ROOT, check=True)
             result = subprocess.run([executable, str(Path(directory) / "out.sam")],
                                     env=dict(os.environ, SWBWA_DISCARD_HASH="1"),
                                     capture_output=True, text=True, check=True)

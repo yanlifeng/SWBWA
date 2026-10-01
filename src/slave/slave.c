@@ -385,6 +385,9 @@ void worker12_s_pre_fast_cross(void) {
     swbwa_enter_cross_runtime();
     swbwa_cpe_task_t *para = swbwa_task;
 	void *worker_context;
+#if SWBWA_LDM_UNIFIED
+    swbwa_ldm_set_policy(&para->ldm_policy);
+#endif
 
 	swbwa_cpe_profile_enter(para->profile_counters);
 	swbwa_matesw_profile_reset();

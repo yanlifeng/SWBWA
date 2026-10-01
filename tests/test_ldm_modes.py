@@ -1,4 +1,4 @@
-"""Check the three production modes and the tracked SDK allocation gate."""
+"""Check mode selection and the legacy tracked SDK allocation gate."""
 import os
 from pathlib import Path
 import shlex
@@ -11,12 +11,12 @@ BASE = ["-DSWBWA_EXEC_MODE=3", "-DSWBWA_CPE_ALLOC_MODE=2", "-DSWBWA_USE_MPI=0"]
 
 
 def main():
-    for mode in range(3):
+    for mode in range(4):
         result = subprocess.check_output([
             "make", "-s", "print-config", "EXEC_MODE=cgs_cross", "CPE_ALLOCATOR=pool",
             "USE_MPI=0", f"CPE_LDM_MODE={mode}"], cwd=ROOT, text=True)
         assert f"CPE_LDM_MODE={mode}" in result
-    for bad in ("CPE_LDM_MODE=3", "CPE_LDM_MODE=", "CPE_LDM_MODE=0 1", "CPE_LDM_MODE=%",
+    for bad in ("CPE_LDM_MODE=4", "CPE_LDM_MODE=", "CPE_LDM_MODE=0 1", "CPE_LDM_MODE=%",
                 "CPE_LDM_ALLOC=off", "CPE_MANUAL_LDM=0", "CPE_LDM_BYTES=32768",
                 "LDM_SCRATCH_BUDGET=40960"):
         assert subprocess.run(["make", "-s", "print-config", bad], cwd=ROOT,
@@ -61,9 +61,10 @@ int main(void) {
                            str(ROOT / "src/slave/malloc_wrap.c"), "-lm", "-o", str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
             print(f"CPE_LDM_MODE={mode}: PASS configuration + SDK gate", flush=True)
-        for flags in (["-DSWBWA_CPE_LDM_MODE=3"], ["-DSWBWA_CPE_LDM_ALLOC=0"],
+        for flags in (["-DSWBWA_CPE_LDM_MODE=4"], ["-DSWBWA_CPE_LDM_ALLOC=0"],
                       ["-DSWBWA_CPE_MANUAL_LDM=0"],
-                      ["-DSWBWA_CPE_LDM_MODE=1", "-USWBWA_USE_MPI", "-DSWBWA_USE_MPI=1"]):
+                      ["-DSWBWA_CPE_LDM_MODE=1", "-USWBWA_USE_MPI", "-DSWBWA_USE_MPI=1"],
+                      ["-DSWBWA_CPE_LDM_MODE=3", "-USWBWA_USE_MPI", "-DSWBWA_USE_MPI=1"]):
             assert subprocess.run(CC + BASE + flags + ["-fsyntax-only", "-x", "c",
                    "-include", str(ROOT / "include/swbwa_config.h"), "-"],
                    input="", text=True, capture_output=True).returncode != 0, flags

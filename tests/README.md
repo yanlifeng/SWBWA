@@ -34,6 +34,8 @@ digest 时检查的是生成的 SAM 字节，不包含被跳过的最终 SAM 拷
 - `test_ksw_extend2_qp_native.py`：五符号 query profile 的生成顺序和结果。
 - `test_ksw_extend2_ldm_native.py`：extension LDM 与 heap 路径、预算拒绝和释放。
 - `test_chain_reuse_smem_ldm.py`：SMEM/chain arena 复用的容量和所有权。
+- `test_matesw_dedup.py`：与主核原版方向循环差分比较 rescue/去重调用顺序，
+  覆盖未新增命中、无效区间、多方向及双状态长度回退；不代替真实 SAM 回归。
 - `test_ksw_modes_compile.py`：不同整数、FP16 及双状态配置的条件编译。
 
 这些测试使用本机编译器向量适配层及 SDK stub，不执行神威指令；FP16
@@ -42,7 +44,7 @@ digest 时检查的是生成的 SAM 字节，不包含被跳过的最终 SAM 拷
 
 ## LDM mode checks
 
-`test_ldm_modes.py` checks the three production `CPE_LDM_MODE` presets,
+`test_ldm_modes.py` checks the four production `CPE_LDM_MODE` presets,
 SDK allocation gating and rejection of retired/incompatible options.
 `test_ldm_allocator.py` retains isolated historical-policy regression coverage
 and actual global-DP score/CIGAR checks under sanitizers. Both are included in
@@ -55,6 +57,21 @@ calls. It is not part of the native test runner or SWBWA build, and does not
 validate the custom cross-segment runtime's PC/SP handling. Keep it as a
 hardware diagnostic, not as evidence that arbitrary cross-runtime lifetimes
 or large LDM arenas are safe.
+
+Unified-pool checks (native SDK stubs, not a replacement for Sunway runs):
+
+- `test_unified_ldm.py`: profile/growth switches, scratch coexistence, capacity,
+  fallback and actual global-DP/CIGAR differential tests under sanitizers.
+- `test_pool_bitmap.py`: lowest-free-slot agreement with the original tree,
+  metadata-cache overflow, address lookup, SDK refusal and suspend/resume.
+- `test_ldm_policy_allocator.py`: production B and optional C policies using
+  the real allocator, including random realloc and data-retention checks.
+- `test_ldm_policy_config.py`: built-in B defaults agree with the offline tool;
+  malformed/unsafe environment settings fail instead of silently changing mode.
+- `test_ldm_policy.py`: offline selection, node normalization and refusal of
+  incomplete, incorrect, profiled or mixed-node measurements.
+- `test_sam_stream_md5.py`: exact header-free bytes, arbitrary write boundaries,
+  malformed/truncated input, >4 GiB counters and no-file output integration.
 
 `python3 tests/test_output_rma.py` uses a native MPI installation (`MPICC` and
 `MPIEXEC` may select it) and three local ranks. It compares normal and

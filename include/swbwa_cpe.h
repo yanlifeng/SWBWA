@@ -4,6 +4,7 @@
 #include "swbwa_config.h"
 #include "swbwa_matesw_profile.h"
 #include "swbwa_ldm_alloc.h"
+#include "swbwa_fastq_partition.h"
 
 #define SWBWA_CPE_CSR_COPY_BYTES (2UL << 20)
 #define SWBWA_CPE_PRIVATE_BASE   0x400000000000UL
@@ -47,6 +48,7 @@ typedef struct {
     char *fastq_buffer[2];
     char *formatted_buffer[2];
     long long fastq_size[2];
+    const swbwa_fastq_partition_t *fastq_partitions;
     long long formatted_buffer_size;
     long formatted_read_counts[SWBWA_CPE_COUNT];
     /* Bytes handed out by the CPE bump allocator, sampled per batch. */
@@ -62,6 +64,9 @@ typedef struct {
     swbwa_ldm_policy_t ldm_policy;
 #endif
     swbwa_cross_command_t *cross_command;
+#if SWBWA_ENABLE_GZIP_INPUT
+    void *codec_batch; /* Borrowed only for a synchronous codec dispatch. */
+#endif
 } swbwa_cpe_task_t;
 
 #endif /* SWBWA_CPE_H */

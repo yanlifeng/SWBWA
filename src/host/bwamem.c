@@ -49,6 +49,12 @@
 #include "swbwa_config.h"
 #include "swbwa_discard_digest.h"
 #include "swbwa_cpe.h"
+#if SWBWA_ENABLE_GZIP_INPUT
+#include <pthread.h>
+#include "swbwa_codec_runtime.h"
+#include "swbwa_pipeline.h"
+#include "../gzip/codec_job.h"
+#endif
 #include "swbwa_cpe_layout.h"
 #include "swbwa_mpi.h"
 #include "swbwa_runtime.h"
@@ -1302,6 +1308,38 @@ extern void SLAVE_FUN(pass_para());
 extern void SLAVE_FUN(copy_priv_segment());
 extern void SLAVE_FUN(change_priv_segment());
 extern void SLAVE_FUN(swbwa_cross_dispatch());
+#if SWBWA_ENABLE_GZIP_INPUT
+extern void SLAVE_FUN(swbwa_codec_cross());
+extern void SLAVE_FUN(swbwa_codec());
+
+static pthread_mutex_t swbwa_cpe_runtime_mutex = PTHREAD_MUTEX_INITIALIZER;
+static double swbwa_alignment_runtime_wait_s;
+
+void swbwa_cpe_runtime_lock(void)
+{
+    int error = pthread_mutex_lock(&swbwa_cpe_runtime_mutex);
+    if (error != 0)
+        err_fatal(__func__, "failed to lock CPE runtime: %s", strerror(error));
+}
+
+void swbwa_cpe_runtime_unlock(void)
+{
+    int error = pthread_mutex_unlock(&swbwa_cpe_runtime_mutex);
+    if (error != 0)
+        err_fatal(__func__, "failed to unlock CPE runtime: %s", strerror(error));
+}
+
+double swbwa_alignment_runtime_wait_seconds(void)
+{
+    double seconds;
+    swbwa_cpe_runtime_lock();
+    seconds = swbwa_alignment_runtime_wait_s;
+    swbwa_cpe_runtime_unlock();
+    return seconds;
+}
+#endif
+
+static swbwa_cpe_task_t *swbwa_shared_params;
 
 unsigned long swbwa_cpe_text_start = SWBWA_CPE_TEXT_START_ADDRESS;
 unsigned long swbwa_cpe_text_size = SWBWA_CPE_TEXT_SEGMENT_BYTES;
@@ -1409,6 +1447,9 @@ enum swbwa_cpe_progress_phase {
     SWBWA_CPE_PROGRESS_FORMAT,
     SWBWA_CPE_PROGRESS_ALIGN,
     SWBWA_CPE_PROGRESS_SAM,
+#if SWBWA_ENABLE_GZIP_INPUT
+    SWBWA_CPE_PROGRESS_CODEC,
+#endif
     SWBWA_CPE_PROGRESS_PHASE_COUNT
 };
 
@@ -1521,7 +1562,10 @@ static void swbwa_cpe_progress_debug_report_body(void)
     static const char *phase_names[SWBWA_CPE_PROGRESS_PHASE_COUNT] = {
         "FASTQ formatting",
         "alignment and SAM length",
-        "SAM record generation"
+        "SAM record generation",
+#if SWBWA_ENABLE_GZIP_INPUT
+        "gzip codec"
+#endif
     };
     swbwa_cpe_progress_phase_stats_t total;
     int phase;
@@ -1867,6 +1911,10 @@ typedef struct {
     int initialized;
 } swbwa_cross_runtime_t;
 
+#if SWBWA_USE_CROSS_SEGMENT
+static swbwa_cross_runtime_t swbwa_shared_cross_runtime;
+#endif
+
 static void swbwa_cross_runtime_init(swbwa_cross_runtime_t *runtime,
                                      swbwa_cpe_task_t *params)
 {
@@ -2043,13 +2091,98 @@ static void ldm_policy_init(swbwa_ldm_policy_t *policy)
 }
 #endif
 
+/* With gzip enabled, callers hold the runtime lock. The address is permanent:
+ * pass_para stores it in CPE TLS before the private segment is copied. */
+static swbwa_cpe_task_t *swbwa_shared_params_locked(void)
+{
+    if (swbwa_shared_params == NULL) {
+        swbwa_shared_params = checked_malloc_array(
+            1, sizeof(*swbwa_shared_params), "CPE worker parameters");
+        memset(swbwa_shared_params, 0, sizeof(*swbwa_shared_params));
+#if SWBWA_LDM_UNIFIED
+        ldm_policy_init(&swbwa_shared_params->ldm_policy);
+#endif
+    }
+    return swbwa_shared_params;
+}
+
+#if SWBWA_ENABLE_GZIP_INPUT
+typedef struct {
+    swbwa_codec_batch *batch;
+    double requested_at;
+    double run_s, wait_s;
+} swbwa_codec_request_t;
+
+static void swbwa_codec_runtime_launch_on_owner(void *opaque)
+{
+    swbwa_codec_request_t *request = opaque;
+    swbwa_codec_batch *batch = request->batch;
+    double run_start;
+
+    swbwa_cpe_runtime_lock();
+    run_start = GetTime();
+    request->wait_s = run_start - request->requested_at;
+    if (batch->count != 0) {
+        swbwa_cpe_task_t *params = swbwa_shared_params_locked();
+#if SWBWA_USE_CROSS_SEGMENT
+        swbwa_cross_runtime_init(&swbwa_shared_cross_runtime, params);
+#endif
+        params->codec_batch = batch;
+#if SWBWA_USE_CROSS_SEGMENT
+        swbwa_cross_run(swbwa_cross_entry(
+            &swbwa_shared_cross_runtime, (void*)slave_swbwa_codec_cross));
+#else
+        swbwa_cpe_run_with_mpi_progress((void*)slave_swbwa_codec, params,
+                                       SWBWA_CPE_PROGRESS_CODEC);
+#endif
+        params->codec_batch = NULL;
+    }
+    request->run_s = GetTime() - run_start;
+    swbwa_cpe_runtime_unlock();
+}
+
+void swbwa_codec_runtime_launch(void *opaque_batch, double *run_s, double *wait_s)
+{
+    swbwa_codec_batch *batch = opaque_batch;
+    swbwa_codec_request_t request;
+
+    if (run_s != NULL) *run_s = 0;
+    if (wait_s != NULL) *wait_s = 0;
+    if (batch == NULL || batch->workers == 0 ||
+        batch->workers > SWBWA_CPE_COUNT ||
+        (batch->count != 0 && batch->jobs == NULL))
+        err_fatal(__func__, "invalid CPE codec batch");
+    request.batch = batch;
+    request.requested_at = GetTime();
+    request.run_s = request.wait_s = 0;
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_codec_runtime_launch_on_owner(&request);
+#else
+    /* Native athread spawn/join belongs to the main thread. Reader threads
+     * request a launch while it waits for the next input batch. */
+    swbwa_pipeline_call_on_processor(swbwa_codec_runtime_launch_on_owner, &request);
+#endif
+    if (run_s != NULL) *run_s = request.run_s;
+    if (wait_s != NULL) *wait_s = request.wait_s;
+}
+#endif
+
 void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int *n2, bseq1_t **seqs2,
                              char* block_buffer, char* block_buffer2, long long block_size, long long block_size2, const mem_pestat_t *pes0,
-                             int **sam_lengths_out)
+                             int **sam_lengths_out, const swbwa_fastq_partition_t *partitions)
 {
     int n = SWBWA_MAX_READS_PER_BATCH;
     worker_t w;
+    swbwa_cpe_task_t *para;
     double ctime, rtime;
+#if SWBWA_ENABLE_GZIP_INPUT
+    double wait_start = swbwa_cpe_progress_now();
+    swbwa_cpe_runtime_lock();
+    double wait_end = swbwa_cpe_progress_now();
+    if (wait_start > 0.0 && wait_end >= wait_start)
+        swbwa_alignment_runtime_wait_s += wait_end - wait_start;
+#endif
+    para = swbwa_shared_params_locked();
     ctime = cputime(); rtime = realtime();
     worker_init(&w, opt, bwt, bns, pac, n_processed, n, NULL, NULL);
     w.seqs = checked_malloc_array(n, sizeof(*w.seqs), "formatted reads");
@@ -2062,19 +2195,17 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     tt0 = GetTime();
 
     static unsigned long batch_number;
-    static swbwa_cpe_task_t *para;
     static char* tmp_block_buffer;
     static char* tmp_block_buffer2;
     static char* sam_blocks_static[SWBWA_PIPELINE_BUFFER_COUNT];
 #if SWBWA_USE_CROSS_SEGMENT
-    static swbwa_cross_runtime_t cross_runtime;
     long format_entry;
     long pre_entry;
     long write_entry;
 #endif
 
     batch_number++;
-    if (para == NULL) {
+    if (tmp_block_buffer == NULL) {
 #if SWBWA_HOST_PREP_REUSE || SWBWA_HOST_PREP_CPE_TERMINATORS
         fprintf(stderr, "[host-prep] reuse=%d cpe_terminators=%d\n",
                 SWBWA_HOST_PREP_REUSE, SWBWA_HOST_PREP_CPE_TERMINATORS);
@@ -2084,11 +2215,6 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
         for(int i = 0; i < SWBWA_PIPELINE_BUFFER_COUNT; i++) {
             sam_blocks_static[i] = checked_malloc_array(SWBWA_CPE_FORMAT_BUFFER_BYTES, sizeof(*sam_blocks_static[i]), "static SAM block");
         }
-        para = checked_malloc_array(1, sizeof(*para), "CPE worker parameters");
-        memset(para, 0, sizeof(*para));
-#if SWBWA_LDM_UNIFIED
-        ldm_policy_init(&para->ldm_policy);
-#endif
     }
 
     para->work_item_count = nn;
@@ -2110,6 +2236,7 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     para->fastq_buffer[1] = block_buffer2;
     para->fastq_size[0] = block_size;
     para->fastq_size[1] = block_size2;
+    para->fastq_partitions = partitions;
     para->formatted_buffer[0] = tmp_block_buffer;
     para->formatted_buffer[1] = tmp_block_buffer2;
     para->formatted_buffer_size = SWBWA_CPE_FORMAT_BUFFER_BYTES;
@@ -2140,10 +2267,10 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
 
 #if SWBWA_USE_CROSS_SEGMENT
-    swbwa_cross_runtime_init(&cross_runtime, para);
-    format_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_cpe_format_pre_cross);
-    pre_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_pre_fast_cross);
-    write_entry = swbwa_cross_entry(&cross_runtime, (void*)slave_worker12_s_fast_cross);
+    swbwa_cross_runtime_init(&swbwa_shared_cross_runtime, para);
+    format_entry = swbwa_cross_entry(&swbwa_shared_cross_runtime, (void*)slave_cpe_format_pre_cross);
+    pre_entry = swbwa_cross_entry(&swbwa_shared_cross_runtime, (void*)slave_worker12_s_pre_fast_cross);
+    write_entry = swbwa_cross_entry(&swbwa_shared_cross_runtime, (void*)slave_worker12_s_fast_cross);
 #endif
     t_work1_1 += GetTime() - tt0;
 
@@ -2368,6 +2495,10 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 
     if (bwa_verbose >= 3)
         fprintf(stderr, "[M::%s] Processed %d reads in %.3f CPU sec, %.3f real sec\n", __func__, n, cputime() - ctime, realtime() - rtime);
+    para->worker_data = NULL;
+#if SWBWA_ENABLE_GZIP_INPUT
+    swbwa_cpe_runtime_unlock();
+#endif
 }
 
 void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)

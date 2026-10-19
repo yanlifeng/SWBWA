@@ -29,6 +29,20 @@ def between(source, start, end):
     return source[begin:source.index(end, begin)]
 
 
+def conditional_block(source, start):
+    if source.count(start) != 1:
+        raise ValueError(f"source anchor changed or is ambiguous: {start!r}")
+    begin = source.index(start)
+    depth = 0
+    directives = re.finditer(
+        r"^[ \t]*#[ \t]*(if|ifdef|ifndef|endif)\b[^\n]*", source[begin:], re.MULTILINE)
+    for directive in directives:
+        depth += -1 if directive.group(1) == "endif" else 1
+        if depth == 0:
+            return source[begin:begin + directive.end()] + "\n"
+    raise ValueError(f"unterminated preprocessor block: {start!r}")
+
+
 def expected_sam():
     records = []
     for paired in (False, True):
@@ -68,19 +82,30 @@ def main(argv=None):
         host = (source_root / "src/host/bwamem.c").read_text()
         output = (source_root / "src/host/fastmap.c").read_text()
         (work / "actual_worker.inc").write_text(between(slave, "void worker12_fast(", "\nvoid mem_process_seqs("))
-        layout_end = host.index("void mem_process_seqs_merge2(")
-        layout_start = host.index("#if SWBWA_HOST_MPE_THREADS > 1 && !SWBWA_CPE_DISCARD_DIGEST_ACTIVE")
-        (work / "actual_host_layout.inc").write_text(host[layout_start:layout_end])
-        merge = host[host.index("void mem_process_seqs_merge2("):]
+        merge_start = host.index("void mem_process_seqs_merge2(")
+        (work / "actual_host_layout.inc").write_text(conditional_block(
+            host[:merge_start], "#if SWBWA_HOST_MPE_THREADS > 1 && !SWBWA_CPE_DISCARD_DIGEST_ACTIVE"))
+        merge = host[merge_start:]
         (work / "actual_slices.inc").write_text(between(merge, "    size_t now_f_block_pos = 0;", "    t_work1_4 +="))
         writer = output[output.index("} else if (step == 2) {"):]
-        (work / "actual_output_loop.inc").write_text(between(writer, "#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE", "\t\tt_step3_1 +="))
+        # The isolated non-MPI stage3 slice needs fastmap's file-local alias.
+        (work / "actual_output_loop.inc").write_text(
+            "#define swbwa_pipeline_fatal err_fatal\n" +
+            between(writer, "#if SWBWA_CPE_DISCARD_DIGEST_ACTIVE", "\t\tt_step3_1 +="))
         includes = ["-I"+str(work), "-I"+str(source_root / "include"), "-I"+str(source_root / "src/host")]
         (work / "athread.h").write_text("#pragma once\n#define SLAVE_FUN(x) slave_##x\n#define __uncached\n"
             "void athread_init(void); void athread_init_cgs(void);\n"
             "void athread_join(void); void athread_join_cgs(void);\n"
             "void __real_athread_spawn(void *, void *, int);\n"
             "void __real_athread_spawn_cgs(void *, void *, int);\n")
+        md5_link = []
+        md5_source = source_root / "src/host/swbwa_sam_md5.cpp"
+        if md5_source.is_file():
+            md5_object = work / "sam_md5.o"
+            run(shlex.split(os.environ.get("CXX", "c++")) +
+                ["-std=c++11", "-O2", "-g", *sanitizer, *includes,
+                 "-c", str(md5_source), "-o", str(md5_object)])
+            md5_link = [str(md5_object), "-lstdc++", "-lz"]
         expected = expected_sam()
         assert len(expected) == 17300
         for digest, reuse, terminators, mode, threads in itertools.product((0, 1), (0, 1), (0, 1), ("DISCARD", "SPLIT"), (1, 6)):
@@ -89,7 +114,7 @@ def main(argv=None):
             executable = work / "test"
             run(cc + common + sanitizer + defines + includes +
                 [str(ROOT / "tests/cpe_discard_digest_harness.c"), str(source_root / "src/host/swbwa_output.c"),
-                 str(source_root / "src/host/swbwa_host_workers.c"), "-pthread", "-o", str(executable)])
+                 str(source_root / "src/host/swbwa_host_workers.c"), "-pthread", "-o", str(executable)] + md5_link)
             for policy in (None, "", "0", "1") if mode == "DISCARD" else ("1",):
                 env = dict(os.environ, ASAN_OPTIONS="detect_leaks=1:halt_on_error=1")
                 env.pop("SWBWA_DISCARD_HASH", None)

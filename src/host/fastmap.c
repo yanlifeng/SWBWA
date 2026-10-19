@@ -36,6 +36,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <errno.h>
+#include <stdarg.h>
 #include "swbwa_config.h"
 #include "bwa.h"
 #include "bwamem.h"
@@ -51,6 +52,14 @@
 #include "swbwa_input.h"
 #include "swbwa_discard_digest.h"
 #include "swbwa_cpe_profile.h"
+#if SWBWA_ENABLE_GZIP_INPUT
+#include "swbwa_gzip.h"
+#include "swbwa_codec_runtime.h"
+#if SWBWA_USE_MPI
+#include "swbwa_mpi_gzip.h"
+#include <mpi.h>
+#endif
+#endif
 
 #include <athread.h>
 //KSEQ_DECLARE(gzFile)
@@ -60,6 +69,26 @@ extern unsigned char nst_nt4_table[256];
 extern void kt_pipeline_wait_report(void);
 
 extern void SLAVE_FUN(state_init());
+
+#if SWBWA_USE_MPI
+static void swbwa_pipeline_fatal(const char *header, const char *fmt, ...)
+    __attribute__((noreturn, format(printf, 2, 3)));
+
+/* A local exit can strand peers in the reader or output collectives. */
+static void swbwa_pipeline_fatal(const char *header, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    fprintf(stderr, "[%s] ", header);
+    vfprintf(stderr, fmt, args);
+    fprintf(stderr, "\n");
+    va_end(args);
+    swbwa_mpi_abort(NULL);
+    abort();
+}
+#else
+#define swbwa_pipeline_fatal err_fatal
+#endif
 
 double t_malloc = 0;
 double t_free = 0;
@@ -121,6 +150,9 @@ typedef struct {
 /* Stage 1 has exactly one producer, even in the threaded pipeline. */
 static stage1_timing_t stage1_timing;
 static int input_readers;
+#if SWBWA_ENABLE_GZIP_INPUT
+static int timing_gzip_input;
+#endif
 
 long long s_reg_sum = 0;
 long long c_px2 = 0;
@@ -183,11 +215,21 @@ static void print_timing_report_body(void)
     print_timing_line("total - complete three-stage pipeline", t_tot, 4);
     print_timing_line("stage 1 - allocate and read raw FASTQ blocks", t_step1, 4);
     print_timing_line("stage 2 - align reads and generate SAM records", t_step2, 4);
+#if SWBWA_ENABLE_GZIP_INPUT
+    if (timing_gzip_input)
+        print_timing_line("included: wait for shared CPE decoder/runtime",
+                          swbwa_alignment_runtime_wait_seconds(), 6);
+#endif
     print_timing_line("stage 3 - write SAM and release batch data", t_step3, 4);
     print_timing_line("SAM output writes", t_step3_1, 6);
     print_timing_line("batch cleanup and loop overhead (derived)", stage3_cleanup, 6);
 
     fprintf(stderr, "\n  Stage 1 input details\n");
+#if SWBWA_ENABLE_GZIP_INPUT
+    if (timing_gzip_input)
+        fprintf(stderr, "    Gzip: decode, I/O and copy counters are in [SWBWA gzip input].\n"
+                        "    Plain-file fread/pread counters below do not apply.\n");
+#endif
     fprintf(stderr,
             "    batches completed / stage calls              %10" PRIu64
             " / %" PRIu64 "\n",
@@ -305,6 +347,12 @@ typedef struct {
 	int64_t fastq_chunk_bytes;
 	int64_t input_position[2];
 	int64_t input_end[2];
+#if SWBWA_ENABLE_GZIP_INPUT
+	swbwa_gzip_reader *gzip_reader;
+#if SWBWA_USE_MPI
+	swbwa_mpi_gzip_reader *mpi_gzip_reader;
+#endif
+#endif
 } ktp_aux_t;
 
 typedef struct {
@@ -313,8 +361,10 @@ typedef struct {
 	int *sam_lengths;
 	int64_t chunk_id;
 	int64_t n_processed;
+	int64_t expected_records;
 	char *fastq_buffer[2];
 	long long fastq_size[2];
+	swbwa_fastq_partition_t *fastq_partitions;
 	int64_t chunk_start, chunk_end;
 } ktp_data_t;
 
@@ -348,7 +398,7 @@ static int64_t get_next_fastq(char *data_, long long pos_, const long long size_
     if (pos_ >= size_) return pos0;
     ++pos_;
     if (pos_ >= size_ || data_[pos_] != '+')
-        err_fatal(__func__, "invalid FASTQ record near byte %lld", pos0);
+        swbwa_pipeline_fatal(__func__, "invalid FASTQ record near byte %lld", (long long)pos0);
     return pos0;
 }
 
@@ -388,7 +438,7 @@ static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
                 " elapsed=%.3f s\n",
                 input_index, read_offset, elapsed);
     if (seek_result != 0)
-        err_fatal(__func__, "failed to seek FASTQ input: %s", strerror(errno));
+        swbwa_pipeline_fatal(__func__, "failed to seek FASTQ input: %s", strerror(errno));
 
     if (bwa_verbose >= 4) swbwa_input_usage_sample(&before);
     start = GetTime();
@@ -418,7 +468,7 @@ static int64_t read_fastq_block(FILE *file, int64_t *file_offset,
                 " elapsed=%.3f s\n",
                 input_index, read_offset, bytes_to_read, bytes_read, elapsed);
     if (ferror(file))
-        err_fatal(__func__, "failed to read FASTQ input: %s", strerror(read_error));
+        swbwa_pipeline_fatal(__func__, "failed to read FASTQ input: %s", strerror(read_error));
 
     record_bytes = bytes_read;
     if (bytes_read == capacity && *file_offset + bytes_read < file_end) {
@@ -460,7 +510,7 @@ static void read_fastq_parallel(ktp_aux_t *aux, char *buffer, char *buffer2,
             (size_t)(remaining < capacity ? remaining : capacity);
     }
     if (swbwa_input_read(inputs, count, input_readers, bwa_verbose >= 4, &result) != 0)
-        err_fatal(__func__, "positioned FASTQ read failed: %s", strerror(errno));
+        swbwa_pipeline_fatal(__func__, "positioned FASTQ read failed: %s", strerror(errno));
     stage1_timing.read_calls += result.calls;
     stage1_timing.read_bytes += result.bytes;
     stage1_timing.read_seconds += result.wall_seconds;
@@ -511,7 +561,77 @@ static void *process(void *shared, int step, void *_data)
 		record_stage1_allocation(sizeof(*ret),
 		                         GetTime() - allocation_start);
 		if (ret == NULL)
-			err_fatal(__func__, "failed to allocate pipeline batch");
+			swbwa_pipeline_fatal(__func__, "failed to allocate pipeline batch");
+
+#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_USE_MPI
+		if (aux->mpi_gzip_reader != NULL) {
+			swbwa_mpi_gzip_batch batch;
+			int result = swbwa_mpi_gzip_next(aux->mpi_gzip_reader, &batch);
+			if (result < 0)
+				swbwa_mpi_abort(swbwa_mpi_gzip_error(aux->mpi_gzip_reader));
+			if (result == 0) {
+				free(ret);
+				t_step1 += GetTime() - t0;
+				return NULL;
+			}
+			int scale = aux->is_paired ? 2 : 1;
+			if (batch.first_record < 0 || batch.first_record > INT64_MAX / scale ||
+			    batch.records < 0 || batch.records > SWBWA_MAX_READS_PER_BATCH / scale ||
+			    batch.records > INT64_MAX / scale - batch.first_record)
+				swbwa_mpi_abort("MPI gzip batch exceeds read/index limits");
+			for (int mate = 0; mate < 2; ++mate) {
+				if (batch.size[mate] < 0 || batch.size[mate] > SWBWA_CPE_FORMAT_BUFFER_BYTES)
+					swbwa_mpi_abort("MPI gzip batch exceeds CPE formatting capacity");
+				ret->fastq_buffer[mate] = batch.data[mate];
+				ret->fastq_size[mate] = batch.size[mate];
+			}
+			ret->chunk_id = batch.chunk_id;
+			/* Gzip output extents use logical record ranges, not compressed offsets. */
+			ret->chunk_start = batch.first_record;
+			ret->chunk_end = batch.first_record + batch.records;
+			ret->n_processed = batch.first_record * scale;
+			ret->expected_records = batch.records;
+			if (batch.records && batch.partition_count != SWBWA_CPE_COUNT)
+				swbwa_mpi_abort("MPI gzip formatter partition count mismatch");
+			ret->fastq_partitions = batch.partitions;
+			if (batch.records) ++stage1_timing.completed_batches;
+			t_step1 += GetTime() - t0;
+			return ret;
+		}
+#endif
+		if (aux->gzip_reader != NULL) {
+			int64_t sizes[2];
+			int result = swbwa_gzip_read_next(aux->gzip_reader,
+			    &ret->fastq_buffer[0], &sizes[0],
+			    &ret->fastq_buffer[1], &sizes[1]);
+			if (result < 0)
+				swbwa_pipeline_fatal(__func__, "%s", swbwa_gzip_error(aux->gzip_reader));
+			if (result == 0) {
+				free(ret);
+				t_step1 += GetTime() - t0;
+				return NULL;
+			}
+			if (sizes[0] > SWBWA_CPE_FORMAT_BUFFER_BYTES ||
+			    sizes[1] > SWBWA_CPE_FORMAT_BUFFER_BYTES)
+				swbwa_pipeline_fatal(__func__, "decoded FASTQ batch exceeds the CPE formatting buffer");
+			if (swbwa_gzip_check_pe_layout(aux->gzip_reader,
+			    ret->fastq_buffer[0], sizes[0], ret->fastq_buffer[1], sizes[1],
+			    SWBWA_CPE_COUNT) != 0)
+				swbwa_pipeline_fatal(__func__, "%s", swbwa_gzip_error(aux->gzip_reader));
+			ret->chunk_id = ret->chunk_start = aux->input_position[0];
+			for (int mate = 0; mate < 2; ++mate) {
+				ret->fastq_size[mate] = sizes[mate];
+				if (sizes[mate] > INT64_MAX - aux->input_position[mate])
+					swbwa_pipeline_fatal(__func__, "decoded FASTQ offset overflow");
+				aux->input_position[mate] += sizes[mate];
+			}
+			ret->chunk_end = aux->input_position[0];
+			++stage1_timing.completed_batches;
+			t_step1 += GetTime() - t0;
+			return ret;
+		}
+#endif
 
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
@@ -520,7 +640,7 @@ static void *process(void *shared, int step, void *_data)
 
 		next_chunk = swbwa_mpi_fastq_scheduler_next(&chunk);
 		if (next_chunk < 0)
-			err_fatal(__func__, "failed to claim FASTQ chunk: %s", strerror(errno));
+			swbwa_pipeline_fatal(__func__, "failed to claim FASTQ chunk: %s", strerror(errno));
 		if (next_chunk == 0) {
 			free(ret);
 			t_step1 += GetTime() - t0;
@@ -540,7 +660,7 @@ static void *process(void *shared, int step, void *_data)
 			read_index = chunk.start;
 #endif
 			if (read_index > INT64_MAX / index_scale)
-				err_fatal(__func__, "FASTQ read index overflow");
+				swbwa_pipeline_fatal(__func__, "FASTQ read index overflow");
 			ret->n_processed = read_index * index_scale;
 		}
 		block_capacity = chunk.end - chunk.start;
@@ -565,7 +685,7 @@ static void *process(void *shared, int step, void *_data)
 
 		if (block_capacity <= 0 ||
 		    (uint64_t)block_capacity > SIZE_MAX - 1024)
-			err_fatal(__func__, "FASTQ chunk is too large: %lld bytes",
+			swbwa_pipeline_fatal(__func__, "FASTQ chunk is too large: %lld bytes",
 			          block_capacity);
 		allocation_start = GetTime();
 		block_buffer = malloc((size_t)block_capacity + 1024);
@@ -581,7 +701,7 @@ static void *process(void *shared, int step, void *_data)
 		}
 
 		if (block_buffer == NULL || (is_paired && block_buffer2 == NULL))
-			err_fatal(__func__, "failed to allocate FASTQ input buffers");
+			swbwa_pipeline_fatal(__func__, "failed to allocate FASTQ input buffers");
 		if (bwa_verbose >= 3)
 			fprintf(stderr,
 			        "[M::%s] read chunk (%lld bytes/CG x %d CGs,"
@@ -608,12 +728,12 @@ static void *process(void *shared, int step, void *_data)
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 		if (real_size != block_capacity)
-			err_fatal(__func__, "short FASTQ chunk read: %lld != %lld",
+			swbwa_pipeline_fatal(__func__, "short FASTQ chunk read: %lld != %lld",
 			          real_size, block_capacity);
 #endif
 		if (is_paired) {
 			if (real_size != real_size2)
-				err_fatal(__func__,
+				swbwa_pipeline_fatal(__func__,
 				          "paired FASTQ blocks have different sizes:"
 				          " %lld != %lld",
 				          real_size, real_size2);
@@ -643,22 +763,50 @@ static void *process(void *shared, int step, void *_data)
 #else
 		int64_t n_processed = aux->n_processed;
 #endif
+#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_USE_MPI
+		if (aux->mpi_gzip_reader != NULL) {
+			n_processed = data->n_processed;
+			/* All ranks participate in the final input round, including empty owners. */
+			if (data->expected_records == 0) {
+				free(data->fastq_buffer[0]);
+				free(data->fastq_buffer[1]);
+				free(data->fastq_partitions);
+				t_step2 += GetTime() - t0;
+				return data;
+			}
+		}
+#endif
 		if (opt->flag & MEM_F_SMARTPE) {
-			err_fatal(__func__, "smart pairing is not supported by SWBWA");
+			swbwa_pipeline_fatal(__func__, "smart pairing is not supported by SWBWA");
 		} else {
             int **output_lengths = NULL;
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
             output_lengths = &data->sam_lengths;
 #endif
-			mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, n_processed, &(data->n_seqs), &(data->seqs), data->fastq_buffer[0], data->fastq_buffer[1], data->fastq_size[0], data->fastq_size[1], aux->pes, output_lengths);
+			mem_process_seqs_merge2(opt, idx->bwt, idx->bns, idx->pac, n_processed, &(data->n_seqs), &(data->seqs), data->fastq_buffer[0], data->fastq_buffer[1], data->fastq_size[0], data->fastq_size[1], aux->pes, output_lengths, data->fastq_partitions);
+			free(data->fastq_partitions);
+			data->fastq_partitions = NULL;
 		}
+#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_USE_MPI
+		if (aux->mpi_gzip_reader != NULL) {
+			if (data->n_seqs != data->expected_records * (aux->is_paired ? 2 : 1))
+				swbwa_mpi_abort("MPI gzip formatter changed the decoded record count");
+			double elapsed = GetTime() - t0;
+			t_step2 += elapsed;
+			if (bwa_verbose >= 4)
+				fprintf(stderr, "[MPI gzip rank %06d/%06d] chunk=%lld records=[%lld,%lld) stage2=%.6f s\n",
+				        swbwa_mpi_rank(), swbwa_mpi_size(), (long long)data->chunk_id,
+				        (long long)data->chunk_start, (long long)data->chunk_end, elapsed);
+			return data;
+		}
+#endif
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 		{
 			double stage2_seconds = GetTime() - t0;
 
 			if (aux->is_paired && (data->n_seqs & 1) != 0)
-				err_fatal(__func__,
+				swbwa_pipeline_fatal(__func__,
 				          "paired FASTQ chunk produced an odd read count");
 			swbwa_mpi_fastq_scheduler_record_stage2(
 				data->chunk_id,
@@ -674,11 +822,18 @@ static void *process(void *shared, int step, void *_data)
 	} else if (step == 2) {
         double t0 = GetTime();
 		double write_start = GetTime();
+#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_USE_MPI
+        if (aux->mpi_gzip_reader != NULL && data->n_seqs == 0) {
+            free(data);
+            t_step3 += GetTime() - t0;
+            return NULL;
+        }
+#endif
 #if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
 		for (int i = 0; i < data->n_seqs; ++i) {
 			if (data->seqs[i].sam) {
                 if (swbwa_output_write_digest(data->seqs[i].sam) != 0)
-                    err_fatal(__func__, "failed to write SAM output: %s",
+                    swbwa_pipeline_fatal(__func__, "failed to write SAM output: %s",
                               strerror(errno));
             }
 		}
@@ -686,7 +841,7 @@ static void *process(void *shared, int step, void *_data)
         if (swbwa_output_write_chunk(data->chunk_id, data->chunk_start,
                                      data->chunk_end, data->seqs, data->sam_lengths,
                                      data->n_seqs, aux->is_paired) != 0)
-            err_fatal(__func__, "failed to write output chunk: %s", strerror(errno));
+            swbwa_pipeline_fatal(__func__, "failed to write output chunk: %s", strerror(errno));
 #endif
 		t_step3_1 += GetTime() - write_start;
 		free(data->sam_lengths);
@@ -695,7 +850,7 @@ static void *process(void *shared, int step, void *_data)
 		return 0;
 	} else if(step == 3) {
         if (swbwa_output_flush() != 0)
-            err_fatal(__func__, "failed to flush SAM output: %s", strerror(errno));
+            swbwa_pipeline_fatal(__func__, "failed to flush SAM output: %s", strerror(errno));
     }
 	return 0;
 }
@@ -722,17 +877,36 @@ static void open_fastq_input(const char *path, FILE **file_ptr, int64_t start)
     char resolved_path[PATH_MAX];
     int n = snprintf(resolved_path, sizeof(resolved_path), "%s", path);
     if (n < 0 || (size_t)n >= sizeof(resolved_path))
-        err_fatal(__func__, "input path is too long: '%s'", path);
+        swbwa_pipeline_fatal(__func__, "input path is too long: '%s'", path);
     if (swbwa_mpi_is_root())
         fprintf(stderr, "the input file is %s\n", resolved_path);
 
     *file_ptr = fopen(resolved_path, "rb");
     if (*file_ptr == NULL)
-        err_fatal(__func__, "failed to open input file '%s': %s", resolved_path, strerror(errno));
+        swbwa_pipeline_fatal(__func__, "failed to open input file '%s': %s", resolved_path, strerror(errno));
     if (fseeko(*file_ptr, (off_t)start, SEEK_SET) != 0)
-        err_fatal(__func__, "failed to seek input file '%s': %s",
+        swbwa_pipeline_fatal(__func__, "failed to seek input file '%s': %s",
 	                  resolved_path, strerror(errno));
 }
+
+#if SWBWA_ENABLE_GZIP_INPUT
+static int is_gzip_input(const char *path)
+{
+    unsigned char magic[2];
+    FILE *file = fopen(path, "rb");
+    size_t bytes;
+    int failed;
+
+    if (file == NULL)
+        swbwa_pipeline_fatal(__func__, "failed to open '%s': %s", path, strerror(errno));
+    bytes = fread(magic, 1, sizeof(magic), file);
+    failed = ferror(file);
+    fclose(file);
+    if (failed)
+        swbwa_pipeline_fatal(__func__, "failed to read input magic: '%s'", path);
+    return bytes == 2 && magic[0] == 0x1f && magic[1] == 0x8b;
+}
+#endif
 
 static int prepare_sequential_fastq_input(const char *read1_path,
                                           const char *read2_path,
@@ -762,7 +936,7 @@ static void init_cpe_allocator(void)
 
     pool_buffer = (char*)malloc(SWBWA_CPE_POOL_TOTAL_BYTES);
     if (pool_buffer == NULL)
-        err_fatal(__func__, "failed to allocate CPE malloc buffer: bytes=%lld", (long long)SWBWA_CPE_POOL_TOTAL_BYTES);
+        swbwa_pipeline_fatal(__func__, "failed to allocate CPE malloc buffer: bytes=%lld", (long long)SWBWA_CPE_POOL_TOTAL_BYTES);
     memset(pool_buffer, 0, SWBWA_CPE_POOL_TOTAL_BYTES);
     params.buffer = pool_buffer;
     params.bytes_per_cpe = SWBWA_CPE_POOL_BYTES_PER_CPE;
@@ -774,6 +948,10 @@ int main_mem(int argc, char *argv[])
 {
 	mem_opt_t *opt, opt0;
     int i, c, ignore_alt = 0, no_mt_io = 0;
+#if SWBWA_ENABLE_GZIP_INPUT
+    int gzip_input = 0;
+    const char *gzip_backend = NULL;
+#endif
 #if SWBWA_OUTPUT_RMA_ONLY
     int saved_report_stderr = -1;
 #endif
@@ -831,7 +1009,7 @@ int main_mem(int argc, char *argv[])
 			errno = 0;
 			value = strtoll(optarg, &end, 10);
 			if (errno == ERANGE || end == optarg || *end != '\0' || value <= 0)
-				err_fatal(__func__, "invalid -K value: '%s'", optarg);
+				swbwa_pipeline_fatal(__func__, "invalid -K value: '%s'", optarg);
 			fastq_bytes_per_cg = (int64_t)value;
 		}
 		else if (c == 'X') opt->mask_level = atof(optarg);
@@ -1015,6 +1193,44 @@ int main_mem(int argc, char *argv[])
 	read2_path = (optind + 2 < argc && !(opt->flag & MEM_F_PE))
 		? argv[optind + 2] : NULL;
 
+#if SWBWA_ENABLE_GZIP_INPUT
+	gzip_input = is_gzip_input(argv[optind + 1]);
+	timing_gzip_input = gzip_input;
+#if SWBWA_USE_MPI
+	{
+		int minimum, maximum;
+		if (MPI_Allreduce(&gzip_input, &minimum, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD) != MPI_SUCCESS ||
+		    MPI_Allreduce(&gzip_input, &maximum, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD) != MPI_SUCCESS ||
+		    minimum != maximum)
+			swbwa_mpi_abort("ranks disagree on gzip input format");
+	}
+#endif
+	if (read2_path != NULL && is_gzip_input(read2_path) != gzip_input)
+		swbwa_pipeline_fatal(__func__, "both mates must use the same input format (FASTQ or gzip)");
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && \
+    SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_DYNAMIC
+	if (!gzip_input)
+		swbwa_mpi_abort("single_ordered plain FASTQ requires MPI_INPUT_MODE=dynamic");
+#endif
+	if (gzip_input) {
+		if (opt->flag & MEM_F_SMARTPE)
+			swbwa_pipeline_fatal(__func__, "gzip input requires separate mate files, not -p");
+		gzip_backend = getenv("SWBWA_GZIP_READER");
+		if (gzip_backend == NULL || *gzip_backend == '\0')
+			gzip_backend = "rapid";
+		if (strcmp(gzip_backend, "rapid") != 0 && strcmp(gzip_backend, "zlib") != 0)
+			swbwa_pipeline_fatal(__func__, "SWBWA_GZIP_READER must be rapid or zlib");
+#if SWBWA_USE_MPI
+		if (strcmp(gzip_backend, "rapid") != 0)
+			swbwa_mpi_abort("MPI gzip requires the distributed rapid backend");
+#endif
+		if (aux.fastq_bytes_per_cg > SWBWA_CPE_FORMAT_BUFFER_BYTES / SWBWA_CG_COUNT)
+			swbwa_pipeline_fatal(__func__, "gzip FASTQ batch exceeds the CPE formatting buffer");
+		aux.fastq_chunk_bytes = aux.fastq_bytes_per_cg * SWBWA_CG_COUNT;
+	}
+	if (!gzip_input) {
+#endif
+
 	aux.input_position[0] = aux.input_position[1] = 0;
 	aux.input_end[0] = aux.input_end[1] = INT64_MAX;
 #if SWBWA_USE_MPI
@@ -1027,7 +1243,7 @@ int main_mem(int argc, char *argv[])
 		        argv[optind + 1], read2_path, aux.fastq_bytes_per_cg,
 		        bwa_verbose >= 4,
 		        &assigned_range, &chunk_count) != 0)
-			return 1;
+			swbwa_pipeline_fatal(__func__, "failed to initialize MPI FASTQ scheduler");
 		aux.input_position[0] = aux.input_position[1] = assigned_range.start;
 		aux.input_end[0] = aux.input_end[1] = assigned_range.end;
 		if (swbwa_mpi_is_root())
@@ -1059,9 +1275,9 @@ int main_mem(int argc, char *argv[])
 
 		if (prepare_sequential_fastq_input(
 		        argv[optind + 1], read2_path, &aux, &file_size) != 0)
-			return 1;
+			swbwa_pipeline_fatal(__func__, "failed to prepare MPI FASTQ input");
 		if (swbwa_mpi_fastq_range(argv[optind + 1], read2_path, &range) != 0)
-			return 1;
+			swbwa_pipeline_fatal(__func__, "failed to assign MPI FASTQ range");
 		aux.input_position[0] = aux.input_position[1] = range.start;
 		aux.input_end[0] = aux.input_end[1] = range.end;
 #if SWBWA_MPI_EXACT_READ_INDEX
@@ -1093,17 +1309,29 @@ int main_mem(int argc, char *argv[])
 	}
 #endif
 
+#if SWBWA_ENABLE_GZIP_INPUT
+	}
+#endif
+
 	swbwa_runtime_init();
 
 	aux.idx = bwa_idx_load_from_shm(argv[optind]);
 	if (aux.idx == 0) {
-		if ((aux.idx = bwa_idx_load(argv[optind], BWA_IDX_ALL)) == 0) return 1; // FIXME: memory leak
+		if ((aux.idx = bwa_idx_load(argv[optind], BWA_IDX_ALL)) == 0) {
+#if SWBWA_USE_MPI
+			swbwa_pipeline_fatal(__func__, "failed to load SWBWA index '%s'", argv[optind]);
+#endif
+			return 1; // FIXME: memory leak
+		}
 	} else if (bwa_verbose >= 3)
 		fprintf(stderr, "[M::%s] load the SWBWA index from shared memory\n", __func__);
 	if (ignore_alt)
 		for (i = 0; i < aux.idx->bns->n_seqs; ++i)
 			aux.idx->bns->anns[i].is_alt = 0;
 
+#if SWBWA_ENABLE_GZIP_INPUT
+	if (!gzip_input)
+#endif
 	open_fastq_input(argv[optind + 1], &file1_ptr,
 	                 aux.input_position[0]);
 	if (optind + 2 < argc) {
@@ -1111,6 +1339,9 @@ int main_mem(int argc, char *argv[])
 			if (bwa_verbose >= 2)
 				fprintf(stderr, "[W::%s] when '-p' is in use, the second query file is ignored.\n", __func__);
 		} else {
+#if SWBWA_ENABLE_GZIP_INPUT
+			if (!gzip_input)
+#endif
 			open_fastq_input(argv[optind + 2], &file2_ptr,
 			                 aux.input_position[1]);
 			aux.is_paired = 1;
@@ -1119,10 +1350,17 @@ int main_mem(int argc, char *argv[])
 	}
 #if SWBWA_USE_MPI
 	if (output_path == NULL || strcmp(output_path, "-") == 0)
-		err_fatal(__func__, "MPI output requires an explicit -o FILE path");
+		swbwa_pipeline_fatal(__func__, "MPI output requires an explicit -o FILE path");
 #endif
-	if (swbwa_output_open(output_path, bwa_verbose >= 4) != 0)
-		err_fatal(__func__, "failed to open SAM output: %s", strerror(errno));
+#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+	int output_status = gzip_input
+	    ? swbwa_output_open_online(output_path, bwa_verbose >= 4)
+	    : swbwa_output_open(output_path, bwa_verbose >= 4);
+#else
+	int output_status = swbwa_output_open(output_path, bwa_verbose >= 4);
+#endif
+	if (output_status != 0)
+		swbwa_pipeline_fatal(__func__, "failed to open SAM output: %s", strerror(errno));
 	if (output_path != NULL || SWBWA_USE_MPI) {
 #if SWBWA_USE_MPI
 		fprintf(stderr, "[MPI rank %06d/%06d] output: %s\n",
@@ -1136,19 +1374,41 @@ int main_mem(int argc, char *argv[])
 		const char *value = getenv("SWBWA_INPUT_READERS");
 		input_readers = swbwa_input_reader_count(value);
 		if (input_readers < 0)
-			err_fatal(__func__, "SWBWA_INPUT_READERS must be 0..%d (0=fread)",
+			swbwa_pipeline_fatal(__func__, "SWBWA_INPUT_READERS must be 0..%d (0=fread)",
 			          SWBWA_HOST_MPE_THREADS);
 	}
 	if (swbwa_host_workers_init() != 0)
-        err_fatal(__func__, "failed to initialize MPE helpers: %s", strerror(errno));
+        swbwa_pipeline_fatal(__func__, "failed to initialize MPE helpers: %s", strerror(errno));
 	init_cpe_allocator();
 	swbwa_cpe_profile_init();
+#if SWBWA_ENABLE_GZIP_INPUT
+	if (gzip_input) {
+		input_readers = 0;
+#if SWBWA_USE_MPI
+		aux.mpi_gzip_reader = swbwa_mpi_gzip_open(argv[optind + 1], read2_path,
+		    (size_t)aux.fastq_chunk_bytes, SWBWA_CPE_COUNT, bwa_verbose >= 4);
+		if (aux.mpi_gzip_reader == NULL)
+			swbwa_mpi_abort(swbwa_mpi_gzip_error(NULL));
+		if (swbwa_mpi_is_root())
+			fprintf(stderr, "[MPI gzip input] online collective decoding; exact record indices; "
+			                "round-robin record chunks (plain FASTQ scheduler bypassed)\n");
+#else
+		aux.gzip_reader = swbwa_gzip_open(argv[optind + 1], read2_path,
+		    256 * 1024, SWBWA_CPE_COUNT, gzip_backend);
+		if (aux.gzip_reader == NULL ||
+		    swbwa_gzip_set_batch_bytes(aux.gzip_reader, (size_t)aux.fastq_chunk_bytes) != 0)
+			swbwa_pipeline_fatal(__func__, "%s", swbwa_gzip_error(aux.gzip_reader));
+		fprintf(stderr, "[gzip input] backend=%s workers=%d batch_bytes=%lld\n",
+		    gzip_backend, SWBWA_CPE_COUNT, (long long)aux.fastq_chunk_bytes);
+#endif
+	}
+#endif
 
 
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
 	if (swbwa_mpi_barrier() != 0)
-		err_fatal(__func__, "failed to synchronize dynamic MPI workers");
+		swbwa_pipeline_fatal(__func__, "failed to synchronize dynamic MPI workers");
 #endif
 
 	swbwa_cpe_progress_debug_enable(bwa_verbose >= 4);
@@ -1156,7 +1416,7 @@ int main_mem(int argc, char *argv[])
     (SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC || \
      SWBWA_OUTPUT_SINGLE_FILE)
 	if (swbwa_mpi_progress_thread_start(bwa_verbose >= 4) != 0)
-		err_fatal(__func__, "failed to start MPI progress thread: %s",
+		swbwa_pipeline_fatal(__func__, "failed to start MPI progress thread: %s",
 		          strerror(errno));
 #endif
 	double t0 = GetTime();
@@ -1164,6 +1424,26 @@ int main_mem(int argc, char *argv[])
 	else kt_pipeline_queue(3, process, &aux, 3);
     /* Stage 3 has flushed; exclude rank-ordered reports and MPI teardown. */
     t_tot += GetTime() - t0;
+#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_USE_MPI
+    if (aux.mpi_gzip_reader != NULL) {
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+        if (swbwa_output_ordered_finish(swbwa_mpi_gzip_chunk_count(aux.mpi_gzip_reader)) != 0)
+            swbwa_mpi_abort("failed to finalize gzip ordered chunk count");
+#endif
+        if (swbwa_mpi_gzip_report(aux.mpi_gzip_reader, stderr) != 0)
+            swbwa_mpi_abort("failed to report MPI gzip input metrics");
+        swbwa_mpi_gzip_close(aux.mpi_gzip_reader);
+        aux.mpi_gzip_reader = NULL;
+    }
+#endif
+    if (aux.gzip_reader != NULL) {
+        if (swbwa_gzip_report(aux.gzip_reader, stderr) != 0)
+            swbwa_pipeline_fatal(__func__, "failed to report gzip input metrics");
+        swbwa_gzip_close(aux.gzip_reader);
+        aux.gzip_reader = NULL;
+    }
+#endif
     swbwa_host_workers_destroy();
 #if SWBWA_OUTPUT_RMA_ONLY
     {
@@ -1174,23 +1454,27 @@ int main_mem(int argc, char *argv[])
             int length = snprintf(path, sizeof(path), "%s.rank%06d.log",
                                   prefix, swbwa_mpi_rank());
             if (length < 0 || (size_t)length >= sizeof(path))
-                err_fatal(__func__, "rank report path is too long");
-            err_fflush(stderr);
+                swbwa_pipeline_fatal(__func__, "rank report path is too long");
+            if (fflush(stderr) != 0)
+                swbwa_pipeline_fatal(__func__, "failed to flush stderr: %s", strerror(errno));
             /* Keep the launcher's stderr pipe alive until normal shutdown. */
             saved_report_stderr = dup(STDERR_FILENO);
             if (saved_report_stderr < 0)
-                err_fatal(__func__, "failed to save stderr: %s", strerror(errno));
+                swbwa_pipeline_fatal(__func__, "failed to save stderr: %s", strerror(errno));
             report_fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0666);
             if (report_fd < 0)
-                err_fatal(__func__, "failed to open rank report: %s", strerror(errno));
+                swbwa_pipeline_fatal(__func__, "failed to open rank report: %s", strerror(errno));
             if (dup2(report_fd, STDERR_FILENO) < 0)
-                err_fatal(__func__, "failed to redirect rank report: %s", strerror(errno));
+                swbwa_pipeline_fatal(__func__, "failed to redirect rank report: %s", strerror(errno));
             close(report_fd);
         }
     }
 #endif
 #if SWBWA_USE_MPI && \
     SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
+#if SWBWA_ENABLE_GZIP_INPUT
+	if (!gzip_input) {
+#endif
 	{
 		int64_t chunks, records, bytes;
 
@@ -1203,14 +1487,17 @@ int main_mem(int argc, char *argv[])
 		        (long long)bytes);
 	}
 	swbwa_mpi_fastq_scheduler_close();
+#if SWBWA_ENABLE_GZIP_INPUT
+	}
+#endif
 #endif
 	if (swbwa_output_close() != 0)
-		err_fatal(__func__, "failed to close SAM output: %s", strerror(errno));
+		swbwa_pipeline_fatal(__func__, "failed to close SAM output: %s", strerror(errno));
 #if SWBWA_USE_MPI && \
     (SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC || \
      SWBWA_OUTPUT_SINGLE_FILE)
 	if (swbwa_mpi_progress_thread_stop() != 0)
-		err_fatal(__func__, "MPI progress thread failed: %s", strerror(errno));
+		swbwa_pipeline_fatal(__func__, "MPI progress thread failed: %s", strerror(errno));
 #endif
 
 	swbwa_mpi_progress_thread_report();
@@ -1220,9 +1507,10 @@ int main_mem(int argc, char *argv[])
     if (bwa_verbose >= 4 && !no_mt_io) kt_pipeline_wait_report();
 #if SWBWA_OUTPUT_RMA_ONLY
     if (saved_report_stderr >= 0) {
-        err_fflush(stderr);
+        if (fflush(stderr) != 0)
+            swbwa_pipeline_fatal(__func__, "failed to flush stderr: %s", strerror(errno));
         if (dup2(saved_report_stderr, STDERR_FILENO) < 0)
-            err_fatal(__func__, "failed to restore stderr: %s", strerror(errno));
+            swbwa_pipeline_fatal(__func__, "failed to restore stderr: %s", strerror(errno));
         close(saved_report_stderr);
     }
 #endif

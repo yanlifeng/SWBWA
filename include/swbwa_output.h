@@ -17,6 +17,10 @@ int swbwa_output_close(void);
 const char *swbwa_output_name(void);
 
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+/* Online inputs publish monotonic chunk IDs without a preliminary count scan.
+ * Finish is local, after validated input EOF and after the writer has drained. */
+int swbwa_output_open_online(const char *path, int debug_enabled);
+int swbwa_output_ordered_finish(int64_t chunks);
 /* Reader-only: publish the zero-length prefix for an aligned empty chunk. */
 int swbwa_output_ordered_skip(int64_t id);
 #endif

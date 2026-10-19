@@ -2,7 +2,9 @@
 
 Build with `USE_MPI=1 MPI_INPUT_MODE=dynamic OUTPUT_MODE=single_ordered`.
 For cross execution use the complete two-pass `build.sh` workflow. The default
-output mode is unchanged. Static input is rejected for this first implementation.
+output mode is unchanged. This configuration is for plain FASTQ; static plain
+FASTQ remains unsupported. Gzip input also supports `MPI_INPUT_MODE=static`
+with the online protocol below.
 "Ordered" means FASTQ input/read order, not genomic-coordinate sorting.
 
 ## Protocol
@@ -37,6 +39,23 @@ Future batched prefix publication can reduce polling without changing output
 semantics. `ordered prefix polls` and `ordered prefix wait and publication`
 are reported with output diagnostics.
 
+## Online Gzip Protocol
+
+Cooperative gzip decoding assigns chunk `i` to rank `i % ranks`; each rank
+receives monotonically increasing IDs without a preliminary full-file scan.
+The output layer therefore uses `swbwa_output_open_online()` and two rank-0
+64-bit slots: the next chunk ID and next byte offset. The unique owner waits
+for its ID, publishes the updated byte offset and flushes, then publishes
+the successor ID and flushes. Payload writes still go directly to disjoint
+file regions. This changes neither the gzip input distribution nor its
+collective decode epochs; it is not dynamic gzip scheduling.
+
+After validated EOF and pipeline completion, call
+`swbwa_output_ordered_finish()` with the true global chunk count. Tail ranks
+with empty READY tokens publish nothing. Close collectively validates both
+the final ID and byte total before freeing the window. Keep MPI progress
+active until output close has completed.
+
 ## Validation
 
 Run `python3 tests/test_output_ordered.py` using a native MPI installation.
@@ -47,8 +66,16 @@ truncation. It covers one/six packing workers and `OUTPUT_RMA_ONLY=1`.
 
 `OUTPUT_RMA_ONLY=1` preserves prefix ordering, all SAM generation/packing, and
 RMA, but does not create a file. Extent offsets must be contiguous **in chunk
-ID order**, not merely nonoverlapping. Its sampled SAM fingerprint is not a
-full-file checksum or a substitute for testing the real writer.
+ID order**, not merely nonoverlapping. Sampling defaults to 100 reads per chunk.
+`SWBWA_OUTPUT_SAMPLE_READS=0` hashes all packed SAM blobs and reports full-byte
+chunk CRC32 values and SAM-line counts. Combine CRCs in input chunk order with
+their byte lengths to compare the complete stream; this is not MPI MD5 and
+does not replace a real-file writer test. Validation cost belongs to Stage 3.
+
+Run `python3 tests/test_output_ordered_online.py` for the online protocol.
+It covers multiple ranks, empty input and tail ranks, delayed early chunks,
+real-file and RMA-only paths, full packed-byte fingerprints/CRC, repeated
+open/close, and invalid final counts or decreasing local chunk IDs.
 
 The generic streaming output API has no chunk ID and is rejected in ordered
 mode. Use `swbwa_output_write_chunk()`. No SAM header is emitted in this mode.

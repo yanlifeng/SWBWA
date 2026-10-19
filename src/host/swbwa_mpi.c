@@ -548,7 +548,18 @@ int swbwa_mpi_init(int *argc, char ***argv)
 {
 #if SWBWA_USE_MPI
     int provided;
-    int rc = MPI_Init_thread(argc, argv, MPI_THREAD_MULTIPLE, &provided);
+    int rc;
+
+#ifdef __sw_host__
+    /* SWCH otherwise may spin in MPID_Abort for debugger attachment instead
+     * of terminating a failed job. This option is read during MPI_Init. */
+    if (setenv("SWCH_HANG_WHEN_ERROR", "0", 1) != 0) {
+        fprintf(stderr, "[E::MPI] cannot disable SWCH error hang: %s\n",
+                strerror(errno));
+        return -1;
+    }
+#endif
+    rc = MPI_Init_thread(argc, argv, MPI_THREAD_MULTIPLE, &provided);
 
     if (rc != MPI_SUCCESS) return -1;
     mpi_initialized = 1;

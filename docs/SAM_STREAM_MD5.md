@@ -18,14 +18,16 @@ This mode generates and copies the complete SAM as normal. The final buffered
 writer consumes the same bytes into an incremental MD5 instead of writing them.
 Only leading `@HD`, `@SQ`, `@RG`, `@PG`, `@CO` header lines are removed. Records
 are not sorted, re-encoded or sampled. Compare `md5`, `bytes` and `records`
-against an independent header-free ordered reference. Records count SAM lines,
+against an independent header-free ordered reference. The `crc32` field also
+covers the complete header-free stream, for comparison with ordered MPI chunk
+CRCs combined with their byte lengths. Records count SAM lines,
 not reads; supplementary alignments can make them differ.
 
 The optional standalone consumer uses the same implementation:
 
 ```bash
 c++ -std=c++11 -O2 -Iinclude -DSWBWA_SAM_MD5_STANDALONE \
-    src/host/swbwa_sam_md5.cpp -o sam_stream_md5
+    src/host/swbwa_sam_md5.cpp -lz -o sam_stream_md5
 set -o pipefail
 ./bwa mem -t 64 -I 170,80,500,1 ref.fa reads_1.fastq reads_2.fastq | ./sam_stream_md5
 ```

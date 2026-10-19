@@ -11,6 +11,10 @@
 #include "swbwa_config.h"
 #include "swbwa_cpe.h"
 #include "swbwa_cpe_profile.h"
+#if SWBWA_ENABLE_GZIP_INPUT
+#include "../gzip/codec_job.h"
+extern void swbwa_codec_worker(swbwa_codec_batch *batch);
+#endif
 
 #include "malloc_wrap.h"
 
@@ -22,6 +26,9 @@ extern unsigned long swbwa_cpe_data_size;
 /***********************************************************/
 
 __thread swbwa_cpe_task_t *swbwa_task;
+#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+static __thread int swbwa_pool_ready;
+#endif
 
 static inline void swbwa_enter_cross_runtime(void)
 {
@@ -148,6 +155,9 @@ static inline void swbwa_finish_standard_task(swbwa_cpe_task_t *task)
 
 void state_init(swbwa_cpe_pool_params_t *para) {
     set_big_buffer(para->buffer, para->bytes_per_cpe);
+#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+    swbwa_pool_ready = 1;
+#endif
 }
 
 void pass_para(swbwa_cpe_task_t *ptr)
@@ -331,15 +341,28 @@ static int format_fastq_partition(swbwa_cpe_task_t *params)
     long long output_end;
     int is_paired = params->fastq_size[1] > 0;
 
+    if (params->fastq_partitions != NULL) {
+        const swbwa_fastq_partition_t part = params->fastq_partitions[_MYID];
+        output_chunk_size = params->formatted_buffer_size / SWBWA_CPE_COUNT;
+        output_begin = _MYID * output_chunk_size;
+        return format_seqs(params->fastq_buffer[0] + part.begin[0],
+                           part.end[0] - part.begin[0],
+                           is_paired ? params->fastq_buffer[1] + part.begin[1] : NULL,
+                           is_paired ? part.end[1] - part.begin[1] : 0,
+                           params->formatted_buffer[0] + output_begin,
+                           is_paired ? params->formatted_buffer[1] + output_begin : NULL,
+                           output_chunk_size, params->worker_data, &part);
+    }
+
     if (params->fastq_size[0] < SWBWA_CPE_COUNT * (1 << 10)) {
         if (_MYID == 0) {
             return format_seqs(params->fastq_buffer[0], params->fastq_size[0],
                                params->fastq_buffer[1], params->fastq_size[1],
                                params->formatted_buffer[0], params->formatted_buffer[1],
-                               params->formatted_buffer_size, params->worker_data);
+                               params->formatted_buffer_size, params->worker_data, NULL);
         }
         return format_seqs(NULL, 0, NULL, 0, NULL, NULL, 0,
-                           params->worker_data);
+                           params->worker_data, NULL);
     }
 
     input_chunk_size = (params->fastq_size[0] + SWBWA_CPE_COUNT - 1) /
@@ -370,7 +393,7 @@ static int format_fastq_partition(swbwa_cpe_task_t *params)
                        is_paired ? input_end - input_begin : 0,
                        params->formatted_buffer[0] + output_begin,
                        is_paired ? params->formatted_buffer[1] + output_begin : NULL,
-                       output_end - output_begin, params->worker_data);
+                       output_end - output_begin, params->worker_data, NULL);
 }
 
 void cpe_format_pre_cross(void)
@@ -380,6 +403,27 @@ void cpe_format_pre_cross(void)
         format_fastq_partition(swbwa_task);
     return;
 }
+
+#if SWBWA_ENABLE_GZIP_INPUT
+void swbwa_codec(swbwa_cpe_task_t *para)
+{
+    /* Share the runtime with alignment without resetting its live SAM state. */
+    swbwa_codec_worker((swbwa_codec_batch *)para->codec_batch);
+    swbwa_finish_standard_task(para);
+}
+
+void swbwa_codec_cross(void)
+{
+    swbwa_enter_cross_runtime();
+#if SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+    if (!swbwa_pool_ready)
+        swbwa_cpe_fail(SWBWA_CPE_ERR_POOL_BAD_POOL, 0, 0, 0);
+#endif
+    /* Decoder temporaries must die on their owning CPE before this returns.
+     * Do not begin/reset the alignment LDM arena or touch its task_list. */
+    swbwa_codec_worker((swbwa_codec_batch *)swbwa_task->codec_batch);
+}
+#endif
 
 void worker12_s_pre_fast_cross(void) {
     swbwa_enter_cross_runtime();

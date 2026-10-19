@@ -11,6 +11,7 @@ SWBWA 是面向新一代神威平台优化的高精度、高性能短序列比�
 
 - `src/host/`：主核 C/C++ 源代码，包括比对流程、MPI 输入输出和主核辅助模块。
 - `src/slave/`：从核 CPE 源代码和从核专用头文件。
+- `src/gzip/`：无预建索引的 gzip 解码、FASTQ 分批适配和第三方许可说明。
 - `include/`：公共头文件、配置头文件和生成的 CPE 布局头文件。
 - `tools/`：交叉段构建所需的地址和 TLS 信息提取脚本。
 - `tests/`：不参与默认构建的 MPI/RMA 和运行时诊断程序。
@@ -73,6 +74,7 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `CPE_LDM_MODE` | `0` 全关、`1` 旧分级池、`2` 手工优化、`3` 统一池 | 非 MPI `cgs_cross + pool` 默认 `3`，其他配置默认 `2` |
 | `CPE_DISCARD_DIGEST` | `0`、`1` | 非 MPI `cgs_cross + pool` 且 `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0` 时为 `1`，其他为 `0` |
 | `USE_MPI` | `0`、`1` | `1` |
+| `GZIP_INPUT` | `0`、`1` | `1` |
 | `MPI_INPUT_MODE` | `static`、`dynamic` | MPI 构建时为 `dynamic` |
 | `OUTPUT_MODE` | `split`、`single_unordered`、`single_ordered`、`discard` | MPI 为 `single_unordered`，非 MPI 为 `split` |
 | `MPI_EXACT_READ_INDEX` | `0`、`1` | `1` |
@@ -82,7 +84,7 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `MATESW_DUAL_FORWARD` | `0`、`1` | `1` |
 | `CPE_PROFILE` | `0`、`1` | `0` |
 | `CPE_PROFILE_CG` | `0..5` | `single` 为 `0`，其他为 `5` |
-| `OUTPUT_RMA_ONLY` | `0`、`1`（仅限 MPI dynamic 单文件输出 profiling） | `0` |
+| `OUTPUT_RMA_ONLY` | `0`、`1`（仅限 MPI 单文件输出 profiling） | `0` |
 | `DISCARD_HASH_BYTES` | 非负字节数；`0` 检查完整 SAM blob | `0` |
 
 `float16_32` 属于实验实现，不保证与默认整数 kernel 的 SAM 等价。
@@ -90,8 +92,62 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 详细运行诊断需显式使用 `-v 4`。
 
 `MPI_INPUT_MODE` 和 `MPI_EXACT_READ_INDEX` 仅在 `USE_MPI=1` 时生效。
+Sunway 的 MPI 启动会在 `MPI_Init_thread` 前设置本进程环境变量
+`SWCH_HANG_WHEN_ERROR=0`，覆盖继承的调试挂起设置，使致命错误的 `MPI_Abort`
+真正结束作业，而不是停在 `MPID_Abort` 等待调试。不会修改系统 MPI 配置；
+元数据、CRC 等正确性检查仍然保留，失败不会作为正常完成处理。
 非 MPI 也支持 `OUTPUT_MODE=discard`；非 MPI 的 `split` 保持普通单文件输出，
 `single_unordered` 则必须启用 MPI。
+
+### Gzip 输入
+
+程序通过文件 magic 自动识别普通 gzip FASTQ；构建示例：
+
+```bash
+bash build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 GZIP_INPUT=1
+# 使用与普通 FASTQ 相同的整片资源配置，将可执行程序提交到计算节点。
+./SWBWA mem -t 1 -1 -I 170,80,500,1 -o output.sam reference.fa reads_1.fastq.gz reads_2.fastq.gz
+```
+
+默认 `SWBWA_GZIP_READER=rapid` 使用从核并行解压，不预建索引，也不先由主核
+完整解压一次。可设置 `SWBWA_GZIP_READER=zlib` 对照主核串行解压。
+`-K` 仍表示每 CG 的解压后 FASTQ 批次大小，与压缩流中的探测间隔无关。
+解压和比对共享从核运行时，不能同时使用同一批从核；排队等待时间单独统计。
+后续比对、SAM 生成和输出流程复用原实现。
+
+从核并行解压使用当前配置的从核运行时，支持 `single` 的标准启动入口和
+`cgs` / `cgs_cross` 的整片入口。
+输入须为四行、LF 换行且末行有换行符的 FASTQ。非 MPI 路径的 PE 解压后布局需要在从核
+分区边界上相容，不相容时明确报错；暂不支持一端普通文件一端 gzip 或 `-p`
+交错配对 gzip。参见 [引擎说明](src/gzip/README.md) 和
+[回归测试](tests/test_gzip_input.py)。
+
+实验性 MPI gzip 输入让每个 rank 使用本地从核解压：
+
+```bash
+bash build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=1 \
+    OUTPUT_MODE=split GZIP_INPUT=1 CPE_LDM_MODE=2
+```
+
+`cgs` / `cgs_cross` 每节点配置一个使用整片从核的 rank。
+若要每节点六个 rank，使用 `EXEC_MODE=single CPE_ALLOCATOR=system`，每个 rank
+只申请一个核组。MPI gzip 要求 `rapid` 后端，支持 `split`、
+`single_unordered`、`single_ordered` 和 `discard`。各 rank 协作解码压缩流，
+按记录序号交换完整 FASTQ 并组批，不将整个正文汇聚到 rank 0，也不预扫描建索引。
+MPI Reader 复用解压核生成的 4 KiB 页换行计数，只检查记录和分区边界，不再在
+主核完整解析每条记录。R1 按字节量分区，R2 优先使用相同字节位置，不匹配时
+通过换行索引定位相同记录序号；两端使用独立的 CPE 边界，允许长度/字节布局不同。
+全部记录格式及 PE 名字仍由 CPE 在格式化时检查。本 rank 的正文不经过 MPI
+自发送；必要的大块复制使用既有 MPE 辅助线程。Reader 日志单列本地处理、通信、
+READY/EOF 等待及解压等待，不能将这些包含关系重复求和。
+精确 read 序号在线累计，不受 `MPI_EXACT_READ_INDEX` 开关影响。该路径不使用普通
+FASTQ 的 `MPI_INPUT_MODE` 调度器或尾块细分，而是根据第一批已解码数据和 `-K`
+估计固定的每块记录数，再轮转分配 chunk。这是在线集体读取，并非任意压缩 offset
+上的独立随机访问。gzip 的有序输出使用在线 RMA 前缀，在 EOF 后验证总 chunk 数，
+也支持 `MPI_INPUT_MODE=static` 构建。`OUTPUT_RMA_ONLY=1` 仅关闭最终写盘；
+`SWBWA_OUTPUT_SAMPLE_READS=0` 可将默认每块前 100 条 read 抽样改为完整拼接 SAM
+指纹及分块 CRC32 校验。CRC 可按输出顺序合并，但不是分布式 MD5；完整校验耗时
+包含在 Stage3 中。详见 [MPI 协议与限制](src/gzip/README.md#mpi-input)。
 
 `CPE_LDM_MODE` 只控制显式私有对象放置，不改变运行时 cache、栈、SIMD 或算法。
 模式0关闭新池和历史手工 LDM 申请；模式1关闭旧手工放置，使用每 CPE 32 KiB
@@ -115,7 +171,7 @@ bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0
 逐字节MD5，不排序、不创建SAM文件，结束时报告MD5、字节数和记录数。
 不能与MPI、discard或OUTPUT_RMA_ONLY组合；详见[流式校验](docs/SAM_STREAM_MD5.md)。
 
-`MPI_EXACT_READ_INDEX=1` 用于正确性检查。程序会在比对前由 rank 0 扫描完整 FASTQ，建立精确的记录前缀索引。
+对于未压缩 FASTQ，`MPI_EXACT_READ_INDEX=1` 用于正确性检查，程序会在比对前由 rank 0 扫描完整文件，建立精确的记录前缀索引。MPI gzip 则在线累计精确前缀，不预扫描。
 
 动态 MPI 输入在 FASTQ 前 90% 使用配置的大块；最后 10% 使用四分之一大小的尾部块，最后两轮 rank 再使用四分之一大小的细尾块。可通过 `SWBWA_MPI_TAIL_PERCENT=0` 关闭尾部细分，或通过 `SWBWA_MPI_FINE_TAIL_WAVES=0` 保留中等尾部而关闭细尾区域。
 
@@ -288,7 +344,7 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 
 `OUTPUT_MODE=split` 为每个 rank 生成独立输出；`single_unordered` 使用 MPI RMA 原子申请单文件区间，但不保证记录顺序；`discard` 不写 SAM，适合测量 stage2 性能。
 
-新增实验模式 `OUTPUT_MODE=single_ordered`：需要 MPI dynamic，自动选择全局单调
+对于未压缩 FASTQ，实验模式 `OUTPUT_MODE=single_ordered` 需要 MPI dynamic，自动选择全局单调
 input ticket；若显式设置 `SWBWA_MPI_TICKET_MODE=distributed` 则报错，避免有界
 队列等待前缀时发生环形依赖。它通过 RMA 传递64位 chunk offset，每个 rank 保留
 自己的 SAM 并直接 pwrite，不需要排序、不搬运 SAM 到 master，也不逐chunk做全局

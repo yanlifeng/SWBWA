@@ -3,6 +3,10 @@
 
 #include "swbwa_config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef void (*swbwa_host_work_fn)(void *data, int worker, int workers);
 
 #if SWBWA_HOST_MPE_THREADS > 1
@@ -24,4 +28,7 @@ static inline void swbwa_host_workers_run_ready(swbwa_host_work_fn function, voi
 }
 #endif
 
+#ifdef __cplusplus
+}
+#endif
 #endif

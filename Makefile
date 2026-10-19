@@ -37,6 +37,7 @@ CPE_PROFILE_CG      ?= $(if $(filter single,$(EXEC_MODE)),0,5)
 KSW_U8_MODE         ?= int32_16
 KSW_I16_MODE        ?= int32_8
 MATESW_DUAL_FORWARD ?= 1
+GZIP_INPUT          ?= 1
 LWPF3_DIR            ?= ../lwpf3
 
 USE_MPI              ?= 1
@@ -63,6 +64,9 @@ endif
 VALID_EXEC_MODES     := single cgs cgs_cross
 VALID_CPE_ALLOCATORS := system pool
 VALID_BOOLEAN_VALUES := 0 1
+ifeq ($(filter $(GZIP_INPUT),$(VALID_BOOLEAN_VALUES)),)
+$(error GZIP_INPUT must be 0 or 1)
+endif
 VALID_KSW_U8_MODES    := int32_16 float16_16 float16_32
 VALID_KSW_I16_MODES   := scalar_8 int32_8
 VALID_MPI_INPUT_MODES := static dynamic
@@ -85,8 +89,8 @@ ifeq ($(filter $(VALID_BOOLEAN_VALUES),$(OUTPUT_RMA_ONLY)),)
 $(error OUTPUT_RMA_ONLY must be 0 or 1)
 endif
 ifeq ($(OUTPUT_RMA_ONLY),1)
-ifneq ($(USE_MPI):$(MPI_INPUT_MODE),1:dynamic)
-$(error OUTPUT_RMA_ONLY=1 requires MPI dynamic input)
+ifneq ($(USE_MPI),1)
+$(error OUTPUT_RMA_ONLY=1 requires MPI input)
 endif
 ifeq ($(filter $(OUTPUT_MODE),single_unordered single_ordered),)
 $(error OUTPUT_RMA_ONLY=1 requires single-file output)
@@ -183,8 +187,13 @@ ifeq ($(USE_MPI):$(OUTPUT_MODE),0:single_unordered)
 $(error OUTPUT_MODE=single_unordered requires USE_MPI=1)
 endif
 ifeq ($(OUTPUT_MODE),single_ordered)
-ifneq ($(USE_MPI):$(MPI_INPUT_MODE),1:dynamic)
-$(error OUTPUT_MODE=single_ordered requires USE_MPI=1 MPI_INPUT_MODE=dynamic)
+ifneq ($(USE_MPI),1)
+$(error OUTPUT_MODE=single_ordered requires USE_MPI=1)
+endif
+ifneq ($(MPI_INPUT_MODE),dynamic)
+ifneq ($(GZIP_INPUT),1)
+$(error OUTPUT_MODE=single_ordered requires dynamic FASTQ input or GZIP_INPUT=1)
+endif
 endif
 endif
 ifeq ($(CPE_DISCARD_DIGEST):$(OUTPUT_MODE),1:discard)
@@ -227,6 +236,7 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_KSW_U8_MODE=$(KSW_U8_MODE_VALUE_$(KSW_U8_MODE)) \
 	-DSWBWA_KSW_I16_MODE=$(KSW_I16_MODE_VALUE_$(KSW_I16_MODE)) \
 	-DSWBWA_ENABLE_MATESW_DUAL_FORWARD=$(MATESW_DUAL_FORWARD) \
+	-DSWBWA_ENABLE_GZIP_INPUT=$(GZIP_INPUT) \
 	-DSWBWA_USE_MPI=$(USE_MPI) \
 	-DSWBWA_ENABLE_CPE_KERNEL_OPT=$(CPE_KERNEL_OPT) \
 	-DSWBWA_CPE_LDM_MODE=$(CPE_LDM_MODE) \
@@ -290,8 +300,21 @@ APP_OBJS := $(addprefix $(HOST_DIR)/, \
 SLAVE_DIR     := src/slave
 SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
 SLAVE_OBJECTS := $(SLAVE_SOURCES:.c=.o)
+GZIP_DIR := src/gzip
+GZIP_OBJECTS :=
+ifeq ($(GZIP_INPUT),1)
+GZIP_HOST_OBJECTS := $(addprefix $(GZIP_DIR)/, input.o gzip_stream.o rapid_reader.o)
+ifeq ($(USE_MPI),1)
+GZIP_HOST_OBJECTS += $(addprefix $(GZIP_DIR)/, mpi_decoder.o mpi_input.o fastq_frame.o)
+endif
+GZIP_CPE_OBJECTS := $(addprefix $(GZIP_DIR)/, codec_job.o backend_cpe.o rapid_firstpass.o)
+GZIP_ZLIB_OBJECTS := $(addprefix $(GZIP_DIR)/z_, $(addsuffix .o,adler32 crc32 deflate trees zutil))
+GZIP_OBJECTS := $(GZIP_HOST_OBJECTS) $(GZIP_CPE_OBJECTS) $(GZIP_ZLIB_OBJECTS) $(GZIP_DIR)/backend_swbwa.o
+GZIP_FLAGS := -DSWBWA_CODEC_RAPID=1 -DSWBWA_CODEC_LDM=2
+GZIP_CPE_FLAGS := $(GZIP_FLAGS) -DSWBWA_CODEC_CPE=1 -DZ_PREFIX -I$(GZIP_DIR)/vendor/zlib
+endif
 DEPFILES      := $(LIB_OBJS:.o=.d) $(APP_OBJS:.o=.d) \
-	$(HOST_DIR)/main.d $(SLAVE_OBJECTS:.o=.d)
+	$(HOST_DIR)/main.d $(SLAVE_OBJECTS:.o=.d) $(GZIP_OBJECTS:.o=.d)
 
 .PHONY: all clean depend print-config
 .SUFFIXES:
@@ -314,6 +337,7 @@ endif
 	@echo "CPE_KERNEL_OPT=$(CPE_KERNEL_OPT)"
 	@echo "CPE_LDM_MODE=$(CPE_LDM_MODE)"
 	@echo "CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST)"
+	@echo "GZIP_INPUT=$(GZIP_INPUT)"
 	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
 	@echo "OUTPUT_RMA_ONLY=$(OUTPUT_RMA_ONLY)"
 	@echo "DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES)"
@@ -325,6 +349,24 @@ endif
 	@echo "MPI_LINK_VARIANT=$(MPI_LINK_VARIANT)"
 
 # Compile rules
+$(GZIP_HOST_OBJECTS): $(GZIP_DIR)/%.o: $(GZIP_DIR)/%.cpp $(CONFIG_HEADER)
+	$(CXX) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(CXXFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_FLAGS) $< -o $@
+
+$(GZIP_DIR)/backend_swbwa.o: $(GZIP_DIR)/backend_swbwa.c $(CONFIG_HEADER)
+	$(CC) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
+
+$(GZIP_DIR)/codec_job.o: $(GZIP_DIR)/codec_job.c
+	$(CC) $(SLAVE_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_CPE_FLAGS) $< -o $@
+
+$(GZIP_DIR)/backend_cpe.o: $(GZIP_DIR)/backend_cpe.c
+	$(CC) $(SLAVE_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_CPE_FLAGS) $< -o $@
+
+$(GZIP_DIR)/rapid_firstpass.o: $(GZIP_DIR)/rapid_firstpass.cpp
+	$(CXX) $(SLAVE_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_CPE_FLAGS) -std=c++17 -DNDEBUG -I$(GZIP_DIR)/vendor/rapidgzip $< -o $@
+
+$(GZIP_DIR)/z_%.o: $(GZIP_DIR)/vendor/zlib/%.c
+	$(CC) $(SLAVE_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_CPE_FLAGS) $< -o $@
+
 $(SLAVE_DIR)/%.o: $(SLAVE_DIR)/%.c $(CONFIG_HEADER)
 	$(CC) $(SLAVE_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
@@ -335,13 +377,13 @@ $(HOST_DIR)/%.o: $(HOST_DIR)/%.cpp $(CONFIG_HEADER)
 	$(CXX) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(CXXFLAGS) $(DFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
 # Link and archive rules
-$(PROG): libswbwa.a $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS)
+$(PROG): libswbwa.a $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) $(GZIP_OBJECTS)
 
 ifeq ($(USE_MPI),1)
 	@set -e; \
 	link_cmd="$$( \
 		$(CXX) -show $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) \
-		$(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lswbwa $(LIBS) \
+		$(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) $(GZIP_OBJECTS) -o $@ -L. -lswbwa $(LIBS) \
 		| sed 's#/single_static#/multi_static#g' \
 	)"; \
 	case "$$link_cmd" in \
@@ -361,7 +403,7 @@ ifeq ($(USE_MPI),1)
 	echo "$$link_cmd"; \
 	eval "$$link_cmd"
 else
-	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) -o $@ -L. -lswbwa $(LIBS)
+	$(CXX) $(HYBRID_FLAGS) $(CFLAGS) $(LDFLAGS) $(APP_OBJS) $(HOST_DIR)/main.o $(SLAVE_OBJECTS) $(GZIP_OBJECTS) -o $@ -L. -lswbwa $(LIBS)
 endif
 
 libswbwa.a: $(LIB_OBJS)
@@ -370,7 +412,8 @@ libswbwa.a: $(LIB_OBJS)
 # Maintenance
 clean:
 	rm -f gmon.out a.out $(PROG) *.a $(HOST_DIR)/*.o $(HOST_DIR)/*.d \
-		$(SLAVE_DIR)/*.o $(SLAVE_DIR)/*.d
+		$(SLAVE_DIR)/*.o $(SLAVE_DIR)/*.d $(GZIP_DIR)/*.o $(GZIP_DIR)/*.d \
+		$(PROG).debug $(PROG).compact
 
 depend:
 	@echo "Dependency files are generated automatically during compilation."

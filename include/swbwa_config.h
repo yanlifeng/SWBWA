@@ -28,6 +28,11 @@
 #define SWBWA_USE_MPI 0
 #endif
 
+/* The Makefile enables the optional C++ gzip reader in production builds. */
+#ifndef SWBWA_ENABLE_GZIP_INPUT
+#define SWBWA_ENABLE_GZIP_INPUT 0
+#endif
+
 #if SWBWA_USE_MPI != 0 && SWBWA_USE_MPI != 1
 #error "SWBWA_USE_MPI must be 0 or 1"
 #endif
@@ -86,8 +91,8 @@
 #error "single-file MPI output requires SWBWA_USE_MPI=1"
 #endif
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && \
-    SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_DYNAMIC
-#error "single_ordered requires dynamic input with monotonic global tickets"
+    SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_DYNAMIC && !SWBWA_ENABLE_GZIP_INPUT
+#error "single_ordered requires dynamic FASTQ input or online gzip input"
 #endif
 
 /* Profiling only: reserve full output extents, but do not create/write a SAM. */
@@ -98,9 +103,8 @@
 #error "SWBWA_OUTPUT_RMA_ONLY must be 0 or 1"
 #endif
 #if SWBWA_OUTPUT_RMA_ONLY && (!SWBWA_USE_MPI || \
-    SWBWA_MPI_INPUT_MODE != SWBWA_MPI_INPUT_DYNAMIC || \
     !SWBWA_OUTPUT_SINGLE_FILE)
-#error "SWBWA_OUTPUT_RMA_ONLY requires MPI dynamic single-file output"
+#error "SWBWA_OUTPUT_RMA_ONLY requires MPI single-file output"
 #endif
 
 /* Zero hashes each complete SAM blob; a positive limit is profiling only. */

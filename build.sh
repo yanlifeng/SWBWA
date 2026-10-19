@@ -59,3 +59,11 @@ build_swbwa "$jobs" "$@"
 python3 tools/xlink.py "${executable}"
 swreadelf -r "${executable}" > "${executable}.relocations"
 python3 tools/get_tls.py "${executable}.relocations"
+
+# Large C++ decoder debug sections can exceed the Sunway launcher's limits.
+# Relocation maps must be extracted before metadata is stripped.
+if [[ -f src/gzip/rapid_firstpass.o ]]; then
+    cp "$executable" "$executable.debug"
+    python3 tools/compact_elf.py "$executable.debug" "$executable.compact"
+    mv "$executable.compact" "$executable"
+fi

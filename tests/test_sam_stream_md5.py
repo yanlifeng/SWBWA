@@ -7,6 +7,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 SAM = b"r1\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\n"
@@ -17,7 +18,7 @@ def build_md5_object(directory):
     subprocess.run(shlex.split(os.getenv("CXX", "c++")) + [
         "-std=c++11", "-O2", "-Iinclude", "-c", "src/host/swbwa_sam_md5.cpp",
         "-o", obj], cwd=ROOT, check=True)
-    return [obj, "-lstdc++"]
+    return [obj, "-lstdc++", "-lz"]
 
 
 def report(text):
@@ -49,7 +50,7 @@ int main(int argc, char **argv) {
                   "-fno-pie", "-no-pie", "-I" + str(ROOT / "include")]
         helper = str(ROOT / "src/host/swbwa_sam_md5.cpp")
         binary = tmp / "stream"
-        subprocess.run(["c++", "-std=c++11"] + common + [str(harness), helper, "-o", str(binary)], check=True)
+        subprocess.run(["c++", "-std=c++11"] + common + [str(harness), helper, "-lz", "-o", str(binary)], check=True)
         headers = b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:1000\n@CO\t" + b"x"*70000 + b"\n"
         for prefix in (b"", headers):
             for body in (SAM, SAM * 10, SAM + b"@SQ\tnot-a-leading-header\n", b"x\n"):
@@ -58,6 +59,7 @@ int main(int argc, char **argv) {
                                             capture_output=True, check=True)
                     value = report(result.stdout)
                     assert value["md5"] == hashlib.md5(body).hexdigest(), (prefix[:4], block)
+                    assert value["crc32"] == f"{zlib.crc32(body):08x}"
                     assert value["bytes"] == len(body) and value["records"] == body.count(b"\n")
         for bad in (b"", headers, b"@SQ\tunterminated", SAM[:-1], SAM+b"\0", b"@CO\tbad\0\n"+SAM):
             assert subprocess.run([str(binary), "3", "1"], input=bad, capture_output=True).returncode != 0
@@ -100,7 +102,7 @@ int main(int argc, char **argv) {
                 "-c", str(source), "-o", str(obj)], check=True)
             objects.append(str(obj))
         writer = tmp / "writer"
-        subprocess.run(["c++", "-std=c++11"] + common + objects + [helper, "-o", str(writer)], check=True)
+        subprocess.run(["c++", "-std=c++11"] + common + objects + [helper, "-lz", "-o", str(writer)], check=True)
         output = tmp / "actual.sam"
         result = subprocess.run([str(writer), str(output)], capture_output=True, check=True)
         assert report(result.stderr)["md5"] == hashlib.md5(SAM*100).hexdigest()

@@ -102,6 +102,10 @@ void err_fatal(const char *header, const char *fmt, ...)
 	vfprintf(stderr, fmt, args);
 	fprintf(stderr, "\n");
 	va_end(args);
+#if SWBWA_USE_MPI
+	fflush(stderr);
+	swbwa_mpi_abort(NULL);
+#endif
 	exit(EXIT_FAILURE);
 }
 
@@ -113,18 +117,30 @@ void err_fatal_core(const char *header, const char *fmt, ...)
 	vfprintf(stderr, fmt, args);
 	fprintf(stderr, " Abort!\n");
 	va_end(args);
+#if SWBWA_USE_MPI
+	fflush(stderr);
+	swbwa_mpi_abort(NULL);
+#endif
 	abort();
 }
 
 void _err_fatal_simple(const char *func, const char *msg)
 {
 	fprintf(stderr, "[%s] %s\n", func, msg);
+#if SWBWA_USE_MPI
+	fflush(stderr);
+	swbwa_mpi_abort(NULL);
+#endif
 	exit(EXIT_FAILURE);
 }
 
 void _err_fatal_simple_core(const char *func, const char *msg)
 {
 	fprintf(stderr, "[%s] %s Abort!\n", func, msg);
+#if SWBWA_USE_MPI
+	fflush(stderr);
+	swbwa_mpi_abort(NULL);
+#endif
 	abort();
 }
 

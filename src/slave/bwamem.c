@@ -1752,7 +1752,7 @@ static void copy_fastq_field(char **destination, char *output,
     *output_position += length + 1;
 }
 
-static int parse_fastq_record(char *input, long long input_size,
+static int parse_fastq_record_legacy(char *input, long long input_size,
                               long long *input_position, char *output,
                               long long output_size, long long *output_position,
                               bseq1_t *record)
@@ -1817,6 +1817,40 @@ static int count_fastq_records(char *input, long long input_size)
     return (int)(line_count / 4);
 }
 
+static int parse_fastq_record_checked(char *input, long long input_size,
+                                      long long *input_position, char *output,
+                                      long long output_size, long long *output_position,
+                                      bseq1_t *record)
+{
+    swbwa_fastq_record_view view;
+    size_t position = (size_t)*input_position;
+    int status = swbwa_fastq_record_next(input, (size_t)input_size, &position, &view);
+    if (status < 0) {
+        swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_TRUNCATED,
+                       (long)*input_position, (long)input_size, -1);
+    }
+    if (!status) return 0;
+    *input_position = (long long)position;
+    memset(record, 0, sizeof(*record));
+    record->l_seq = (int)view.length;
+    copy_fastq_field(&record->name, output, output_position, output_size, view.name, (int)view.name_size);
+    copy_fastq_field(&record->seq, output, output_position, output_size, view.seq, (int)view.length);
+    copy_fastq_field(&record->qual, output, output_position, output_size, view.qual, (int)view.length);
+    return 1;
+}
+
+static int parse_fastq_record(char *input, long long input_size,
+                              long long *input_position, char *output,
+                              long long output_size, long long *output_position,
+                              bseq1_t *record, int checked)
+{
+    if (checked)
+        return parse_fastq_record_checked(input, input_size, input_position,
+                                          output, output_size, output_position, record);
+    return parse_fastq_record_legacy(input, input_size, input_position,
+                                     output, output_size, output_position, record);
+}
+
 static void sync_format_workers(void)
 {
 #if SWBWA_USE_CGS
@@ -1832,13 +1866,13 @@ __uncached long format_partition_read_counts[SWBWA_CPE_COUNT];
 
 int format_seqs(char *buffer, long long buffer_size, char *buffer2,
                 long long buffer_size2, char *tmp_buffer, char *tmp_buffer2,
-                long long tmp_buffer_size, void *data)
+                long long tmp_buffer_size, void *data, const swbwa_fastq_partition_t *partition)
 {
     worker_t *w = (worker_t*)data;
     const int is_paired = buffer_size2 > 0;
     const int max_work_items = is_paired ?
         SWBWA_MAX_READS_PER_BATCH / 2 : SWBWA_MAX_READS_PER_BATCH;
-    const int local_read_count = count_fastq_records(buffer, buffer_size);
+    const int local_read_count = partition ? (int)partition->records : count_fastq_records(buffer, buffer_size);
     long first_read_index = 0;
     long total_read_count = 0;
     long long buffer_pos = 0;
@@ -1863,16 +1897,21 @@ int format_seqs(char *buffer, long long buffer_size, char *buffer2,
 
     while (parse_fastq_record(buffer, buffer_size, &buffer_pos,
                               tmp_buffer, tmp_buffer_size, &tmp_buffer_pos,
-                              &seq)) {
+                              &seq, partition != NULL)) {
         int seq_count = (int)first_read_index + local_read_index;
 
         if (is_paired &&
             !parse_fastq_record(buffer2, buffer_size2, &buffer_pos2,
                                 tmp_buffer2, tmp_buffer_size, &tmp_buffer_pos2,
-                                &seq2)) {
+                                &seq2, partition != NULL)) {
             swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_PAIR_SHORT,
                            (long)buffer_pos2, (long)buffer_size2,
                            local_read_index);
+        }
+
+        if (partition && is_paired && strcmp(seq.name, seq2.name) != 0) {
+            swbwa_cpe_fail(SWBWA_CPE_ERR_FASTQ_COUNT_MISMATCH,
+                           (long)first_read_index + local_read_index, -1, -1);
         }
 
         if (local_read_index >= local_read_count) {

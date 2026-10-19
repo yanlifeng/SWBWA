@@ -9,6 +9,7 @@
 #include <cstring>
 #include <chrono>
 #include <cstdio>
+#include "swbwa_pipeline.h"
 
 #include <cassert>
 
@@ -167,6 +168,8 @@ class BatchQueue {
     std::vector<DataType> items;
     size_t head = 0, tail = 0, count = 0;
     bool closed = false;
+    void (*processor_call)(void *) = nullptr;
+    void *processor_argument = nullptr;
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_cond_t changed = PTHREAD_COND_INITIALIZER;
 
@@ -218,7 +221,19 @@ public:
     bool pop(DataType& item, QueueWait& stats)
     {
         checked(pthread_mutex_lock(&mutex));
-        wait([this] { return count != 0 || closed; }, stats);
+        for (;;) {
+            wait([this] { return processor_call || count != 0 || closed; }, stats);
+            if (!processor_call) break;
+            void (*call)(void *) = processor_call;
+            void *argument = processor_argument;
+            /* Do not hold the queue mutex during a CPE launch or MPI progress. */
+            checked(pthread_mutex_unlock(&mutex));
+            call(argument);
+            checked(pthread_mutex_lock(&mutex));
+            processor_call = nullptr;
+            processor_argument = nullptr;
+            checked(pthread_cond_broadcast(&changed));
+        }
         if (!count) {
             checked(pthread_mutex_unlock(&mutex));
             return false;
@@ -231,6 +246,17 @@ public:
         return true;
     }
 
+    void call_on_consumer(void (*call)(void *), void *argument)
+    {
+        checked(pthread_mutex_lock(&mutex));
+        assert(call && !processor_call && !closed);
+        processor_argument = argument;
+        processor_call = call;
+        checked(pthread_cond_broadcast(&changed));
+        while (processor_call) checked(pthread_cond_wait(&changed, &mutex));
+        checked(pthread_mutex_unlock(&mutex));
+    }
+
     void close()
     {
         checked(pthread_mutex_lock(&mutex));
@@ -240,8 +266,20 @@ public:
     }
 };
 
+static thread_local BatchQueue *reader_processor_queue;
+
+extern "C" void swbwa_pipeline_call_on_processor(void (*call)(void *), void *argument)
+{
+    assert(call);
+    if (reader_processor_queue)
+        reader_processor_queue->call_on_consumer(call, argument);
+    else
+        call(argument);
+}
+
 static void reader_thread(ktp_t* p, BatchQueue& queue)
 {
+    reader_processor_queue = &queue;
     for (;;) {
         queue.wait_for_space(pipeline_waits.reader_full);
         DataType item = p->func(p->shared, 0, nullptr);
@@ -249,6 +287,7 @@ static void reader_thread(ktp_t* p, BatchQueue& queue)
         queue.push(item);
     }
     queue.close();
+    reader_processor_queue = nullptr;
 }
 
 static void processor_thread(ktp_t* p, BatchQueue& input, BatchQueue& output)

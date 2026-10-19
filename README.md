@@ -11,6 +11,7 @@ SWBWA is a high-accuracy, high-performance short-read aligner optimized for the 
 
 - `src/host/`: MPE C/C++ source code, including the alignment pipeline, MPI input/output, and host-side helpers.
 - `src/slave/`: CPE source code and headers used only by the slave side.
+- `src/gzip/`: index-free gzip decoding, FASTQ batching and third-party codec notices.
 - `include/`: public headers, configuration headers, and the generated CPE layout header.
 - `tools/`: scripts for extracting addresses and TLS information during cross-segment builds.
 - `tests/`: MPI/RMA and runtime diagnostic programs excluded from the default build.
@@ -77,6 +78,7 @@ The supported build variables are:
 | `CPE_LDM_MODE` | `0` off, `1` legacy pool, `2` manual, `3` unified pool | `3` for non-MPI `cgs_cross + pool`, otherwise `2` |
 | `CPE_DISCARD_DIGEST` | `0`, `1` | `1` for non-MPI `cgs_cross + pool` with `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`; `0` otherwise |
 | `USE_MPI` | `0`, `1` | `1` |
+| `GZIP_INPUT` | `0`, `1` | `1` |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
 | `OUTPUT_MODE` | `split`, `single_unordered`, `single_ordered`, `discard` | `single_unordered` with MPI; `split` otherwise |
 | `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
@@ -86,7 +88,7 @@ The supported build variables are:
 | `MATESW_DUAL_FORWARD` | `0`, `1` | `1` |
 | `CPE_PROFILE` | `0`, `1` | `0` |
 | `CPE_PROFILE_CG` | `0..5` | `0` for `single`; `5` otherwise |
-| `OUTPUT_RMA_ONLY` | `0`, `1` (dynamic MPI single-file profiling only) | `0` |
+| `OUTPUT_RMA_ONLY` | `0`, `1` (MPI single-file profiling only) | `0` |
 | `DISCARD_HASH_BYTES` | nonnegative byte count; `0` hashes complete blobs | `0` |
 
 `float16_32` is experimental and is not SAM-equivalent to the default integer
@@ -94,6 +96,66 @@ kernel. `CPE_PROFILE=1` needs an installed LWPF3 library (`LWPF3_DIR`); profilin
 and detailed runtime diagnostics are disabled unless explicitly requested.
 
 `MPI_INPUT_MODE` and `MPI_EXACT_READ_INDEX` are only effective when `USE_MPI=1`. `OUTPUT_MODE=discard` is also supported without MPI; non-MPI `split` retains the ordinary single-file writer. `single_unordered` requires MPI.
+
+On Sunway, startup sets the process-local `SWCH_HANG_WHEN_ERROR=0` before
+`MPI_Init_thread`, overriding inherited debug-hang settings so fatal
+`MPI_Abort` calls terminate the job instead of spinning in `MPID_Abort`.
+The system MPI configuration is untouched. Metadata and CRC checks remain
+enabled, and a failed run is never reported as successful.
+
+### Gzip input
+
+Ordinary gzip FASTQ input is detected by its magic bytes. For parallel decoding:
+
+```bash
+bash build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 GZIP_INPUT=1
+# Submit the executable with the same full-chip resource settings as plain FASTQ.
+./SWBWA mem -t 1 -1 -I 170,80,500,1 -o output.sam reference.fa reads_1.fastq.gz reads_2.fastq.gz
+```
+
+The default `SWBWA_GZIP_READER=rapid` uses the CPEs without a prebuilt index or
+a preliminary full serial decompression. Set `SWBWA_GZIP_READER=zlib` for a
+serial MPE decoder control. `-K` still sizes decoded FASTQ batches per CG;
+the compressed discovery interval is separate. Decoding and alignment share
+the CPE runtime and cannot execute simultaneously. Their queue wait is
+reported separately. All existing SAM generation/output paths are retained.
+
+Parallel decoding uses the selected CPE runtime (`single`, `cgs`, or
+`cgs_cross`). Inputs must be four-line, LF-terminated FASTQ.
+In the non-MPI path, both PE inputs must have compatible decoded record layouts at CPE partition
+boundaries; incompatible layouts are rejected. Mixed plain/gzip mates and
+interleaved `-p` gzip input are not supported. See [codec details](src/gzip/README.md)
+and [codec regression tests](tests/test_gzip_input.py).
+
+Experimental MPI gzip input uses the same CPE decoder on every rank:
+
+```bash
+bash build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=1 \
+    OUTPUT_MODE=split GZIP_INPUT=1 CPE_LDM_MODE=2
+```
+
+Use one full-chip rank per node for `cgs` / `cgs_cross`. For six ranks per
+node, build with `EXEC_MODE=single CPE_ALLOCATOR=system` and allocate one
+CG per rank. MPI gzip requires the `rapid` backend and
+supports `split`, `single_unordered`, `single_ordered` and `discard`.
+Ranks cooperatively decode the compressed stream and redistribute complete
+records into ordinal-based chunks. They do not gather the full FASTQ at rank 0
+or build a preliminary index. Exact read indices are accumulated online,
+regardless of `MPI_EXACT_READ_INDEX`. This path bypasses the plain-FASTQ
+`MPI_INPUT_MODE` scheduler and tail refinement: chunks are assigned round-robin,
+with a fixed record count estimated from the first decoded data and `-K`.
+It is an online collective reader, not independent arbitrary-offset random access.
+Gzip `single_ordered` uses an online RMA prefix and validates the exact chunk
+count after EOF; it also supports `MPI_INPUT_MODE=static`. For no-file tests,
+use `OUTPUT_RMA_ONLY=1`; set `SWBWA_OUTPUT_SAMPLE_READS=0` for full packed-SAM
+hashes and per-chunk CRC32 instead of the default 100-read sample.
+The MPI Reader reuses CPE-produced page newline counts rather than scanning
+and parsing every record on the MPE. Byte-based R1 partitions and independently
+corrected R2 boundaries refer to the same record ordinals; unequal mate byte
+layouts are supported. Full record/name validation happens in the CPE formatter.
+Local destinations bypass MPI self-packing; necessary large copies use the MPE
+helper pool. Logs distinguish local Reader work from MPI and codec-runtime waits.
+See [MPI protocol and limits](src/gzip/README.md#mpi-input).
 
 `CPE_LDM_MODE` controls explicit private-object placement, not runtime cache,
 stack, SIMD or algorithm choices. Mode 0 disables both automatic and manual
@@ -123,7 +185,7 @@ count on successful close. It does not sort and creates no output file.
 It cannot be combined with MPI, discard or output-RMA-only benchmarking.
 See [streaming validation](docs/SAM_STREAM_MD5.md).
 
-`MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the complete FASTQ once before alignment to build exact record prefixes.
+For plain FASTQ, `MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the complete FASTQ once before alignment to build exact record prefixes. MPI gzip instead accumulates exact prefixes online.
 
 Dynamic MPI input uses the configured large chunks for the first 90% of the FASTQ. In the final 10% it uses chunks one quarter that size, and the final two rank waves use chunks one quarter of the medium-tail size. Set `SWBWA_MPI_TAIL_PERCENT=0` to disable tail refinement, or set `SWBWA_MPI_FINE_TAIL_WAVES=0` to keep the 10% medium tail without the final fine region.
 
@@ -305,7 +367,7 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 
 `OUTPUT_MODE=split` creates one output file per rank. `single_unordered` uses MPI RMA to atomically reserve ranges in one output file, but does not guarantee record order. `discard` writes no SAM and is useful for measuring stage 2 performance.
 
-`OUTPUT_MODE=single_ordered` is an experimental dynamic-MPI writer that preserves
+For plain FASTQ, `OUTPUT_MODE=single_ordered` is an experimental dynamic-MPI writer that preserves
 FASTQ chunk/read order without sorting. It uses global monotonic input tickets
 (automatically selected; an explicit `SWBWA_MPI_TICKET_MODE=distributed` is rejected),
 then propagates 64-bit output prefixes through RMA. Each rank keeps and writes

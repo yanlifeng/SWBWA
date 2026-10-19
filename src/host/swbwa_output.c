@@ -16,6 +16,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#if SWBWA_OUTPUT_RMA_ONLY
+#include <zlib.h>
+#endif
 
 #include "malloc_wrap.h"
 
@@ -28,7 +31,8 @@ enum { OUTPUT_SAMPLE_READS = 100 };
 typedef struct {
     int64_t id, start, end;
     int expected_reads, paired;
-    uint64_t reads, bytes, sample_reads, sample_bytes, sum, xor;
+    uint64_t reads, bytes, sample_reads, sample_bytes, sam_records, sum, xor;
+    uint32_t packed_crc32;
 } swbwa_output_sample_t;
 #endif
 
@@ -84,6 +88,7 @@ typedef struct {
 #endif
     char *name;
 #if SWBWA_OUTPUT_RMA_ONLY
+    int sample_limit;
     int chunk_active;
     swbwa_output_sample_t chunk;
     swbwa_output_sample_t *samples;
@@ -93,6 +98,7 @@ typedef struct {
     MPI_Win offset_window;
     uint64_t *offset_base;
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    int ordered_online;
     int64_t ordered_count, last_chunk;
     uint64_t ordered_empty_chunks, ordered_polls;
     double ordered_wait_seconds;
@@ -261,11 +267,12 @@ static void print_output_samples(void)
                 "[SWBWA chunk sample rank %06d/%06d] chunk=%" PRId64
                 " start=%" PRId64 " end=%" PRId64 " paired=%d"
                 " reads=%" PRIu64 " sam_bytes=%" PRIu64
-                " sample_reads=%" PRIu64 " sample_bytes=%" PRIu64
-                " sum=0x%016" PRIx64 " xor=0x%016" PRIx64 "\n",
+                " sample_reads=%" PRIu64 " sample_bytes=%" PRIu64 " sam_records=%" PRIu64
+                " sum=0x%016" PRIx64 " xor=0x%016" PRIx64
+                " packed_crc32=0x%08" PRIx32 "\n",
                 swbwa_mpi_rank(), swbwa_mpi_size(), s->id, s->start, s->end,
-                s->paired, s->reads, s->bytes, s->sample_reads, s->sample_bytes,
-                s->sum, s->xor);
+                s->paired, s->reads, s->bytes, s->sample_reads, s->sample_bytes, s->sam_records,
+                s->sum, s->xor, s->packed_crc32);
     }
     fprintf(stderr,
             "[SWBWA output RMA-only rank %06d/%06d] chunks=%zu"
@@ -275,7 +282,7 @@ static void print_output_samples(void)
             swbwa_mpi_rank(), swbwa_mpi_size(), output_state.sample_count,
             output_state.write_calls, output_state.submitted_bytes,
             output_state.reserved_bytes, output_state.reservation_calls,
-            output_state.pwrite_bytes, OUTPUT_SAMPLE_READS);
+            output_state.pwrite_bytes, output_state.sample_limit);
 }
 #endif
 
@@ -387,11 +394,29 @@ static int reserve_ordered(int64_t id, uint64_t bytes, uint64_t *offset,
     double start = output_debug_now();
     int result;
 
-    if (id < 0 || id >= output_state.ordered_count || bytes > INT64_MAX) {
+    if (id < 0 || id == INT64_MAX ||
+        (!output_state.ordered_online && id >= output_state.ordered_count) || bytes > INT64_MAX) {
         errno = EINVAL;
         return -1;
     }
-    do {
+    if (output_state.ordered_online) {
+        uint64_t ready;
+        /* Exactly one owner publishes each ID. Flush the new byte offset
+         * before its ID, so the next owner cannot observe a stale prefix. */
+        do {
+            result = MPI_Fetch_and_op(NULL, &ready, MPI_UINT64_T, 0, 0,
+                                      MPI_NO_OP, output_state.offset_window);
+            if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
+            if (mpi_check(result, "read online ordered ID") != 0) return -1;
+            ++polls;
+            if (ready > (uint64_t)id) { errno = EINVAL; return -1; }
+            if (ready != (uint64_t)id) sched_yield();
+        } while (ready != (uint64_t)id);
+        result = MPI_Fetch_and_op(NULL, offset, MPI_UINT64_T, 0, 1,
+                                  MPI_NO_OP, output_state.offset_window);
+        if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
+        if (mpi_check(result, "read online ordered offset") != 0) return -1;
+    } else do {
         result = MPI_Fetch_and_op(NULL, offset, MPI_UINT64_T, 0, (MPI_Aint)id,
                                   MPI_NO_OP, output_state.offset_window);
         if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
@@ -406,10 +431,18 @@ static int reserve_ordered(int64_t id, uint64_t bytes, uint64_t *offset,
     next = *offset + bytes;
     /* Accumulate/NO_OP provides atomic access to each prefix slot; ordinary
      * concurrent Put/Get would not provide this atomicity contract. */
-    result = MPI_Accumulate(&next, 1, MPI_UINT64_T, 0, (MPI_Aint)(id + 1),
+    result = MPI_Accumulate(&next, 1, MPI_UINT64_T, 0,
+                            output_state.ordered_online ? 1 : (MPI_Aint)(id + 1),
                             1, MPI_UINT64_T, MPI_REPLACE, output_state.offset_window);
     if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
     if (mpi_check(result, "publish ordered prefix") != 0) return -1;
+    if (output_state.ordered_online) {
+        uint64_t ready = (uint64_t)id + 1;
+        result = MPI_Accumulate(&ready, 1, MPI_UINT64_T, 0, 0, 1, MPI_UINT64_T,
+                                MPI_REPLACE, output_state.offset_window);
+        if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
+        if (mpi_check(result, "publish online ordered ID") != 0) return -1;
+    }
     if (record_stats) {
         double seconds = output_debug_now() - start;
         ++output_state.reservation_calls;
@@ -502,7 +535,7 @@ static int flush_single_unordered(void)
 }
 #endif
 
-int swbwa_output_open(const char *path, int debug_enabled)
+static int output_open(const char *path, int debug_enabled, int online)
 {
     const char *md5_option = getenv("SWBWA_OUTPUT_MD5");
     int stream_md5 = md5_option != NULL && strcmp(md5_option, "1") == 0;
@@ -538,6 +571,28 @@ int swbwa_output_open(const char *path, int debug_enabled)
     output_state.fd = -1;
     output_state.capacity = capacity;
     output_state.debug_enabled = debug_enabled != 0 || SWBWA_OUTPUT_RMA_ONLY;
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    output_state.ordered_online = online;
+#else
+    (void)online;
+#endif
+#if SWBWA_OUTPUT_RMA_ONLY
+    {
+        const char *value = getenv("SWBWA_OUTPUT_SAMPLE_READS");
+        output_state.sample_limit = OUTPUT_SAMPLE_READS;
+        if (value && *value) {
+            char *end;
+            long limit;
+            errno = 0;
+            limit = strtol(value, &end, 10);
+            if (errno || *end || limit < 0 || limit > INT_MAX) {
+                errno = EINVAL;
+                return -1;
+            }
+            output_state.sample_limit = (int)limit;
+        }
+    }
+#endif
 #if !(SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
     output_state.buffer = malloc(capacity);
     if (output_state.buffer == NULL) return -1;
@@ -614,15 +669,24 @@ int swbwa_output_open(const char *path, int debug_enabled)
 #endif
     size_t window_bytes = sizeof(uint64_t);
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
-    output_state.ordered_count = swbwa_mpi_fastq_scheduler_chunk_count();
+    output_state.ordered_count = -1;
     output_state.last_chunk = -1;
-    if (output_state.ordered_count < 0 ||
-        (uint64_t)output_state.ordered_count >= (uint64_t)PTRDIFF_MAX / sizeof(uint64_t) ||
-        strcmp(swbwa_mpi_fastq_scheduler_ticket_mode(), "global") != 0) {
-        errno = EINVAL;
-        goto fail;
+    if (!online) {
+#if SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
+        output_state.ordered_count = swbwa_mpi_fastq_scheduler_chunk_count();
+        if (strcmp(swbwa_mpi_fastq_scheduler_ticket_mode(), "global") != 0) {
+            errno = EINVAL;
+            goto fail;
+        }
+#endif
+        if (output_state.ordered_count < 0 ||
+            (uint64_t)output_state.ordered_count >= (uint64_t)PTRDIFF_MAX / sizeof(uint64_t)) {
+            errno = EINVAL;
+            goto fail;
+        }
     }
-    window_bytes = ((size_t)output_state.ordered_count + 1) * sizeof(uint64_t);
+    window_bytes = online ? 2 * sizeof(uint64_t)
+                          : ((size_t)output_state.ordered_count + 1) * sizeof(uint64_t);
 #endif
     if (mpi_check(MPI_Win_allocate(swbwa_mpi_rank() == 0 ? window_bytes : 0,
                                    sizeof(uint64_t), MPI_INFO_NULL, MPI_COMM_WORLD,
@@ -634,7 +698,7 @@ int swbwa_output_open(const char *path, int debug_enabled)
                   "MPI_Win_lock_all") != 0)
         goto fail_window;
     if (swbwa_mpi_rank() == 0) {
-        memset(output_state.offset_base, 0xff, window_bytes);
+        memset(output_state.offset_base, online ? 0 : 0xff, window_bytes);
         *output_state.offset_base = 0;
     }
     if (mpi_check(MPI_Win_sync(output_state.offset_window), "MPI_Win_sync") != 0)
@@ -673,6 +737,29 @@ fail:
     output_state.fd = -1;
     return -1;
 }
+
+int swbwa_output_open(const char *path, int debug_enabled)
+{
+    return output_open(path, debug_enabled, 0);
+}
+
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+int swbwa_output_open_online(const char *path, int debug_enabled)
+{
+    return output_open(path, debug_enabled, 1);
+}
+
+int swbwa_output_ordered_finish(int64_t chunks)
+{
+    if (!output_state.opened || !output_state.ordered_online || chunks < 0 ||
+        output_state.ordered_count != -1) {
+        errno = EINVAL;
+        return -1;
+    }
+    output_state.ordered_count = chunks;
+    return 0;
+}
+#endif
 
 #if SWBWA_CPE_DISCARD_DIGEST_ACTIVE
 int swbwa_output_discard_hash_active(void)
@@ -733,8 +820,15 @@ int swbwa_output_write(const void *data, size_t length)
             errno = EINVAL;
             return -1;
         }
-        if (s->reads < OUTPUT_SAMPLE_READS) {
+        if (!output_state.sample_limit || s->reads < (uint64_t)output_state.sample_limit) {
             uint64_t hash = hash_sam_record(data, length);
+            const unsigned char *cursor = data, *limit = cursor + length;
+            while (cursor < limit) {
+                const unsigned char *lf = memchr(cursor, '\n', (size_t)(limit - cursor));
+                if (!lf) break;
+                ++s->sam_records;
+                cursor = lf + 1;
+            }
             ++s->sample_reads;
             s->sample_bytes += (uint64_t)length;
             s->sum += hash;
@@ -860,6 +954,12 @@ int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
         output_pack_t task;
         size_t bytes = 0;
         double clock_start;
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+        if (id <= output_state.last_chunk) {
+            errno = EINVAL;
+            return -1;
+        }
+#endif
 
 #if SWBWA_OUTPUT_RMA_ONLY
         if (output_state.chunk_active) {
@@ -924,12 +1024,32 @@ int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
         output_state.chunk_pack_seconds += output_debug_now() - clock_start;
 #if SWBWA_OUTPUT_RMA_ONLY
         if (swbwa_output_begin_chunk(id, start, end, reads, paired) != 0) return -1;
-        for (i = 0; i < reads && i < OUTPUT_SAMPLE_READS; ++i) {
-            uint64_t hash = hash_sam_record(seqs[i].sam, task.lengths[i]);
+        size_t packed_pos = 0;
+        for (i = 0; i < reads && (!output_state.sample_limit || i < output_state.sample_limit); ++i) {
+            const char *cursor = (const char *)task.packed + packed_pos;
+            const char *limit = cursor + task.lengths[i];
+            uint64_t hash = hash_sam_record(cursor, task.lengths[i]);
+            while (cursor < limit) {
+                const char *lf = memchr(cursor, '\n', (size_t)(limit - cursor));
+                if (!lf) break;
+                ++output_state.chunk.sam_records;
+                cursor = lf + 1;
+            }
             ++output_state.chunk.sample_reads;
             output_state.chunk.sample_bytes += task.lengths[i];
             output_state.chunk.sum += hash;
             output_state.chunk.xor ^= hash;
+            packed_pos += task.lengths[i];
+        }
+        if (!output_state.sample_limit) {
+            size_t pos = 0;
+            uLong crc = crc32(0, Z_NULL, 0);
+            while (pos < bytes) {
+                uInt part = bytes - pos > UINT_MAX ? UINT_MAX : (uInt)(bytes - pos);
+                crc = crc32(crc, task.packed + pos, part);
+                pos += part;
+            }
+            output_state.chunk.packed_crc32 = (uint32_t)crc;
         }
         output_state.chunk.reads = (uint64_t)reads;
         output_state.chunk.bytes = bytes;
@@ -940,10 +1060,6 @@ int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
         output_state.used = bytes;
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
         uint64_t offset;
-        if (id <= output_state.last_chunk) {
-            errno = EINVAL;
-            return -1;
-        }
         if (reserve_ordered(id, bytes, &offset, 1) != 0) return -1;
 #if !SWBWA_OUTPUT_RMA_ONLY
         if (pwrite_all(output_state.fd, output_state.buffer, bytes, offset) != 0)
@@ -1016,7 +1132,7 @@ int swbwa_output_flush(void)
 static const char *output_debug_mode_name(void)
 {
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
-    return SWBWA_OUTPUT_RMA_ONLY ? "MPI single_ordered RMA-only (no disk writes; sampled validation)"
+    return SWBWA_OUTPUT_RMA_ONLY ? "MPI single_ordered RMA-only (no disk writes; configurable validation)"
                                 : "MPI single_ordered";
 #endif
 #if SWBWA_OUTPUT_RMA_ONLY
@@ -1227,6 +1343,36 @@ int swbwa_output_close(void)
             total != (uint64_t)output_state.ordered_count) {
             errno = EINVAL;
             status = -1;
+        }
+        if (output_state.ordered_online) {
+            uint64_t local_bytes = output_state.reserved_bytes, total_bytes = 0;
+            uint64_t ready = 0, bytes = 0;
+            int invalid, any_invalid;
+            result = MPI_Allreduce(&local_bytes, &total_bytes, 1, MPI_UINT64_T,
+                                    MPI_SUM, MPI_COMM_WORLD);
+            if (mpi_check(result, "validate online ordered bytes") != 0) status = -1;
+            result = MPI_Fetch_and_op(NULL, &ready, MPI_UINT64_T, 0, 0,
+                                      MPI_NO_OP, output_state.offset_window);
+            if (result == MPI_SUCCESS)
+                result = MPI_Fetch_and_op(NULL, &bytes, MPI_UINT64_T, 0, 1,
+                                          MPI_NO_OP, output_state.offset_window);
+            if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
+            if (mpi_check(result, "validate online ordered final prefix") != 0 ||
+                ready != total || bytes != total_bytes) {
+                errno = EINVAL;
+                status = -1;
+            }
+            invalid = status != 0;
+            result = MPI_Allreduce(&invalid, &any_invalid, 1, MPI_INT, MPI_MAX,
+                                    MPI_COMM_WORLD);
+            if (mpi_check(result, "validate online ordered status") != 0 || any_invalid) {
+                errno = EINVAL;
+                status = -1;
+            }
+            fprintf(stderr, "[SWBWA ordered stream rank %06d/%06d] chunks=%" PRIu64
+                    " expected_chunks=%" PRId64 " sam_bytes=%" PRIu64 " validated=%d\n",
+                    swbwa_mpi_rank(), swbwa_mpi_size(), total,
+                    output_state.ordered_count, bytes, status == 0);
         }
     }
 #endif

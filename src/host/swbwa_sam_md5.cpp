@@ -4,10 +4,12 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <zlib.h>
 
 namespace {
 struct Stream {
     Md5 digest;
+    uLong crc = 0;
     std::uint64_t bytes = 0, records = 0, headers = 0;
     unsigned char prefix[4] = {};
     unsigned prefix_size = 0;
@@ -23,6 +25,11 @@ int body(const unsigned char *data, size_t size)
         return fail(EOVERFLOW);
     if (!size) return 0;
     state.digest.update(data, size);
+    for (size_t pos = 0; pos < size;) {
+        const uInt part = static_cast<uInt>(std::min(size - pos, size_t(std::numeric_limits<uInt>::max())));
+        state.crc = crc32(state.crc, data + pos, part);
+        pos += part;
+    }
     state.bytes += size;
     state.records += std::count(data, data + size, '\n');
     state.last = data[size - 1];
@@ -94,10 +101,10 @@ extern "C" int swbwa_sam_md5_close(FILE *report)
     hex[32] = 0;
     state.open = false;
     int written = std::fprintf(report, "SAM_STREAM_MD5 {\"md5\": \"%s\", \"bytes\": %llu, "
-        "\"records\": %llu, \"header_lines\": %llu, \"normalization\": "
+        "\"records\": %llu, \"header_lines\": %llu, \"crc32\": \"%08lx\", \"normalization\": "
         "\"leading header only; no sorting\", \"status\": \"COMPLETE\"}\n",
         hex, (unsigned long long)state.bytes, (unsigned long long)state.records,
-        (unsigned long long)state.headers);
+        (unsigned long long)state.headers, (unsigned long)state.crc);
     return written < 0 || std::fflush(report) ? fail(EIO) : 0;
 }
 

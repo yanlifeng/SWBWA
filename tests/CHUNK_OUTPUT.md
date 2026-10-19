@@ -95,5 +95,9 @@ that symbol into the executable.
   end-to-end biological alignment accuracy test.
 
 `OUTPUT_RMA_ONLY=1` still generates and packs complete SAM and performs RMA;
-it omits disk writes and validates only the first 100 reads per chunk.
-That sample check is not equivalent to full SAM accuracy verification.
+it omits disk writes and by default validates the first 100 reads per chunk.
+Set `SWBWA_OUTPUT_SAMPLE_READS=0` to hash every packed SAM blob, count all SAM
+lines, and compute a CRC32 over every packed byte. Ordered chunk CRCs can be
+combined with their lengths and compared with a full-stream reference.
+These are regression fingerprints, not distributed MD5 or a substitute for
+testing the real writer. Full validation time is included in Stage 3.

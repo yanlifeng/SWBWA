@@ -145,11 +145,13 @@ regardless of `MPI_EXACT_READ_INDEX`. The record count per chunk is estimated
 from the first decoded data and `-K`; plain-FASTQ tail refinement is not used.
 `MPI_INPUT_MODE=static` assigns chunks round-robin. `dynamic` stages a bounded
 window of decoded chunks and uses monotonic RMA tickets to distribute alignment
-work independently of the decoding owner. Ready data is packed into an ordinary
-MPI window; local claims copy it, while remote claims fetch FASTQ buffers and
-partition metadata using RMA.
+work independently of the decoding owner. Ticketed ready data is packed into an
+ordinary MPI window; local ticketed claims copy it, while remote claims fetch
+FASTQ buffers and partition metadata using RMA.
 `SWBWA_GZIP_READY_CHUNKS=1..16` controls the staged chunks per rank (default 4).
-Refills are collective after the previous window's pipeline work drains; there
+Refills are collective; only a new decode epoch drains prior pipeline work.
+Already-decoded refills overlap computation. The first chunk per rank transfers
+locally without repacking, and ticketed payloads reuse their MPI window. There
 is no per-chunk collective in the claim path. Larger windows use more memory and
 may reduce window-tail imbalance. This is dynamic scheduling of decoded data,
 not independent arbitrary-offset access to compressed bytes.

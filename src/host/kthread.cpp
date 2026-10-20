@@ -161,6 +161,13 @@ static struct {
     bool enabled = false;
 } pipeline_waits;
 
+static void pipeline_thread_check(int error)
+{
+    if (error == 0) return;
+    fprintf(stderr, "pipeline queue synchronization failed: %s\n", strerror(error));
+    abort();
+}
+
 /* Single producer/consumer; closure and the last item share one mutex.
  * Direct pthread references also prevent unresolved weak gthread symbols
  * in the Sunway static libstdc++ link (notably cond_broadcast). */
@@ -175,9 +182,7 @@ class BatchQueue {
 
     static void checked(int error)
     {
-        if (error == 0) return;
-        fprintf(stderr, "pipeline queue synchronization failed: %s\n", strerror(error));
-        abort();
+        pipeline_thread_check(error);
     }
 
     template<class Predicate>
@@ -266,20 +271,36 @@ public:
     }
 };
 
-static thread_local BatchQueue *reader_processor_queue;
+/* This compiler-TLS pointer was observed corrupted after native alignment.
+ * Keep the reader's handoff pointer in pthread-managed storage instead. */
+static pthread_key_t reader_processor_key;
+static pthread_once_t reader_processor_key_once = PTHREAD_ONCE_INIT;
+
+static void create_reader_processor_key()
+{
+    pipeline_thread_check(pthread_key_create(&reader_processor_key, nullptr));
+}
+
+static void prepare_reader_processor_key()
+{
+    pipeline_thread_check(pthread_once(&reader_processor_key_once, create_reader_processor_key));
+}
 
 extern "C" void swbwa_pipeline_call_on_processor(void (*call)(void *), void *argument)
 {
     assert(call);
-    if (reader_processor_queue)
-        reader_processor_queue->call_on_consumer(call, argument);
+    prepare_reader_processor_key();
+    BatchQueue *queue = static_cast<BatchQueue *>(pthread_getspecific(reader_processor_key));
+    if (queue)
+        queue->call_on_consumer(call, argument);
     else
         call(argument);
 }
 
 static void reader_thread(ktp_t* p, BatchQueue& queue)
 {
-    reader_processor_queue = &queue;
+    prepare_reader_processor_key();
+    pipeline_thread_check(pthread_setspecific(reader_processor_key, &queue));
     for (;;) {
         queue.wait_for_space(pipeline_waits.reader_full);
         DataType item = p->func(p->shared, 0, nullptr);
@@ -287,7 +308,7 @@ static void reader_thread(ktp_t* p, BatchQueue& queue)
         queue.push(item);
     }
     queue.close();
-    reader_processor_queue = nullptr;
+    pipeline_thread_check(pthread_setspecific(reader_processor_key, nullptr));
 }
 
 static void processor_thread(ktp_t* p, BatchQueue& input, BatchQueue& output)

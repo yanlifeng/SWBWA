@@ -44,16 +44,18 @@ swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const char *path2,
  */
 int swbwa_mpi_gzip_next(swbwa_mpi_gzip_reader *, swbwa_mpi_gzip_batch *);
 /* Call once per nonempty chunk, in local delivery order, after its output has
- * been consumed (Stage 3). Thread-safe; no MPI on the normal path. STATIC is a
- * no-op. DYNAMIC refill waits for all local completions before codec collectives
- * to avoid processor-handoff/ordered-output deadlocks. Does not free buffers. */
+ * been consumed (Stage 3). Thread-safe; no MPI on the normal path. STATIC and
+ * single-rank readers are no-ops. Distributed DYNAMIC waits for completions
+ * before new codec collectives, not decoded-only refills, to avoid processor-
+ * handoff/ordered-output deadlocks. Does not free buffers. */
 int swbwa_mpi_gzip_complete(swbwa_mpi_gzip_reader *, int64_t chunk_id);
 /* Exact global count of nonempty chunks, available only after validated EOF. */
 int64_t swbwa_mpi_gzip_chunk_count(const swbwa_mpi_gzip_reader *);
 const char *swbwa_mpi_gzip_error(const swbwa_mpi_gzip_reader *);
 /* Local report, no collective. Timings are rank-local seconds, bytes decoded.
  * close is collective during normal operation and precedes MPI_Finalize.
- * It requires next() to have returned global EOF; premature close aborts.
+ * It requires global EOF and all completion callbacks to have finished.
+ * EOF alone need not drain in-flight output; premature close aborts.
  * The reader does not initialize/finalize the codec runtime or MPI.
  */
 int swbwa_mpi_gzip_report(swbwa_mpi_gzip_reader *, FILE *);

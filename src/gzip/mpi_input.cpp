@@ -169,12 +169,14 @@ struct swbwa_mpi_gzip_reader {
     U64 ticket = 0;
     uint64_t ready_begin = 0, ready_count = 0, ready_windows = 0;
     uint64_t ready_peak_bytes = 0, local_claims = 0, remote_claims = 0, fetched_bytes = 0;
+    uint64_t direct_claims = 0, direct_bytes = 0, data_window_builds = 0, decode_drains = 0;
     double refill_s = 0, refill_wait_s = 0, drain_wait_s = 0, claim_s = 0, fetch_s = 0;
-    double pack_s = 0, local_copy_s = 0;
+    double pack_s = 0, local_copy_s = 0, window_s = 0;
     pthread_mutex_t pending_mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_cond_t completed = PTHREAD_COND_INITIALIZER;
     std::deque<int64_t> pending;
     fq::OwnedChunk ready_payload;
+    std::unique_ptr<ReadyChunk> local_first;
     std::vector<ReadyDescriptor> descriptors;
     double decode_s = 0, frame_s = 0, exchange_s = 0, emit_s = 0, next_s = 0;
     double frame_mpi_s = 0, exchange_mpi_s = 0, ready_wait_s = 0, eof_wait_s = 0;
@@ -195,6 +197,8 @@ struct swbwa_mpi_gzip_reader {
     int next(swbwa_mpi_gzip_batch &);
     int next_static(swbwa_mpi_gzip_batch &);
     int next_dynamic(swbwa_mpi_gzip_batch &);
+    bool distributed_dynamic() const { return dynamic && ranks > 1; }
+    void drain_before_decode();
     bool refill();
     void release_ready();
     ~swbwa_mpi_gzip_reader()
@@ -222,10 +226,26 @@ int abort_reader(swbwa_mpi_gzip_reader *r, const char *message)
 }
 }
 
+void swbwa_mpi_gzip_reader::drain_before_decode()
+{
+    if (!distributed_dynamic()) return;
+    /* Only another codec launch needs the processor-thread handoff. Already
+     * decoded chunks may refill a window while older alignment/output runs. */
+    const double begin = MPI_Wtime();
+    thread_call(pthread_mutex_lock(&pending_mutex));
+    if (!pending.empty()) {
+        ++decode_drains;
+        while (!pending.empty()) thread_call(pthread_cond_wait(&completed, &pending_mutex));
+        drain_wait_s += MPI_Wtime() - begin;
+    }
+    thread_call(pthread_mutex_unlock(&pending_mutex));
+}
+
 void swbwa_mpi_gzip_reader::advance(int mate)
 {
     Stream &s = streams[mate];
     if (s.eof) throw std::logic_error("advance after decoder EOF");
+    drain_before_decode();
     const double t0 = MPI_Wtime();
     swbwa_mpi_decoded_batch batch = {};
     const int status = swbwa_mpi_decoder_next(s.decoder, &batch);
@@ -628,27 +648,20 @@ void swbwa_mpi_gzip_reader::release_ready()
         check(MPI_Win_free(&data_window));
     }
     ready_payload = fq::OwnedChunk{};
+    local_first.reset();
     descriptors.clear(); ready_count = 0;
 }
 
 bool swbwa_mpi_gzip_reader::refill()
 {
     double begin = MPI_Wtime();
-    {
-        /* A standard-mode decoder needs the processor thread. Do not enqueue
-         * collective codec work ahead of older chunks whose ordered writer
-         * can hold another rank's processor at the full output queue. */
-        thread_call(pthread_mutex_lock(&pending_mutex));
-        while (!pending.empty()) thread_call(pthread_cond_wait(&completed, &pending_mutex));
-        thread_call(pthread_mutex_unlock(&pending_mutex));
-    }
-    drain_wait_s += MPI_Wtime() - begin;
-    begin = MPI_Wtime();
     /* Every requester has flushed its Gets before reaching this barrier.
      * Delivered buffers are independent of the immutable window storage. */
     check(MPI_Barrier(comm));
     refill_wait_s += MPI_Wtime() - begin;
-    release_ready();
+    if (data_window != MPI_WIN_NULL) check(MPI_Win_sync(data_window));
+    if (local_first) throw std::logic_error("unclaimed local MPI gzip first chunk");
+    descriptors.clear(); ready_count = 0;
     if (decoded_done) return false;
     const double prepare_begin = MPI_Wtime();
     ready_begin = multiply(wave, uint64_t(ranks));
@@ -663,7 +676,10 @@ bool swbwa_mpi_gzip_reader::refill()
         values[0] = U64(b.chunk_id); values[1] = U64(b.first_record);
         values[2] = U64(b.records); values[3] = U64(b.size[0]);
         values[4] = U64(b.size[1]); values[5] = b.partition_count;
-        if (b.records) {
+        /* Reserve one initial chunk for each owner. It precedes all ticketed
+         * IDs, so the ordered writer still sees increasing IDs on each rank.
+         * Transfer that allocation directly, without packing or self-Get. */
+        if (b.records && slot != 0) {
             const size_t sizes[3] = {size_t(b.size[0]), size_t(b.size[1]),
                                     b.partition_count * sizeof(*b.partitions)};
             for (unsigned i = 0; i < 3; ++i) {
@@ -690,16 +706,42 @@ bool swbwa_mpi_gzip_reader::refill()
             throw std::runtime_error("noncontiguous MPI gzip ready window");
         ++ready_count;
     }
-    if (ready_count) {
+    if (!ready.empty() && ready[0]->batch.records)
+        local_first = std::move(ready[0]);
+    if (ready_count > uint64_t(ranks)) {
         /* SWCH's dynamic-window Get fails with SRC_ADDR_ERR even in an isolated
          * probe. Use one ordinary window with relative byte displacements. */
         if (bytes > SIZE_MAX || bytes > uint64_t(std::numeric_limits<MPI_Aint>::max()))
             throw std::overflow_error("MPI gzip ready payload exceeds address range");
+        const double window_begin = MPI_Wtime();
+        int grow = data_window == MPI_WIN_NULL || bytes > ready_payload.size;
+        int any_grow = 0;
+        check(MPI_Allreduce(&grow, &any_grow, 1, MPI_INT, MPI_MAX, comm));
+        if (any_grow) {
+            if (data_window != MPI_WIN_NULL) {
+                check(MPI_Win_unlock_all(data_window));
+                check(MPI_Win_free(&data_window));
+            }
+            if (grow) {
+                /* Small record-length changes should not collectively rebuild
+                 * every window. Round storage up by at most one MiB per rank. */
+                const uint64_t quantum = 1U << 20;
+                const uint64_t capacity = multiply(add(bytes, quantum - 1) / quantum, quantum);
+                if (capacity > SIZE_MAX || capacity > uint64_t(std::numeric_limits<MPI_Aint>::max()))
+                    throw std::overflow_error("MPI gzip ready capacity exceeds address range");
+                ready_payload = fq::OwnedChunk{};
+                ready_payload.data = static_cast<char *>(std::malloc(capacity ? size_t(capacity) : 1));
+                if (!ready_payload.data) throw std::bad_alloc();
+                ready_payload.size = size_t(capacity);
+            }
+            check(MPI_Win_create(ready_payload.data, MPI_Aint(ready_payload.size), 1,
+                                 MPI_INFO_NULL, comm, &data_window));
+            check(MPI_Win_lock_all(0, data_window));
+            ++data_window_builds;
+        }
+        window_s += MPI_Wtime() - window_begin;
         const double pack_begin = MPI_Wtime();
-        ready_payload.data = static_cast<char *>(std::malloc(bytes ? size_t(bytes) : 1));
-        if (!ready_payload.data) throw std::bad_alloc();
-        ready_payload.size = size_t(bytes);
-        for (size_t slot = 0; slot < ready.size(); ++slot) {
+        for (size_t slot = 1; slot < ready.size(); ++slot) {
             const auto &b = ready[slot]->batch;
             const size_t sizes[3] = {size_t(b.size[0]), size_t(b.size[1]),
                                     b.partition_count * sizeof(*b.partitions)};
@@ -709,14 +751,12 @@ bool swbwa_mpi_gzip_reader::refill()
             ready[slot].reset();
         }
         pack_s += MPI_Wtime() - pack_begin;
-        check(MPI_Win_create(ready_payload.data, MPI_Aint(bytes), 1, MPI_INFO_NULL, comm, &data_window));
-        check(MPI_Win_lock_all(0, data_window));
         check(MPI_Win_sync(data_window));
     }
     /* Use RMA for reset too: never race local stores against public counters. */
     if (!rank) {
-        const U64 zero = 0;
-        check(MPI_Accumulate(&zero, 1, MPI_UNSIGNED_LONG_LONG, 0, 0, 1,
+        const U64 first_ticket = std::min<uint64_t>(ready_count, uint64_t(ranks));
+        check(MPI_Accumulate(&first_ticket, 1, MPI_UNSIGNED_LONG_LONG, 0, 0, 1,
                             MPI_UNSIGNED_LONG_LONG, MPI_REPLACE, ticket_window));
         check(MPI_Win_flush(0, ticket_window));
     }
@@ -732,6 +772,18 @@ int swbwa_mpi_gzip_reader::next_dynamic(swbwa_mpi_gzip_batch &out)
 {
     for (;;) {
         if (!ready_count && !refill()) return 0;
+        if (local_first) {
+            out = local_first->batch;
+            local_first->batch = swbwa_mpi_gzip_batch{};
+            local_first.reset();
+            ++local_claims; ++direct_claims;
+            direct_bytes += uint64_t(out.size[0]) + uint64_t(out.size[1]);
+            return 1;
+        }
+        if (ready_count <= uint64_t(ranks)) {
+            if (!refill()) return 0;
+            continue;
+        }
         const double begin = MPI_Wtime();
         const U64 one = 1;
         U64 index = 0;
@@ -797,12 +849,15 @@ int swbwa_mpi_gzip_reader::next(swbwa_mpi_gzip_batch &out)
 {
     thread_check();
     if (done) return 0;
-    const int result = dynamic ? next_dynamic(out) : next_static(out);
+    const int result = distributed_dynamic() ? next_dynamic(out) : next_static(out);
     if (!result) { done = true; return 0; }
-    if (dynamic) {
+    if (distributed_dynamic()) {
         thread_call(pthread_mutex_lock(&pending_mutex));
         pending.push_back(out.chunk_id);
         thread_call(pthread_mutex_unlock(&pending_mutex));
+    } else if (dynamic && out.records) {
+        ++local_claims; ++direct_claims;
+        direct_bytes += uint64_t(out.size[0]) + uint64_t(out.size[1]);
     }
     emitted += uint64_t(out.records); emitted_chunks += out.records != 0; empty += out.records == 0;
     for (int m = 0; m < mates; ++m) emitted_bytes[m] += uint64_t(out.size[m]);
@@ -850,7 +905,7 @@ extern "C" swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const c
                                        &r->streams[m].decoder, error, sizeof(error)))
                 throw std::runtime_error(error);
         }
-        if (r->dynamic) {
+        if (r->distributed_dynamic()) {
             check(MPI_Win_create(&r->ticket, r->rank == 0 ? sizeof(r->ticket) : 0,
                                  sizeof(r->ticket), MPI_INFO_NULL, r->comm, &r->ticket_window));
             check(MPI_Win_lock_all(0, r->ticket_window));
@@ -883,7 +938,7 @@ extern "C" int swbwa_mpi_gzip_complete(swbwa_mpi_gzip_reader *r, int64_t id)
 {
     try {
         if (!r) throw std::invalid_argument("null MPI gzip completion reader");
-        if (!r->dynamic) return 0;
+        if (!r->distributed_dynamic()) return 0;
         thread_call(pthread_mutex_lock(&r->pending_mutex));
         if (r->pending.empty() || r->pending.front() != id) {
             thread_call(pthread_mutex_unlock(&r->pending_mutex));
@@ -920,11 +975,13 @@ extern "C" int swbwa_mpi_gzip_report(swbwa_mpi_gzip_reader *r, FILE *file)
         "[MPI gzip rank=%d scheduler] mode=%s ready_chunks_per_rank=%u windows=%llu "
         "local_claims=%llu remote_claims=%llu fetched_bytes=%llu ready_peak_bytes=%llu "
         "refill_s=%.6f refill_wait_s=%.6f drain_wait_s=%.6f claim_rma_s=%.6f fetch_s=%.6f "
-        "pack_s=%.6f local_copy_s=%.6f\n",
+        "pack_s=%.6f local_copy_s=%.6f direct_claims=%llu direct_bytes=%llu "
+        "data_window_builds=%llu window_capacity_bytes=%zu window_s=%.6f decode_drains=%llu\n",
         r->rank, r->dynamic ? "dynamic" : "static", r->ready_limit, U64(r->ready_windows),
         U64(r->local_claims), U64(r->remote_claims), U64(r->fetched_bytes), U64(r->ready_peak_bytes),
         r->refill_s, r->refill_wait_s, r->drain_wait_s, r->claim_s, r->fetch_s,
-        r->pack_s, r->local_copy_s) < 0)
+        r->pack_s, r->local_copy_s, U64(r->direct_claims), U64(r->direct_bytes),
+        U64(r->data_window_builds), r->ready_payload.size, r->window_s, U64(r->decode_drains)) < 0)
         return abort_reader(r, "MPI gzip scheduler report write failed");
     if (std::fprintf(file,
         "[MPI gzip rank=%d reader_local] frame_local_s=%.6f exchange_local_s=%.6f "
@@ -988,7 +1045,11 @@ extern "C" void swbwa_mpi_gzip_close(swbwa_mpi_gzip_reader *r)
     try {
         thread_check();
         if (!r->done) throw std::runtime_error("MPI gzip close requires globally validated EOF from next");
-        if (r->dynamic) {
+        if (r->distributed_dynamic()) {
+            thread_call(pthread_mutex_lock(&r->pending_mutex));
+            const bool incomplete = !r->pending.empty();
+            thread_call(pthread_mutex_unlock(&r->pending_mutex));
+            if (incomplete) throw std::runtime_error("MPI gzip close requires completed output batches");
             check(MPI_Barrier(r->comm));
             r->release_ready();
             check(MPI_Win_unlock_all(r->ticket_window));

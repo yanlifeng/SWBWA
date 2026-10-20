@@ -120,6 +120,22 @@ def main():
             result["consumer_chunks"] = dict((int(rank), int(count)) for rank, count in re.findall(
                 r"\[test consumer rank=(\d+)\] chunks=(\d+)", process.stderr))
             result["remote_claims"] = sum(map(int, re.findall(r"remote_claims=(\d+)", process.stderr)))
+            if args.input_mode == "dynamic":
+                schedulers = re.findall(r"\[MPI gzip rank=\d+ scheduler\] (.*)", process.stderr)
+                assert len(schedulers) == ranks, logs[-1]
+                stats = [dict(re.findall(r"(\w+)=(\S+)", line)) for line in schedulers]
+                assert all(int(s["direct_claims"]) <= int(s["local_claims"]) for s in stats)
+                if ranks == 1:
+                    assert all(int(s["windows"]) == 0 and int(s["data_window_builds"]) == 0 and
+                               int(s["direct_claims"]) == result["consumer_chunks"][0] for s in stats)
+                else:
+                    assert all(int(s["direct_claims"]) <= int(s["windows"]) and
+                               int(s["data_window_builds"]) <= int(s["windows"]) for s in stats)
+                if ready == 1:
+                    assert result["remote_claims"] == 0
+                    assert all(int(s["data_window_builds"]) == 0 for s in stats)
+                result["direct_claims"] = sum(int(s["direct_claims"]) for s in stats)
+                result["data_window_builds"] = max(int(s["data_window_builds"]) for s in stats)
             reports.append(dict(case=name, status="PASS", result=result))
             print("PASS", name, result, flush=True)
             return result

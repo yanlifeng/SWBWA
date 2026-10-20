@@ -241,14 +241,29 @@ up to `ranks * ready_chunks` complete chunks, including independent mate buffers
 exact global read ordinals and CPE partition metadata. No whole-file scan or
 compressed-stream random-access index is introduced.
 
-A rank-0 64-bit `MPI_Fetch_and_op`/`MPI_Win_flush` ticket assigns increasing
-global IDs. Ready data is packed once into an ordinary MPI window with relative
-byte displacements; remote claims use `MPI_Get`/flush, while local claims copy
-from that window into caller-owned buffers. Sources are immutable until the next
-collective refill. Returned buffers remain owned by the caller even after
-subsequent refills. PE buffers are always claimed together. This deliberately
+A refill reserves its first wave of chunks, one per rank, for their staging
+owners. These allocations transfer directly to the caller, without another
+pack or copy. A rank-0 64-bit `MPI_Fetch_and_op`/`MPI_Win_flush` ticket assigns
+the remaining increasing global IDs. A rank must consume its reserved chunk
+before claiming a ticket: all reserved IDs precede the ticketed suffix, so
+local output order remains increasing. With `SWBWA_GZIP_READY_CHUNKS=1`, every
+chunk is reserved locally; use a larger window for dynamic load balancing.
+
+Only ticketed data is packed into an ordinary MPI window with relative byte
+displacements. Remote claims use `MPI_Get`/flush, while local ticketed claims
+copy from that window into caller-owned buffers. The window and allocation
+are reused while capacity suffices, and rebuilt collectively only on growth.
+Capacity is rounded up to MiB boundaries to absorb small record-length changes.
+Sources are immutable until all Gets are flushed and every rank reaches the
+refill-entry barrier. `MPI_Win_sync` publishes the next generation before
+the reset ticket is made available. Returned buffers remain owned by the caller
+even after subsequent refills. PE buffers are always claimed together. This deliberately
 avoids dynamic-window absolute addressing: a standalone native SWCH test passed
 ordinary-window Get but failed dynamic-window Get with `SRC_ADDR_ERR`.
+
+With one MPI rank there is no ownership imbalance to schedule. The reader
+directly returns decoded chunks, bypassing scheduler RMA, packing and staging
+windows. Codec/runtime locking and output-layer MPI progress remain unchanged.
 
 `next()` is not collective per chunk in dynamic mode. It returns only nonempty
 READY batches; ranks may receive different numbers of them. It is unsafe for a
@@ -258,30 +273,46 @@ increase on each rank, which preserves the ordered writer's FIFO contract.
 
 After Stage 3 consumes each chunk, `swbwa_mpi_gzip_complete(reader, id)` releases
 its local in-flight credit. This does not free FASTQ/SAM allocations or call MPI.
-Before refill, the reader waits for all local credits and then all ranks join
-a barrier. Only then can decoder collectives request the processor thread.
-Without this drain, a decoder handoff can overtake an older input batch whose
+Before an actual decoder advance, the reader waits for all outstanding local
+credits, including chunks delivered by earlier ready windows. A refill from
+already-decoded data needs only the source-lifetime barrier; it does not wait
+for Stage 3. Decoder collectives can request the processor thread only after
+the local drain. Without this drain, a decoder handoff can overtake an older input batch whose
 ordered writer is needed to unblock another rank's full output queue. `has1`
-also calls complete, normally before its next reader call. Static complete is a
-no-op. The existing MPI progress thread stays active throughout the pipeline.
+also calls complete, normally before its next reader call. Static and single-rank
+completion are no-ops. EOF can now arrive with output still in flight; join the
+pipeline and finish all completion callbacks before closing the reader. Close
+rejects outstanding distributed credits. The existing MPI progress thread stays
+active throughout the pipeline.
+
+The standard-mode reader requests codec launches on the processor thread using
+pthread-managed thread-specific storage. This preserves its queue association
+across native alignment launches; the earlier compiler-TLS pointer was observed
+to change to an invalid queue address after the first alignment window.
 
 This is **bounded-window dynamic alignment scheduling**, not a continuously
 asynchronous decoder or arbitrary gzip seek scheduler. Window tails can still
-wait for a slow chunk. Larger windows trade memory for more scheduling freedom;
+wait for a slow reader, and a new decode epoch still drains prior output. Larger
+windows trade memory for more scheduling freedom;
 the chunk count cap is not an RSS cap. Besides existing decoder queues and
 pipeline buffers, each rank retains at most `ready_chunks` source chunks (both
 mates plus partitions), bounded individually by the formatter capacity. Packing
 temporarily needs both the assembled chunks and window storage; originals are
-released as they are copied. Window sources remain resident until refill.
+released as they are copied, except the reserved chunk transferred to its owner.
+Window capacity remains resident until close and retains its high-water size.
 Packing, local copies and remote transfers can offset load-balance gains;
 performance must be measured, not inferred from scheduling.
 
 The `scheduler` report separates `refill_s`, `refill_wait_s`, `drain_wait_s`,
 `claim_rma_s`, `fetch_s`, `pack_s`, and `local_copy_s`, with local/remote claims,
-fetched bytes and peak local ready-buffer bytes. The latter is window payload,
-not peak RSS. `refill_s` includes packing and the existing decode/framing/layout
-timers and must not be added to them; `drain_wait_s` and `refill_wait_s` are waits,
-not Reader compute. There are no extra per-chunk collectives in the claim path.
+fetched bytes and peak packed ready-payload bytes (not peak RSS).
+`direct_claims`/`direct_bytes` measure owner-local buffer transfers, not end-to-end
+zero-copy decoding. `data_window_builds`, `window_capacity_bytes` and `window_s`
+expose RMA allocation/reuse costs; `decode_drains` counts advances that actually
+encountered pending output. `refill_s` includes packing, decoder drains and the
+existing decode/framing/layout timers and must not be added to them.
+`drain_wait_s` and `refill_wait_s` are waits, not Reader compute.
+There are no extra per-chunk collectives in the claim path.
 
 Host tests exercise the real decoder with a host codec launcher; they do not
 replace native CPE/runtime validation:

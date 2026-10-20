@@ -3,9 +3,11 @@
 #include "codec_job.h"
 #include "fastq_frame.h"
 #include "swbwa_host_workers.h"
+#include "swbwa_config.h"
 #include <mpi.h>
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -76,7 +78,8 @@ static void run(int argc, char **argv)
     int rank, ranks; MPI_Comm_rank(MPI_COMM_WORLD, &rank); MPI_Comm_size(MPI_COMM_WORLD, &ranks);
     const bool paired = std::strcmp(argv[2], "-") != 0;
     const std::string mode = argv[8];
-    const bool rejection = mode == "reject" || mode == "early-close" || mode == "config-mismatch";
+    const bool rejection = mode == "reject" || mode == "early-close" || mode == "config-mismatch" ||
+                           mode == "window-mismatch" || mode == "bad-complete";
     std::string reference[2];
     std::vector<swbwa_fastq::Record> records[2];
     if (!rejection) {
@@ -89,20 +92,26 @@ static void run(int argc, char **argv)
     }
     size_t target = size_t(std::strtoull(argv[5], NULL, 10));
     if (mode == "config-mismatch" && rank) ++target;
+    if (mode == "window-mismatch" && rank) setenv("SWBWA_GZIP_READY_CHUNKS", "2", 1);
     swbwa_mpi_gzip_reader *reader = swbwa_mpi_gzip_open(argv[1], paired ? argv[2] : NULL,
         target, unsigned(std::atoi(argv[6])), std::atoi(argv[7]));
     assert(reader && decode_calls == 0); // open must not sample/decode.
     if (mode == "early-close") swbwa_mpi_gzip_close(reader);
     std::vector<int> coverage(records[0].size(), 0), total(records[0].size(), 0);
     uint64_t rounds = 0, local_records = 0, empty = 0;
+    int64_t previous_chunk = -1;
     char *held[2] = {NULL, NULL}; size_t held_size[2] = {0, 0};
     for (;;) {
         swbwa_mpi_gzip_batch b = {};
         const int status = swbwa_mpi_gzip_next(reader, &b);
+#if SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_STATIC
         int low = 0, high = 0;
         MPI_Allreduce(&status, &low, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
         MPI_Allreduce(&status, &high, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
         assert(low == high && status >= 0);
+#else
+        assert(status >= 0);
+#endif
         for (int m = 0; m < 2; ++m) {
             if (held[m]) {
                 for (size_t i = 0; i < held_size[m]; ++i) assert(static_cast<unsigned char>(held[m][i]) == 0xa5);
@@ -113,14 +122,21 @@ static void run(int argc, char **argv)
             assert(!b.data[0] && !b.data[1] && !b.records);
             assert(!swbwa_mpi_gzip_next(reader, &b)); break;
         }
-        assert(b.chunk_id == int64_t(rounds * ranks + rank)); ++rounds;
+#if SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_STATIC
+        assert(b.chunk_id == int64_t(rounds * ranks + rank));
+#else
+        assert(b.records > 0);
+#endif
+        assert(b.chunk_id > previous_chunk); previous_chunk = b.chunk_id; ++rounds;
         if (!b.records) {
             assert(!b.data[0] && !b.data[1] && !b.size[0] && !b.size[1] && !b.partitions); ++empty; continue;
         }
         validate_partitions(b, paired);
         std::free(b.partitions);
+        if (mode == "bad-complete") swbwa_mpi_gzip_complete(reader, b.chunk_id + 1);
         if (rejection) {
-            std::free(b.data[0]); std::free(b.data[1]); continue;
+            std::free(b.data[0]); std::free(b.data[1]);
+            assert(!swbwa_mpi_gzip_complete(reader, b.chunk_id)); continue;
         }
         assert(b.first_record >= 0 && b.records > 0 && uint64_t(b.first_record + b.records) <= coverage.size());
         for (int64_t i = b.first_record; i < b.first_record + b.records; ++i) ++coverage[size_t(i)];
@@ -134,9 +150,27 @@ static void run(int argc, char **argv)
             std::memset(held[m], 0xa5, held_size[m]);
         }
         if (!paired) assert(!b.data[1] && !b.size[1]);
+        if (mode == "skew" && rank == ranks - 1) {
+            const double end = MPI_Wtime() + 0.02;
+            do {
+                int flag;
+                MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            } while (MPI_Wtime() < end);
+        }
+        assert(!swbwa_mpi_gzip_complete(reader, b.chunk_id));
     }
     assert(!rejection);
     assert(!*swbwa_mpi_gzip_error(reader));
+    const int64_t chunks = swbwa_mpi_gzip_chunk_count(reader);
+    assert(chunks >= 0);
+    unsigned long long local_chunks = rounds, all_chunks = 0;
+    MPI_Allreduce(&local_chunks, &all_chunks, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+#if SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
+    assert(all_chunks == uint64_t(chunks));
+#endif
+    std::fprintf(stderr, "[test consumer rank=%d] chunks=%llu records=%llu\n", rank,
+                 static_cast<unsigned long long>(rounds), static_cast<unsigned long long>(local_records));
     assert(!swbwa_mpi_gzip_report(reader, stderr));
     swbwa_mpi_gzip_close(reader);
     if (!coverage.empty()) {

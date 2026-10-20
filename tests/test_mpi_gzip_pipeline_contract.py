@@ -145,6 +145,10 @@ int swbwa_mpi_gzip_next(swbwa_mpi_gzip_reader *reader, swbwa_mpi_gzip_batch *bat
 const char *swbwa_mpi_gzip_error(const swbwa_mpi_gzip_reader *reader) {
     (void)reader; return "injected reader detail";
 }
+int swbwa_mpi_gzip_complete(swbwa_mpi_gzip_reader *reader, int64_t id) {
+    assert(reader && phase == 0 && id >= 0);
+    return 0;
+}
 int64_t swbwa_mpi_gzip_chunk_count(const swbwa_mpi_gzip_reader *reader) {
     assert(reader && phase == 0);
     assert(next_calls == 6 && flush_calls == 1);

@@ -844,6 +844,11 @@ static void *process(void *shared, int step, void *_data)
             swbwa_pipeline_fatal(__func__, "failed to write output chunk: %s", strerror(errno));
 #endif
 		t_step3_1 += GetTime() - write_start;
+#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_USE_MPI
+        if (aux->mpi_gzip_reader != NULL &&
+            swbwa_mpi_gzip_complete(aux->mpi_gzip_reader, data->chunk_id) != 0)
+            swbwa_mpi_abort("failed to complete MPI gzip chunk");
+#endif
 		free(data->sam_lengths);
 		free(data->seqs); free(data);
         t_step3 += GetTime() - t0;
@@ -1391,7 +1396,11 @@ int main_mem(int argc, char *argv[])
 			swbwa_mpi_abort(swbwa_mpi_gzip_error(NULL));
 		if (swbwa_mpi_is_root())
 			fprintf(stderr, "[MPI gzip input] online collective decoding; exact record indices; "
+#if SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
+			                "dynamic ready chunks (monotonic global tickets)\n");
+#else
 			                "round-robin record chunks (plain FASTQ scheduler bypassed)\n");
+#endif
 #else
 		aux.gzip_reader = swbwa_gzip_open(argv[optind + 1], read2_path,
 		    256 * 1024, SWBWA_CPE_COUNT, gzip_backend);

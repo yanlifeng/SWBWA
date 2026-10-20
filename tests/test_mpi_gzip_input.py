@@ -17,10 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 ENGINE = ROOT / "src" / "gzip"
 
 
-def build(work, sanitizer):
+def build(work, sanitizer, input_mode="static"):
     flags = ["-O1" if sanitizer else "-O2", "-g", "-Wall", "-Wextra",
              "-D_FILE_OFFSET_BITS=64", "-D_POSIX_C_SOURCE=200809L",
              "-DSWBWA_CODEC_RAPID=1", "-DSWBWA_CODEC_LDM=2", "-DSWBWA_USE_MPI=1",
+             "-DSWBWA_MPI_INPUT_MODE=SWBWA_MPI_INPUT_" + input_mode.upper(),
              "-I" + str(ROOT / "include"), "-I" + str(ENGINE),
              "-I" + str(ENGINE / "vendor" / "rapidgzip")]
     san = ["-fsanitize=" + sanitizer, "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"] if sanitizer else []
@@ -56,13 +57,14 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--sanitize", choices=("undefined", "address,undefined"))
     parser.add_argument("--binary", type=Path)
+    parser.add_argument("--input-mode", choices=("static", "dynamic"), default="static")
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
     if args.binary:
         binary, frame = args.binary.resolve(), work / "test-fastq-frame"
     else:
-        binary, frame = build(work, args.sanitize)
+        binary, frame = build(work, args.sanitize, args.input_mode)
     subprocess.run([str(frame)], check=True)
     rng = random.Random(2817)
     reports, logs = [], []
@@ -70,7 +72,7 @@ def main():
         root = Path(temporary)
 
         def run(name, r1, r2=None, blob1=None, blob2=None, ranks=2,
-                target=32768, mode="normal", error=None, defaults=False, lookahead=1 << 20):
+                target=32768, mode="normal", error=None, defaults=False, lookahead=1 << 20, ready=4):
             raw1, gz1 = root / (name + ".R1.raw"), root / (name + ".R1.gz")
             raw1.write_bytes(r1); gz1.write_bytes(encoded(r1) if blob1 is None else blob1)
             raw2 = gz2 = "-"
@@ -81,6 +83,7 @@ def main():
                        str(gz1), str(gz2), str(raw1), str(raw2), str(target), "384", "1", mode]
             env = dict(os.environ)
             env["FASTQ_TEST_LOOKAHEAD"] = str(lookahead)
+            env["SWBWA_GZIP_READY_CHUNKS"] = str(ready)
             if defaults:
                 env["FASTQ_TEST_DEFAULT_CONFIG"] = "1"
             else:
@@ -108,10 +111,15 @@ def main():
                 r"\[MPI gzip rank=(\d+)\] chunk=(\d+) first_record=(\d+) end_record_exclusive=(\d+) records=(\d+)", process.stderr
             ):
                 rank, chunk, first, end, count = map(int, (rank, chunk, first, end, count))
-                assert chunk % ranks == rank and end == first + count
+                assert end == first + count
+                if args.input_mode == "static":
+                    assert chunk % ranks == rank
                 assert first == min(chunk * k, result["records"])
             result["boundary_records"] = sum(map(int, re.findall(r"boundary_records=(\d+)", process.stderr)))
             result["max_epochs"] = max(map(int, re.findall(r"epochs=(\d+)", process.stderr)))
+            result["consumer_chunks"] = dict((int(rank), int(count)) for rank, count in re.findall(
+                r"\[test consumer rank=(\d+)\] chunks=(\d+)", process.stderr))
+            result["remote_claims"] = sum(map(int, re.findall(r"remote_claims=(\d+)", process.stderr)))
             reports.append(dict(case=name, status="PASS", result=result))
             print("PASS", name, result, flush=True)
             return result
@@ -127,7 +135,7 @@ def main():
         tiny = b"@one comment\nAC\n+\n@+\n"
         try:
             run("empty-pair", b"", b"", ranks=3)
-            assert run("one-record-empty-ranks", tiny, tiny, ranks=3)["empty_ready"] == 2
+            assert run("one-record-empty-ranks", tiny, tiny, ranks=3)["empty_ready"] == (2 if args.input_mode == "static" else 0)
             for ranks in (1, 2, 3):
                 result = run(f"pair-skew-ranks{ranks}", r1, r2, ranks=ranks)
                 assert result["max_epochs"] > 1 and result["boundary_records"] > 0
@@ -182,6 +190,16 @@ def main():
             run("late-concat-crc", r1 + tiny, blob1=encoded(r1) + corrupt, mode="reject", error="CRC/ISIZE mismatch")
             run("config-mismatch", tiny, tiny, mode="config-mismatch", error="reader configuration mismatch")
             run("early-close", tiny, tiny, mode="early-close", error="requires globally validated EOF")
+            if args.input_mode == "dynamic":
+                for ready in (1, 2, 8):
+                    run(f"ready-window-{ready}", r1, r2, ranks=3, ready=ready)
+                result = run("skewed-consumer", r1, r2, ranks=3, mode="skew", ready=8)
+                assert result["remote_claims"] > 0
+                counts = result["consumer_chunks"]
+                assert counts[0] + counts[1] > 2 * counts[2], counts
+                run("bad-ready-limit", tiny, ready=0, mode="reject", error="SWBWA_GZIP_READY_CHUNKS")
+                run("ready-config-mismatch", tiny, mode="window-mismatch", error="reader configuration mismatch")
+                run("invalid-completion", tiny, mode="bad-complete", error="completion out of order")
         finally:
             (work / "test-results.json").write_text(json.dumps(reports, indent=2) + "\n")
             (work / "test-logs.json").write_text(json.dumps(logs, indent=2) + "\n")

@@ -183,7 +183,7 @@ partition counts instead of counting all newlines again. The old shared-byte-
 offset guard is only needed by the non-MPI reader, not this path. Free the
 partition array after formatting, alongside the ordinary batch lifecycle.
 
-All ranks call `next` in the same wave order. A READY result may contain zero
+In static mode, all ranks call `next` in the same wave order. A READY result may contain zero
 records on a rank; the pipeline must forward that empty token without launching
 alignment or writing an output chunk. EOF is returned collectively only after
 both mate trailers and final record counts have been checked. On a local parse,
@@ -192,7 +192,7 @@ leaving peers blocked in a collective. Normal close is collective after the
 pipeline has drained.
 
 The first decoded R1 records estimate a fixed records-per-chunk target from
-`-K`; chunk `i` belongs to rank `i % ranks`. Read indices are always exact and
+`-K`; decoding initially stages chunk `i` at rank `i % ranks`. Read indices are always exact and
 computed online, independent of `MPI_EXACT_READ_INDEX`. The plain FASTQ static/
 dynamic scheduler and tail refinements are bypassed. Supported output modes
 are `split`, `single_unordered`, `single_ordered` and `discard`.
@@ -202,8 +202,8 @@ count. The unique owner of the next ID publishes its byte prefix before its
 successor ID. Empty READY tokens in the final wave do not publish chunks.
 After validated EOF and writer completion, every rank supplies the exact global
 chunk count; close validates both the final count and reserved byte total.
-This does not introduce dynamic gzip input scheduling. Static ordered builds
-are supported for gzip only; plain FASTQ still requires dynamic global tickets.
+Static ordered builds are supported for gzip only; plain FASTQ still requires
+dynamic global tickets. Dynamic gzip scheduling is described below.
 The report separates decode, framing/boundary exchange, record redistribution
 and final assembly/partition planning. `reader_local` subtracts adapter MPI
 calls and READY/EOF barriers from local work; decoder reports separately expose
@@ -232,11 +232,64 @@ decoder windows, record metadata, exchange buffers and in-flight pipeline
 batches also occupy memory. MPI redistribution can therefore cost more memory
 and host work than the single-process gzip path.
 
+### Dynamic Decoded-Chunk Scheduling
+
+`MPI_INPUT_MODE=dynamic` retains collective decompression but decouples alignment
+ownership from the decoding rank. `SWBWA_GZIP_READY_CHUNKS` selects 1..16 staged
+chunks per rank (default 4); all ranks must use the same value. A refill stages
+up to `ranks * ready_chunks` complete chunks, including independent mate buffers,
+exact global read ordinals and CPE partition metadata. No whole-file scan or
+compressed-stream random-access index is introduced.
+
+A rank-0 64-bit `MPI_Fetch_and_op`/`MPI_Win_flush` ticket assigns increasing
+global IDs. Ready data is packed once into an ordinary MPI window with relative
+byte displacements; remote claims use `MPI_Get`/flush, while local claims copy
+from that window into caller-owned buffers. Sources are immutable until the next
+collective refill. Returned buffers remain owned by the caller even after
+subsequent refills. PE buffers are always claimed together. This deliberately
+avoids dynamic-window absolute addressing: a standalone native SWCH test passed
+ordinary-window Get but failed dynamic-window Get with `SRC_ADDR_ERR`.
+
+`next()` is not collective per chunk in dynamic mode. It returns only nonempty
+READY batches; ranks may receive different numbers of them. It is unsafe for a
+caller to add an Allreduce/Barrier after every READY. Global EOF is known only
+after trailer validation and depletion of the final ready window. Chunk IDs
+increase on each rank, which preserves the ordered writer's FIFO contract.
+
+After Stage 3 consumes each chunk, `swbwa_mpi_gzip_complete(reader, id)` releases
+its local in-flight credit. This does not free FASTQ/SAM allocations or call MPI.
+Before refill, the reader waits for all local credits and then all ranks join
+a barrier. Only then can decoder collectives request the processor thread.
+Without this drain, a decoder handoff can overtake an older input batch whose
+ordered writer is needed to unblock another rank's full output queue. `has1`
+also calls complete, normally before its next reader call. Static complete is a
+no-op. The existing MPI progress thread stays active throughout the pipeline.
+
+This is **bounded-window dynamic alignment scheduling**, not a continuously
+asynchronous decoder or arbitrary gzip seek scheduler. Window tails can still
+wait for a slow chunk. Larger windows trade memory for more scheduling freedom;
+the chunk count cap is not an RSS cap. Besides existing decoder queues and
+pipeline buffers, each rank retains at most `ready_chunks` source chunks (both
+mates plus partitions), bounded individually by the formatter capacity. Packing
+temporarily needs both the assembled chunks and window storage; originals are
+released as they are copied. Window sources remain resident until refill.
+Packing, local copies and remote transfers can offset load-balance gains;
+performance must be measured, not inferred from scheduling.
+
+The `scheduler` report separates `refill_s`, `refill_wait_s`, `drain_wait_s`,
+`claim_rma_s`, `fetch_s`, `pack_s`, and `local_copy_s`, with local/remote claims,
+fetched bytes and peak local ready-buffer bytes. The latter is window payload,
+not peak RSS. `refill_s` includes packing and the existing decode/framing/layout
+timers and must not be added to them; `drain_wait_s` and `refill_wait_s` are waits,
+not Reader compute. There are no extra per-chunk collectives in the claim path.
+
 Host tests exercise the real decoder with a host codec launcher; they do not
 replace native CPE/runtime validation:
 
 ```bash
 python3 tests/test_mpi_gzip_decoder.py --work /tmp/swbwa-mpi-decoder-test
 python3 tests/test_mpi_gzip_input.py --work /tmp/swbwa-mpi-input-test
+python3 tests/test_mpi_gzip_input.py --input-mode dynamic --work /tmp/swbwa-mpi-dynamic-test
+python3 tests/test_mpi_gzip_dynamic_pipeline.py --work /tmp/swbwa-mpi-dynamic-pipeline-test
 python3 tests/test_mpi_gzip_pipeline_contract.py
 ```

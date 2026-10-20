@@ -41,20 +41,28 @@ are reported with output diagnostics.
 
 ## Online Gzip Protocol
 
-Cooperative gzip decoding assigns chunk `i` to rank `i % ranks`; each rank
-receives monotonically increasing IDs without a preliminary full-file scan.
+Static cooperative gzip input assigns chunk `i` to rank `i % ranks`. Dynamic
+gzip input assigns increasing IDs using a ticket over a bounded decoded-chunk
+window. Both preserve local monotonic order without a preliminary full-file scan.
 The output layer therefore uses `swbwa_output_open_online()` and two rank-0
 64-bit slots: the next chunk ID and next byte offset. The unique owner waits
 for its ID, publishes the updated byte offset and flushes, then publishes
 the successor ID and flushes. Payload writes still go directly to disjoint
-file regions. This changes neither the gzip input distribution nor its
-collective decode epochs; it is not dynamic gzip scheduling.
+file regions. The writer protocol is independent of which rank claims a chunk.
+Dynamic gzip refills drain in-flight pipeline tasks before decoder collectives;
+see [the input contract](../src/gzip/README.md#dynamic-decoded-chunk-scheduling).
 
 After validated EOF and pipeline completion, call
 `swbwa_output_ordered_finish()` with the true global chunk count. Tail ranks
 with empty READY tokens publish nothing. Close collectively validates both
 the final ID and byte total before freeing the window. Keep MPI progress
 active until output close has completed.
+
+`test_mpi_gzip_dynamic_pipeline.py` connects the real gzip reader, processor-thread
+codec handoff, bounded pipeline queues and production ordered writer. It uses
+deterministic unmapped SAM, not real alignment, and compares every output byte
+for SE/PE, serial/overlapped processing, skewed consumers, empty/tail windows and
+1/2/3/6 local ranks. Static mode remains a separately tested baseline.
 
 ## Validation
 

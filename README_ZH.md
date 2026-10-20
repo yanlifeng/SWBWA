@@ -126,7 +126,7 @@ bash build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 GZIP_INPUT=1
 
 ```bash
 bash build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=1 \
-    OUTPUT_MODE=split GZIP_INPUT=1 CPE_LDM_MODE=2
+    MPI_INPUT_MODE=dynamic OUTPUT_MODE=split GZIP_INPUT=1 CPE_LDM_MODE=2
 ```
 
 `cgs` / `cgs_cross` 每节点配置一个使用整片从核的 rank。
@@ -140,10 +140,15 @@ MPI Reader 复用解压核生成的 4 KiB 页换行计数，只检查记录和�
 全部记录格式及 PE 名字仍由 CPE 在格式化时检查。本 rank 的正文不经过 MPI
 自发送；必要的大块复制使用既有 MPE 辅助线程。Reader 日志单列本地处理、通信、
 READY/EOF 等待及解压等待，不能将这些包含关系重复求和。
-精确 read 序号在线累计，不受 `MPI_EXACT_READ_INDEX` 开关影响。该路径不使用普通
-FASTQ 的 `MPI_INPUT_MODE` 调度器或尾块细分，而是根据第一批已解码数据和 `-K`
-估计固定的每块记录数，再轮转分配 chunk。这是在线集体读取，并非任意压缩 offset
-上的独立随机访问。gzip 的有序输出使用在线 RMA 前缀，在 EOF 后验证总 chunk 数，
+精确 read 序号在线累计，不受 `MPI_EXACT_READ_INDEX` 开关影响；根据第一批解码数据
+和 `-K` 估计固定的每块记录数，不使用普通 FASTQ 的尾块细分。
+`MPI_INPUT_MODE=static` 仍按 rank 轮转分配；`dynamic` 先准备有界的已解压 chunk
+窗口，再通过全局单调 RMA 票号动态领取比对任务。就绪数据打包进普通 MPI 窗口，
+本地领取复制、远程领取通过 RMA 获取正文和分区元数据，不再固定由解压该块的 rank 比对。
+`SWBWA_GZIP_READY_CHUNKS=1..16` 控制每 rank 的就绪块数，默认 4。
+窗口内领取无需逐块集体同步；窗口耗尽后，先排空已领取任务的流水线，再协同补充。
+增大窗口会增加内存占用，可能改善窗口尾部的不均衡。这不是任意压缩 offset 的独立
+随机访问，窗口边界仍可能等待慢任务。gzip 的有序输出使用在线 RMA 前缀，在 EOF 后验证总 chunk 数，
 也支持 `MPI_INPUT_MODE=static` 构建。`OUTPUT_RMA_ONLY=1` 仅关闭最终写盘；
 `SWBWA_OUTPUT_SAMPLE_READS=0` 可将默认每块前 100 条 read 抽样改为完整拼接 SAM
 指纹及分块 CRC32 校验。CRC 可按输出顺序合并，但不是分布式 MD5；完整校验耗时

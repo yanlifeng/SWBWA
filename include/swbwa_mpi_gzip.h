@@ -30,7 +30,10 @@ typedef struct {
  */
 swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const char *path2,
                                         size_t batch_bytes, unsigned workers, int debug);
-/* Collective in the same order on every rank. 1 = READY (possibly empty),
+/* STATIC: collective in the same order on every rank, READY may be empty.
+ * DYNAMIC: independently claim increasing IDs from a bounded ready window;
+ * refilling a window is collective, but the numbers of READY calls may differ.
+ * 1 = READY,
  * 0 = globally validated EOF; -1 is reserved for pre-MPI misuse only.
  * Each nonempty data[] is independently malloc-owned by the caller and has
  * a trailing NUL outside size[]. Records/first_record are zero-based logical
@@ -40,6 +43,11 @@ swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const char *path2,
  * formatter and be freed after formatting; it has partition_count entries.
  */
 int swbwa_mpi_gzip_next(swbwa_mpi_gzip_reader *, swbwa_mpi_gzip_batch *);
+/* Call once per nonempty chunk, in local delivery order, after its output has
+ * been consumed (Stage 3). Thread-safe; no MPI on the normal path. STATIC is a
+ * no-op. DYNAMIC refill waits for all local completions before codec collectives
+ * to avoid processor-handoff/ordered-output deadlocks. Does not free buffers. */
+int swbwa_mpi_gzip_complete(swbwa_mpi_gzip_reader *, int64_t chunk_id);
 /* Exact global count of nonempty chunks, available only after validated EOF. */
 int64_t swbwa_mpi_gzip_chunk_count(const swbwa_mpi_gzip_reader *);
 const char *swbwa_mpi_gzip_error(const swbwa_mpi_gzip_reader *);

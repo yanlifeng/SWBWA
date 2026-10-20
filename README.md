@@ -131,7 +131,7 @@ Experimental MPI gzip input uses the same CPE decoder on every rank:
 
 ```bash
 bash build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=1 \
-    OUTPUT_MODE=split GZIP_INPUT=1 CPE_LDM_MODE=2
+    MPI_INPUT_MODE=dynamic OUTPUT_MODE=split GZIP_INPUT=1 CPE_LDM_MODE=2
 ```
 
 Use one full-chip rank per node for `cgs` / `cgs_cross`. For six ranks per
@@ -141,10 +141,18 @@ supports `split`, `single_unordered`, `single_ordered` and `discard`.
 Ranks cooperatively decode the compressed stream and redistribute complete
 records into ordinal-based chunks. They do not gather the full FASTQ at rank 0
 or build a preliminary index. Exact read indices are accumulated online,
-regardless of `MPI_EXACT_READ_INDEX`. This path bypasses the plain-FASTQ
-`MPI_INPUT_MODE` scheduler and tail refinement: chunks are assigned round-robin,
-with a fixed record count estimated from the first decoded data and `-K`.
-It is an online collective reader, not independent arbitrary-offset random access.
+regardless of `MPI_EXACT_READ_INDEX`. The record count per chunk is estimated
+from the first decoded data and `-K`; plain-FASTQ tail refinement is not used.
+`MPI_INPUT_MODE=static` assigns chunks round-robin. `dynamic` stages a bounded
+window of decoded chunks and uses monotonic RMA tickets to distribute alignment
+work independently of the decoding owner. Ready data is packed into an ordinary
+MPI window; local claims copy it, while remote claims fetch FASTQ buffers and
+partition metadata using RMA.
+`SWBWA_GZIP_READY_CHUNKS=1..16` controls the staged chunks per rank (default 4).
+Refills are collective after the previous window's pipeline work drains; there
+is no per-chunk collective in the claim path. Larger windows use more memory and
+may reduce window-tail imbalance. This is dynamic scheduling of decoded data,
+not independent arbitrary-offset access to compressed bytes.
 Gzip `single_ordered` uses an online RMA prefix and validates the exact chunk
 count after EOF; it also supports `MPI_INPUT_MODE=static`. For no-file tests,
 use `OUTPUT_RMA_ONLY=1`; set `SWBWA_OUTPUT_SAMPLE_READS=0` for full packed-SAM

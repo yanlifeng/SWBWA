@@ -15,7 +15,7 @@ class OptimizationDefaultsTest(unittest.TestCase):
                if key not in {"MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
                               "CPE_KERNEL_OPT", "CPE_DISCARD_DIGEST",
                               "CPE_PROFILE", "HOST_MALLOC_STATS", "HOST_MPE_THREADS",
-                              "CPE_LDM_MODE"}}
+                              "CPE_LDM_MODE", "GZIP_INPUT", "GZIP_OUTPUT"}}
         return subprocess.run(
             ["make", "-s", "--no-print-directory", "print-config",
              *[f"{key}={value}" for key, value in options.items()]],
@@ -125,9 +125,38 @@ class OptimizationDefaultsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("CPE_DISCARD_DIGEST=1 requires", result.stderr)
 
+    def test_independent_gzip_build_flags(self):
+        for execution, mpi, gzip_input, gzip_output in itertools.product(
+                ("single", "cgs", "cgs_cross"), (0, 1), (0, 1), (0, 1)):
+            with self.subTest(execution=execution, mpi=mpi,
+                              gzip_input=gzip_input, gzip_output=gzip_output):
+                result = subprocess.run(
+                    ["make", "-Bn", "--no-print-directory", "SWBWA",
+                     f"EXEC_MODE={execution}", f"USE_MPI={mpi}",
+                     "CPE_ALLOCATOR=pool", "OUTPUT_MODE=split",
+                     f"GZIP_INPUT={gzip_input}", f"GZIP_OUTPUT={gzip_output}"],
+                    cwd=ROOT, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                link_lines = [line for line in result.stdout.splitlines()
+                              if "-o SWBWA " in line]
+                self.assertTrue(link_lines)
+                link = "\n".join(link_lines)
+                objects = {
+                    "output.o": gzip_output,
+                    "input.o": gzip_input,
+                    "mpi_decoder.o": gzip_input and mpi,
+                    "mpe_decode.o": gzip_input,
+                    "backend_swbwa.o": gzip_input or gzip_output,
+                    "codec_job.o": gzip_input or gzip_output,
+                    "rapid_firstpass.o": gzip_input,
+                    "z_deflate.o": gzip_input or gzip_output,
+                }
+                for name, enabled in objects.items():
+                    self.assertEqual(f"src/gzip/{name}" in link, bool(enabled), name)
+
     def test_invalid_boolean_values(self):
         for key, value in itertools.product(
-                ("CPE_KERNEL_OPT", "CPE_DISCARD_DIGEST"),
+                ("CPE_KERNEL_OPT", "CPE_DISCARD_DIGEST", "GZIP_INPUT", "GZIP_OUTPUT"),
                 ("", "2", "-1", "0 1", "1 junk", "%")):
             with self.subTest(key=key, value=value):
                 result = self.config(EXEC_MODE="cgs_cross", CPE_ALLOCATOR="pool",

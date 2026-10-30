@@ -47,6 +47,31 @@ static void *blocked_reader(void *opaque)
     return NULL;
 }
 
+static void *blocked_io(void *opaque)
+{
+    assert(swbwa_host_io_workers_run(hold_pool, opaque) == 0);
+    return NULL;
+}
+
+static void check_independent_io(void)
+{
+    pthread_t io;
+    task_t task = {{0}, 8000};
+    int i;
+    entered = released = 0;
+    assert(pthread_create(&io, NULL, blocked_io, NULL) == 0);
+    pthread_mutex_lock(&held_mutex);
+    while (!entered) pthread_cond_wait(&held_changed, &held_mutex);
+    pthread_mutex_unlock(&held_mutex);
+    assert(swbwa_host_workers_try_run(fill, &task));
+    for (i = 0; i < COUNT; ++i) assert(task.values[i] == (unsigned)i + task.seed);
+    pthread_mutex_lock(&held_mutex);
+    released = 1;
+    pthread_cond_broadcast(&held_changed);
+    pthread_mutex_unlock(&held_mutex);
+    assert(pthread_join(io, NULL) == 0);
+}
+
 static void check_busy_fallback(void)
 {
     pthread_t reader;
@@ -57,6 +82,11 @@ static void check_busy_fallback(void)
     pthread_mutex_lock(&held_mutex);
     while (!entered) pthread_cond_wait(&held_changed, &held_mutex);
     pthread_mutex_unlock(&held_mutex);
+    assert(!swbwa_host_workers_try_run(fill, &task));
+    for (i = 0; i < COUNT; ++i) assert(task.values[i] == 0);
+    assert(swbwa_host_io_workers_run(fill, &task) == 0);
+    for (i = 0; i < COUNT; ++i) assert(task.values[i] == (unsigned)i + task.seed);
+    ++task.seed;
     swbwa_host_workers_run_ready(fill, &task);
     for (i = 0; i < COUNT; ++i) assert(task.values[i] == (unsigned)i + task.seed);
     pthread_mutex_lock(&held_mutex);
@@ -64,6 +94,8 @@ static void check_busy_fallback(void)
     pthread_cond_broadcast(&held_changed);
     pthread_mutex_unlock(&held_mutex);
     assert(pthread_join(reader, NULL) == 0);
+    assert(swbwa_host_workers_try_run(fill, &task));
+    for (i = 0; i < COUNT; ++i) assert(task.values[i] == (unsigned)i + task.seed);
 }
 int main(void)
 {
@@ -72,6 +104,7 @@ int main(void)
         pthread_t other[2];
         assert(swbwa_host_workers_init() == 0);
         check_busy_fallback();
+        check_independent_io();
         assert(pthread_create(&other[0], NULL, caller, (void *)(uintptr_t)1234) == 0);
         assert(pthread_create(&other[1], NULL, caller, (void *)(uintptr_t)5678) == 0);
         caller(NULL);

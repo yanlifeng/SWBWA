@@ -49,13 +49,14 @@
 #include "swbwa_config.h"
 #include "swbwa_discard_digest.h"
 #include "swbwa_cpe.h"
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
 #include <pthread.h>
 #include "swbwa_codec_runtime.h"
 #include "swbwa_pipeline.h"
 #include "../gzip/codec_job.h"
 #endif
 #include "swbwa_cpe_layout.h"
+#include "swbwa_cross_layout.h"
 #include "swbwa_mpi.h"
 #include "swbwa_runtime.h"
 #include "swbwa_cpe_profile.h"
@@ -1308,7 +1309,7 @@ extern void SLAVE_FUN(pass_para());
 extern void SLAVE_FUN(copy_priv_segment());
 extern void SLAVE_FUN(change_priv_segment());
 extern void SLAVE_FUN(swbwa_cross_dispatch());
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
 extern void SLAVE_FUN(swbwa_codec_cross());
 extern void SLAVE_FUN(swbwa_codec());
 
@@ -1447,7 +1448,7 @@ enum swbwa_cpe_progress_phase {
     SWBWA_CPE_PROGRESS_FORMAT,
     SWBWA_CPE_PROGRESS_ALIGN,
     SWBWA_CPE_PROGRESS_SAM,
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
     SWBWA_CPE_PROGRESS_CODEC,
 #endif
     SWBWA_CPE_PROGRESS_PHASE_COUNT
@@ -1563,7 +1564,7 @@ static void swbwa_cpe_progress_debug_report_body(void)
         "FASTQ formatting",
         "alignment and SAM length",
         "SAM record generation",
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
         "gzip codec"
 #endif
     };
@@ -1764,11 +1765,26 @@ static void *swbwa_allocate_cross_segments(void)
 {
     asm volatile("memb\n\t":::);
     unsigned long len = swbwa_cpe_data_start + swbwa_cpe_data_size - swbwa_cpe_text_start;
+    if (len > SIZE_MAX - (SWBWA_CROSS_PC_BYTES - 1))
+        err_fatal(__func__, "CPE segment allocation size overflow");
     unsigned long len_ = len + (1ul << 20);
     void *dest_ = malloc(len_);
     if (dest_ == NULL)
         err_fatal(__func__, "failed to allocate CPE text segment buffer: bytes=%lu", len_);
     void *dest = (void*)(((unsigned long)dest_ + 4095) & (~4095ul));
+    if (!swbwa_cross_text_fits((uintptr_t)dest, swbwa_cpe_text_size)) {
+        void *aligned = malloc(len + SWBWA_CROSS_PC_BYTES - 1);
+        if (aligned == NULL)
+            err_fatal(__func__, "failed to allocate aligned CPE text segment buffer");
+        /* A short-PC call can wrap across its instruction-address window. Preserve
+         * linked low address bits in the fallback; keep normal heaps unchanged. */
+        dest = (void *)((uintptr_t)aligned + swbwa_cross_relocation_padding(
+            (uintptr_t)aligned, swbwa_cpe_text_start));
+        if (bwa_verbose >= 4)
+            fprintf(stderr, "[cross-layout] adjusted text placement: old=%p new=%p bytes=%lu\n",
+                    (void*)(((unsigned long)dest_ + 4095) & (~4095ul)), dest, swbwa_cpe_text_size);
+        free(dest_);
+    }
     return dest;
 }
 
@@ -2106,18 +2122,87 @@ static swbwa_cpe_task_t *swbwa_shared_params_locked(void)
     return swbwa_shared_params;
 }
 
+#if SWBWA_ENABLE_CODEC
+static pthread_once_t swbwa_codec_dispatch_once = PTHREAD_ONCE_INIT;
+static int swbwa_codec_reader_dispatch;
+static int swbwa_codec_mpe_fallback;
+static pthread_mutex_t swbwa_codec_stats_mutex = PTHREAD_MUTEX_INITIALIZER;
 #if SWBWA_ENABLE_GZIP_INPUT
+extern int swbwa_codec_mpe_decode(swbwa_codec_batch *batch);
+#endif
+static struct {
+    uint64_t calls, direct_calls, mpe_calls;
+    double handoff_s, lock_s, run_s, mpe_s, max_wait_s;
+} swbwa_codec_dispatch_stats[2];
+
+static void swbwa_codec_dispatch_configure(void)
+{
+    const char *value = getenv("SWBWA_GZIP_CPE_DISPATCH");
+    if (value && strcmp(value, "processor") && strcmp(value, "reader") && strcmp(value, "hybrid"))
+        err_fatal(__func__, "SWBWA_GZIP_CPE_DISPATCH must be processor, reader or hybrid");
+#if SWBWA_ENABLE_GZIP_INPUT
+    swbwa_codec_mpe_fallback = value && !strcmp(value, "hybrid");
+#else
+    if (value && !strcmp(value, "hybrid"))
+        err_fatal(__func__, "hybrid codec dispatch requires gzip input");
+#endif
+#if SWBWA_USE_CROSS_SEGMENT
+    swbwa_codec_reader_dispatch = value && strcmp(value, "processor");
+#endif
+    if (bwa_verbose >= 4 || (value && strcmp(value, "processor")))
+        fprintf(stderr, "[CPE codec dispatch rank=%d] requested=%s effective=%s mpe_fallback=%d\n",
+                swbwa_mpi_rank(), value ? value : "processor",
+                swbwa_codec_reader_dispatch ? "reader" : "processor", swbwa_codec_mpe_fallback);
+}
+
 typedef struct {
     swbwa_codec_batch *batch;
     double requested_at;
     double run_s, wait_s;
+    int decode, direct;
 } swbwa_codec_request_t;
 
-static void swbwa_codec_runtime_launch_on_owner(void *opaque)
+static void swbwa_codec_record(const swbwa_codec_request_t *request,
+                               double handoff, double lock_wait, int mpe)
+{
+    int index = request->decode;
+    if (pthread_mutex_lock(&swbwa_codec_stats_mutex) != 0)
+        err_fatal(__func__, "failed to lock codec counters");
+    ++swbwa_codec_dispatch_stats[index].calls;
+    swbwa_codec_dispatch_stats[index].direct_calls += request->direct;
+    swbwa_codec_dispatch_stats[index].mpe_calls += mpe;
+    swbwa_codec_dispatch_stats[index].handoff_s += handoff;
+    swbwa_codec_dispatch_stats[index].lock_s += lock_wait;
+    if (mpe) swbwa_codec_dispatch_stats[index].mpe_s += request->run_s;
+    else swbwa_codec_dispatch_stats[index].run_s += request->run_s;
+    if (request->wait_s > swbwa_codec_dispatch_stats[index].max_wait_s)
+        swbwa_codec_dispatch_stats[index].max_wait_s = request->wait_s;
+    if (pthread_mutex_unlock(&swbwa_codec_stats_mutex) != 0)
+        err_fatal(__func__, "failed to unlock codec counters");
+}
+
+#if SWBWA_USE_CROSS_SEGMENT
+static pthread_once_t swbwa_codec_cross_once = PTHREAD_ONCE_INIT;
+
+static void swbwa_codec_prepare_on_owner(void *unused)
+{
+    (void)unused;
+    swbwa_cpe_runtime_lock();
+    swbwa_cross_runtime_init(&swbwa_shared_cross_runtime, swbwa_shared_params_locked());
+    swbwa_cpe_runtime_unlock();
+}
+
+static void swbwa_codec_prepare_cross(void)
+{
+    swbwa_pipeline_call_on_processor(swbwa_codec_prepare_on_owner, NULL);
+}
+#endif
+
+static void swbwa_codec_run_exclusive(void *opaque)
 {
     swbwa_codec_request_t *request = opaque;
     swbwa_codec_batch *batch = request->batch;
-    double run_start;
+    double entered_at = GetTime(), run_start;
 
     swbwa_cpe_runtime_lock();
     run_start = GetTime();
@@ -2139,6 +2224,8 @@ static void swbwa_codec_runtime_launch_on_owner(void *opaque)
     }
     request->run_s = GetTime() - run_start;
     swbwa_cpe_runtime_unlock();
+    swbwa_codec_record(request, entered_at - request->requested_at,
+                       run_start - entered_at, 0);
 }
 
 void swbwa_codec_runtime_launch(void *opaque_batch, double *run_s, double *wait_s)
@@ -2155,15 +2242,66 @@ void swbwa_codec_runtime_launch(void *opaque_batch, double *run_s, double *wait_
     request.batch = batch;
     request.requested_at = GetTime();
     request.run_s = request.wait_s = 0;
-#if SWBWA_USE_CROSS_SEGMENT
-    swbwa_codec_runtime_launch_on_owner(&request);
-#else
-    /* Native athread spawn/join belongs to the main thread. Reader threads
-     * request a launch while it waits for the next input batch. */
-    swbwa_pipeline_call_on_processor(swbwa_codec_runtime_launch_on_owner, &request);
+    request.decode = batch->count &&
+        (batch->jobs[0].operation == SWBWA_CODEC_DISCOVER ||
+         batch->jobs[0].operation == SWBWA_CODEC_RESOLVE);
+    request.direct = 0;
+    if (pthread_once(&swbwa_codec_dispatch_once, swbwa_codec_dispatch_configure) != 0)
+        err_fatal(__func__, "failed to configure CPE codec dispatch");
+#if SWBWA_ENABLE_GZIP_INPUT
+    if (request.decode && swbwa_codec_mpe_fallback) {
+        int error = pthread_mutex_trylock(&swbwa_cpe_runtime_mutex);
+        if (error == 0) {
+            swbwa_cpe_runtime_unlock();
+        } else if (error == EBUSY) {
+            double start = GetTime();
+            /* Independent jobs own their buffers; MPE decoding never touches
+             * the CPE mailbox or live alignment state. Do not queue behind an
+             * occupied helper pool: that case keeps the regular CPE path. */
+            if (swbwa_codec_mpe_decode(batch)) {
+                request.run_s = GetTime() - start;
+                request.wait_s = start - request.requested_at;
+                swbwa_codec_record(&request, request.wait_s, 0, 1);
+                if (run_s != NULL) *run_s = request.run_s;
+                if (wait_s != NULL) *wait_s = request.wait_s;
+                return;
+            }
+        } else {
+            err_fatal(__func__, "failed to probe CPE runtime: %s", strerror(error));
+        }
+    }
 #endif
+#if SWBWA_USE_CROSS_SEGMENT
+    if (request.decode && swbwa_codec_reader_dispatch) {
+        /* Initial TLS/segment setup still uses native athread on its owner.
+         * Only the initialized, process-wide mailbox may migrate to Reader. */
+        if (pthread_once(&swbwa_codec_cross_once, swbwa_codec_prepare_cross) != 0)
+            err_fatal(__func__, "failed to initialize CPE codec dispatcher");
+        request.direct = 1;
+        swbwa_codec_run_exclusive(&request);
+    } else
+#endif
+        swbwa_pipeline_call_on_processor(swbwa_codec_run_exclusive, &request);
     if (run_s != NULL) *run_s = request.run_s;
     if (wait_s != NULL) *wait_s = request.wait_s;
+}
+
+void swbwa_codec_runtime_report(FILE *stream)
+{
+    int i;
+    if (pthread_mutex_lock(&swbwa_codec_stats_mutex) != 0)
+        err_fatal(__func__, "failed to lock codec counters");
+    for (i = 0; i < 2; ++i)
+        fprintf(stream, "[CPE codec dispatch rank=%d] phase=%s calls=%" PRIu64
+                " direct_calls=%" PRIu64 " handoff_s=%.6f lock_s=%.6f run_s=%.6f max_wait_s=%.6f"
+                " mpe_calls=%" PRIu64 " mpe_s=%.6f\n",
+                swbwa_mpi_rank(), i ? "decode" : "encode",
+                swbwa_codec_dispatch_stats[i].calls, swbwa_codec_dispatch_stats[i].direct_calls,
+                swbwa_codec_dispatch_stats[i].handoff_s, swbwa_codec_dispatch_stats[i].lock_s,
+                swbwa_codec_dispatch_stats[i].run_s, swbwa_codec_dispatch_stats[i].max_wait_s,
+                swbwa_codec_dispatch_stats[i].mpe_calls, swbwa_codec_dispatch_stats[i].mpe_s);
+    if (pthread_mutex_unlock(&swbwa_codec_stats_mutex) != 0)
+        err_fatal(__func__, "failed to unlock codec counters");
 }
 #endif
 
@@ -2175,7 +2313,7 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     worker_t w;
     swbwa_cpe_task_t *para;
     double ctime, rtime;
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
     double wait_start = swbwa_cpe_progress_now();
     swbwa_cpe_runtime_lock();
     double wait_end = swbwa_cpe_progress_now();
@@ -2496,7 +2634,7 @@ void mem_process_seqs_merge2(const mem_opt_t *opt, const bwt_t *bwt, const bntse
     if (bwa_verbose >= 3)
         fprintf(stderr, "[M::%s] Processed %d reads in %.3f CPU sec, %.3f real sec\n", __func__, n, cputime() - ctime, realtime() - rtime);
     para->worker_data = NULL;
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
     swbwa_cpe_runtime_unlock();
 #endif
 }

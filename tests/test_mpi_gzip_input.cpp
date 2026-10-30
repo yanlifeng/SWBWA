@@ -17,11 +17,15 @@
 #include <thread>
 #include <vector>
 
+// The standalone reader harness has no processor service thread.
+extern "C" void *swbwa_pipeline_context(void) { return NULL; }
+extern "C" void swbwa_pipeline_set_context(void *context) { assert(!context); }
+
 static uint64_t decode_calls;
-extern "C" void __real_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *);
-extern "C" void __wrap_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *c)
+extern "C" void __real_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *, unsigned);
+extern "C" void __wrap_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *c, unsigned workers)
 {
-    __real_swbwa_mpi_decoder_config_init(c);
+    __real_swbwa_mpi_decoder_config_init(c, workers);
     if (!std::getenv("FASTQ_TEST_DEFAULT_CONFIG")) {
         c->chunk_bytes = 4096; c->jobs_per_rank = 1; c->initial_output_bytes = 65536;
         c->decoded_bytes = 8U << 20; c->memory_bytes = 64U << 20;

@@ -16,6 +16,11 @@ heap 回退前提、按批统计、pool 增长/扩容及错误路径；同时检
 不提交远端作业，不生成数据集的 SAM 结果；输出测试只在临时目录生成小型样本并清理。
 这些检查不能代替 Sunway 的 cross 两遍编译和比对回归。
 
+`python3 tests/test_codec_dispatch.py` 在本机提取并编译真实 runtime 调度代码，
+连接真实流水线队列，模拟 CPE 执行。ASan/UBSan 检查 processor/reader 两种策略的
+初始化线程归属、排他执行、压缩留在 Processor、普通模式回退及非法参数拒绝。
+它不验证 Sunway 的 MMIO 或 athread 线程行为，后两者需要原生测试。
+
 测试不链接到正式程序。生产路径保留错误/边界检查与可选性能统计；不要为了
 精简代码删除 SAM 校验或 allocator 所有权检查。已移除实验分支对应的独立测试
 也一并移除；`test_optimization_defaults.py` 额外检查三个执行模式的构建对象清单
@@ -81,6 +86,11 @@ of a disk output. It is separate from the non-MPI host checks.
 
 ## Cross Runtime Stack Regression
 
+`test_cross_layout.c` checks short-PC window bounds and relocation padding,
+including a formerly failing heap address and 100,000 randomized placements.
+It runs under sanitizers in `run_host_checks.sh`; native cross execution is
+still required to validate the hardware instruction-address behavior.
+
 `python3 tests/test_cross_stack.py RUN_LOG` checks the `-v 4` cross-dispatch
 trace: consecutive task IDs, three completed phases per batch, and stable
 post-return stack ranges across all CPEs. With no arguments it tests the
@@ -142,3 +152,41 @@ where the data reside; SAM files need not be transferred for validation.
 `test_ordered_sam_check.py` verifies that reordered, truncated, duplicated and
 modified records are rejected. A non-MPI SWBWA reference checks output-path
 consistency, not independent agreement with upstream BWA.
+
+## Gzip SAM Output
+
+`python3 tests/test_gzip_output.py -v` builds the production output layer with a
+native codec backend and exercises non-MPI, MPI split, unordered and ordered
+single-file output. It validates concatenated gzip members, exact restored bytes,
+empty/idle ranks, incompressible/oversized records, reopen, fixed/adaptive blocks,
+six-MPE preparation and positioned writes, absent helper initialization, short
+writes and EINTR. Use `SWBWA_TEST_SANITIZER=address,undefined` for ASan/UBSan.
+MPI stays on the local host via the fork launcher. Artifacts are temporary.
+Prefix-ahead cases cover online/known prefix tables, slow writers, empty streams,
+reopen and duplicate publication/release rejection. The dynamic gzip pipeline
+test's `--prefix-ahead` stress holds rank 0 in pwrite until a successor rank
+writes a later chunk, proving that metadata publication no longer depends on
+the earlier disk write. `--early-first` also tests split READY-window preparation.
+
+`tests/check_gzip_sam.cpp` is an independent system-zlib verifier that can also be
+compiled with the Sunway host compiler and run on a compute node. By default it
+compares the complete decompressed byte stream using bounded buffers and prints
+MD5/record/byte counts. `--each` compares several candidates independently against
+one reference. `--unordered` sorts complete SAM lines in memory and compares their
+multisets, for MPI unordered/split output; it requires enough memory for both SAMs.
+`.gz` paths must contain a gzip header; every member checksum is validated.
+
+### Optional Reader/MPE Codec Dispatch
+
+`python3 tests/test_codec_dispatch.py` checks actual runtime dispatch with mocked
+CPE work and real queues, including the MPE fallback under deterministic lock
+contention. `python3 tests/test_mpe_decode.py` checks the real discover/resolve
+code with one and six MPE-style workers under ASan/UBSan. These native host tests
+do not measure Sunway performance or validate hardware mailbox access.
+
+`python3 tests/test_gzip_prefetch.py` exercises the production MPI decoder Source
+without remote operations: persistent worker reuse, repeated open/close, pending
+success/error shutdown, propagated I/O failures, and disabled/prefix prefetch.
+It checks thread bounds across 1,024 requests under normal and ASan/UBSan builds.
+MPE decode tests use the production `SWBWA_CODEC_MPE=1`, `SWBWA_CODEC_LDM=0`
+layout and repeated batches, including alignment and constructor-failure cleanup.

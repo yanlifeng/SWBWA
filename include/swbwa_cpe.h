@@ -64,7 +64,7 @@ typedef struct {
     swbwa_ldm_policy_t ldm_policy;
 #endif
     swbwa_cross_command_t *cross_command;
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
     void *codec_batch; /* Borrowed only for a synchronous codec dispatch. */
 #endif
 } swbwa_cpe_task_t;

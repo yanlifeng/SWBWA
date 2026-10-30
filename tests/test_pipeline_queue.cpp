@@ -54,6 +54,10 @@ static void* process(void* opaque, int step, void* data)
         return batch;
     }
     if (step == 2) {
+        if (f.handoff) {
+            swbwa_pipeline_call_on_processor(owner_call, &f);
+            swbwa_pipeline_call_on_processor(owner_call, &f);
+        }
         assert(batch->id == f.written++);
         if (f.slow == 2 && batch->id % 17 == 0)
             std::this_thread::sleep_for(std::chrono::microseconds(50));
@@ -63,6 +67,7 @@ static void* process(void* opaque, int step, void* data)
         return nullptr;
     }
     assert(step == 3 && data == nullptr);
+    if (f.handoff) swbwa_pipeline_call_on_processor(owner_call, &f);
     ++f.flushed;
     return nullptr;
 }
@@ -75,7 +80,7 @@ int main()
             swbwa_pipeline_call_on_processor(owner_call, &f);
             kt_pipeline_queue(3, process, &f, 3);
             assert(f.produced == count && f.processed == count && f.written == count && f.flushed == 1);
-            const size_t requests = f.handoff ? 2 * (count + 1) : 0;
+            const size_t requests = f.handoff ? 4 * count + 3 : 0;
             assert(f.processor_calls == 1 + requests);
             swbwa_pipeline_call_on_processor(owner_call, &f);
             assert(f.processor_calls == 2 + requests);

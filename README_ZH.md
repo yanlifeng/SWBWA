@@ -75,6 +75,7 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `CPE_DISCARD_DIGEST` | `0`、`1` | 非 MPI `cgs_cross + pool` 且 `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0` 时为 `1`，其他为 `0` |
 | `USE_MPI` | `0`、`1` | `1` |
 | `GZIP_INPUT` | `0`、`1` | `1` |
+| `GZIP_OUTPUT` | `0`、`1` | `1`；`.gz` 输出名选择 CPE 并行压缩 |
 | `MPI_INPUT_MODE` | `static`、`dynamic` | MPI 构建时为 `dynamic` |
 | `OUTPUT_MODE` | `split`、`single_unordered`、`single_ordered`、`discard` | MPI 为 `single_unordered`，非 MPI 为 `split` |
 | `MPI_EXACT_READ_INDEX` | `0`、`1` | `1` |
@@ -221,6 +222,31 @@ MPI `single_unordered` 的比对输出以输入 chunk 为单位：一个非空 c
 一次 RMA 文件区间，块内保持 read/SAM 顺序，不再将不同 chunk 合并到同一个
 64 MiB 区间。该模式全局依然无序；需要输入顺序时使用下文的 `single_ordered`。
 打包缓冲按最大块的 SAM 大小增长，64 MiB 只是初始容量。
+
+默认 `GZIP_OUTPUT=1`，指定 `-o output.sam.gz` 即可启用普通 gzip SAM 输出，兼容
+`split`、`single_unordered` 和 `single_ordered`。非 MPI 的 `split` 仍输出一个有序文件；
+MPI split 文件名为 `output.rank000000.sam.gz`。输入是否压缩与输出无关。
+
+压缩引擎让 64/384 CPE 直接读取已有 SAM 片段，不先在 MPE 拼成大缓冲；六 MPE
+构建复用绑核辅助线程生成描述信息。每个压缩任务生成独立的标准 gzip member，
+通过 `writev/pwritev` 写出，避免再次拼接压缩数据。有序单文件按输入 chunk ID 和
+**压缩后的长度**确定偏移，不把数据汇集到 rank 0。
+
+默认压缩级别为 1，可用 `SWBWA_GZIP_LEVEL=1..9` 调整。
+`SWBWA_GZIP_BLOCK_KIB=0` 自动按 CPE 数选择任务大小，`1..4096` 固定大小。
+六 MPE 构建可用 `SWBWA_GZIP_PARALLEL_WRITE=1` 让辅助线程并行执行互不重叠的
+`pwritev`。这一项默认关闭：带宽受限的共享文件系统并不一定受益；
+描述符准备仍默认使用所有配置的 MPE 辅助线程。
+默认由 Processor 在比对完成后、进入 writer 队列前压缩该批次，
+Writer 持有压缩结果直到写完，让写盘与后续工作重叠。
+可用 `SWBWA_GZIP_PREPARE_OUTPUT=0` 恢复由 Writer 请求压缩的路径进行对照。
+压缩结果使用五个独立复用槽，
+内存开销随最大批次增长。准备时间单独计入 Stage2 与 Stage3 之间的项目，
+不能把这部分计时位置变化当作比对加速。
+`.gz` 不能与 `OUTPUT_MODE=discard` 或 `SWBWA_OUTPUT_MD5=1` 混用；
+`OUTPUT_RMA_ONLY=1` 仍执行压缩并申请压缩后的文件区间，但不实际写盘。
+`-v 4` 和 `[SWBWA gzip output ...]` 分别记录主核准备、CPE 执行、运行时等待及 I/O。
+详见 [引擎说明](src/gzip/README.md#parallel-sam-compression)。
 
 `cgs` / `cgs_cross` 默认 `HOST_MPE_THREADS=6`，使用另外五个 MPE 并行完成主核的 SAM
 长度统计、地址分配及输出打包。`single` 默认 `1`；大共享模式也可显式传

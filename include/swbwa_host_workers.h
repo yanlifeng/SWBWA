@@ -14,6 +14,11 @@ int swbwa_host_workers_init(void);
 void swbwa_host_workers_run(swbwa_host_work_fn function, void *data);
 /* Do not wait behind I/O. A busy pool executes all logical slices on the caller. */
 void swbwa_host_workers_run_ready(swbwa_host_work_fn function, void *data);
+/* Return zero without executing when the helper pool is already in use. */
+int swbwa_host_workers_try_run(swbwa_host_work_fn function, void *data);
+/* Dedicated blocking-I/O workers share MPEs, but not the compute dispatch lock.
+ * Lazily initialized; return -1/errno if creation or binding fails. */
+int swbwa_host_io_workers_run(swbwa_host_work_fn function, void *data);
 void swbwa_host_workers_destroy(void);
 #else
 static inline int swbwa_host_workers_init(void) { return 0; }
@@ -25,6 +30,16 @@ static inline void swbwa_host_workers_destroy(void) {}
 static inline void swbwa_host_workers_run_ready(swbwa_host_work_fn function, void *data)
 {
     function(data, 0, 1);
+}
+static inline int swbwa_host_workers_try_run(swbwa_host_work_fn function, void *data)
+{
+    function(data, 0, 1);
+    return 1;
+}
+static inline int swbwa_host_io_workers_run(swbwa_host_work_fn function, void *data)
+{
+    function(data, 0, 1);
+    return 0;
 }
 #endif
 

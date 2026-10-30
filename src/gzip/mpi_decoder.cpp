@@ -4,17 +4,28 @@
 #include "mpi_decoder_protocol.h"
 #include "codec_job.h"
 #include "crc_combine.h"
+#include "parallel_pread.h"
 #include <zlib.h>
 
 #include <cerrno>
+#include <atomic>
+#include <chrono>
 #include <climits>
+#include <condition_variable>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
+#if defined(__sw_host__) && SWBWA_HOST_MPE_THREADS > 1
+#include <athread.h>
+#endif
 
 namespace {
 using namespace swbwa_mpi_gzip;
@@ -45,24 +56,133 @@ public:
                 uint64_t(info.st_size) > UINT64_MAX / 8)
                 throw std::runtime_error("input must be a regular gzip file of at least 18 bytes");
             size_ = uint64_t(info.st_size);
+#if defined(__sw_host__) && SWBWA_HOST_MPE_THREADS > 1
+            static std::atomic<unsigned> lane{0};
+            unsigned long home;
+            __asm__ volatile("rcid %0" : "=r"(home));
+            io_target_ = int(((home & 7) + 1 + lane.fetch_add(1) %
+                (SWBWA_HOST_MPE_THREADS - 1)) % SWBWA_HOST_MPE_THREADS);
+#endif
+            metrics_.prefetch_cg = io_target_;
+            unsigned readers = 1;
+#if SWBWA_HOST_MPE_THREADS > 1
+            readers = SWBWA_HOST_MPE_THREADS;
+#endif
+            if (const char *setting = std::getenv("SWBWA_GZIP_INPUT_READERS")) {
+                char *end = nullptr;
+                errno = 0;
+                const unsigned long value = std::strtoul(setting, &end, 10);
+                if (errno || !*setting || *end || value < 1 || value > readers)
+                    throw std::runtime_error("gzip input readers exceeds available MPEs");
+                readers = unsigned(value);
+            }
+            reads_.reset(new SwbwaParallelPread(readers));
+            if (const char *setting = std::getenv("SWBWA_GZIP_PREFETCH_MIB")) {
+                char *end = nullptr;
+                errno = 0;
+                unsigned long value = std::strtoul(setting, &end, 10);
+                if (errno || !*setting || *end || value > 256)
+                    throw std::runtime_error("gzip prefetch must be 0..256 MiB");
+                prefetch_limit_ = size_t(value) << 20;
+            }
         } catch (...) { ::close(fd_); fd_ = -1; throw; }
     }
-    ~Source() { if (fd_ >= 0) ::close(fd_); }
+    ~Source() {
+        if (pending_.valid()) pending_.wait();
+        if (io_worker_.joinable()) {
+            {
+                std::lock_guard<std::mutex> lock(io_mutex_);
+                io_stopping_ = true;
+            }
+            io_ready_.notify_one();
+            io_worker_.join();
+        }
+        if (fd_ >= 0) ::close(fd_);
+    }
     uint64_t size() const { return size_; }
     void read(uint64_t offset, void *buffer, size_t count) {
         if (offset > size() || count > size() - offset)
             throw std::runtime_error("truncated input");
         const double begin = MPI_Wtime();
-        unsigned char *p = static_cast<unsigned char *>(buffer);
-        while (count) {
-            ssize_t n = pread(fd_, p, count, static_cast<off_t>(offset));
-            if (n < 0 && errno == EINTR) continue;
-            if (n < 0) throw io_error("pread gzip");
-            if (!n) throw std::runtime_error("truncated or changed input");
-            count -= size_t(n); p += n; offset += uint64_t(n);
-            metrics_.source_read_bytes += uint64_t(n);
-        }
+        Io io;
+        read_exact(fd_, offset, buffer, count, io);
+        metrics_.source_read_bytes += count;
+        metrics_.source_read_calls += io.calls;
+        metrics_.source_io_s += io.seconds;
         metrics_.io_s += MPI_Wtime() - begin;
+    }
+    std::unique_ptr<unsigned char[]> read_batch(uint64_t offset, size_t count) {
+        const double begin = MPI_Wtime();
+        Transfer transfer;
+        if (pending_.valid()) {
+            if (offset != pending_offset_ || count != pending_size_)
+                throw std::logic_error("gzip prefetch range disagrees with decoder plan");
+            transfer = pending_.get();
+            ++metrics_.prefetch_batches;
+            metrics_.prefetch_bytes += transfer.loaded - transfer.cached;
+            metrics_.prefetch_io_s += transfer.io.seconds;
+        } else {
+            transfer.data.reset(new unsigned char[count + GUARD]);
+        }
+        bulk_read(offset + transfer.loaded, transfer.data.get() + transfer.loaded,
+                  count - transfer.loaded, transfer.io);
+        std::memset(transfer.data.get() + count, 0, GUARD);
+        metrics_.source_read_bytes += count - transfer.cached;
+        metrics_.source_cache_bytes += transfer.cached;
+        metrics_.source_read_calls += transfer.io.calls;
+        metrics_.source_io_s += transfer.io.seconds;
+        metrics_.io_s += MPI_Wtime() - begin;
+        return std::move(transfer.data);
+    }
+    void prefetch(uint64_t offset, size_t count, const unsigned char *previous = nullptr,
+                  uint64_t previous_offset = 0, size_t previous_size = 0) {
+        if (!prefetch_limit_ || !count) return;
+        if (pending_.valid()) throw std::logic_error("unconsumed gzip prefetch request");
+        pending_offset_ = offset; pending_size_ = count;
+        const size_t loaded = std::min(count, prefetch_limit_);
+        auto transfer = std::make_shared<Transfer>();
+        transfer->data.reset(new unsigned char[count + GUARD]);
+        const uint64_t shared_begin = std::max(offset, previous_offset);
+        const uint64_t shared_end = std::min(offset + loaded, previous_offset + previous_size);
+        size_t prefix = loaded, suffix = loaded;
+        const char *reuse = std::getenv("SWBWA_GZIP_REUSE_INPUT");
+        if (previous && (!reuse || std::strcmp(reuse, "0")) && shared_begin < shared_end) {
+            prefix = size_t(shared_begin - offset);
+            suffix = size_t(shared_end - offset);
+            transfer->cached = suffix - prefix;
+            const auto begin = std::chrono::steady_clock::now();
+            std::memcpy(transfer->data.get() + prefix, previous + (shared_begin - previous_offset),
+                        transfer->cached);
+            metrics_.source_cache_s += std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+        }
+        // Only the exact next rank-local stripe is read. This worker never
+        // calls MPI or enters the CPE runtime, and hands its allocation over.
+        std::packaged_task<Transfer()> request([this, offset, loaded, prefix, suffix, transfer]() {
+            // Bind inside the task so binding failures also reach the future.
+            if (!io_bound_) {
+#if defined(__sw_host__) && SWBWA_HOST_MPE_THREADS > 1
+                SET_TO_SWCG(io_target_);
+                unsigned long actual;
+                __asm__ volatile("rcid %0" : "=r"(actual));
+                if (int(actual & 7) != io_target_)
+                    throw std::runtime_error("gzip I/O worker MPE binding failed");
+#endif
+                io_bound_ = true;
+            }
+            bulk_read(offset, transfer->data.get(), prefix, transfer->io);
+            bulk_read(offset + suffix, transfer->data.get() + suffix, loaded - suffix, transfer->io);
+            transfer->loaded = loaded;
+            return std::move(*transfer);
+        });
+        auto pending = request.get_future();
+        {
+            std::lock_guard<std::mutex> lock(io_mutex_);
+            if (!io_worker_.joinable())
+                io_worker_ = std::thread(&Source::prefetch_loop, this);
+            io_request_ = std::move(request);
+            pending_ = std::move(pending);
+        }
+        io_ready_.notify_one();
     }
     uint64_t header(uint64_t begin, uint32_t &fingerprint) {
         // Buffer only the header cursor, never scan the compressed body.
@@ -117,9 +237,58 @@ public:
         return end;
     }
 private:
+    struct Io { uint64_t calls = 0; double seconds = 0; };
+    struct Transfer {
+        std::unique_ptr<unsigned char[]> data;
+        size_t loaded = 0;
+        size_t cached = 0;
+        Io io;
+    };
+    void bulk_read(uint64_t offset, void *buffer, size_t count, Io &io) {
+        const auto result = reads_->read(fd_, offset, buffer, count);
+        io.calls += result.calls;
+        io.seconds += result.seconds;
+    }
+    void prefetch_loop() {
+        for (;;) {
+            std::packaged_task<Transfer()> request;
+            {
+                std::unique_lock<std::mutex> lock(io_mutex_);
+                io_ready_.wait(lock, [this] { return io_stopping_ || io_request_.valid(); });
+                if (io_stopping_) return;
+                request = std::move(io_request_);
+            }
+            request();
+        }
+    }
+    static void read_exact(int fd, uint64_t offset, void *buffer, size_t count, Io &io) {
+        auto begin = std::chrono::steady_clock::now();
+        unsigned char *p = static_cast<unsigned char *>(buffer);
+        while (count) {
+            ++io.calls;
+            ssize_t n = pread(fd, p, count, static_cast<off_t>(offset));
+            if (n < 0 && errno == EINTR) continue;
+            if (n < 0) throw io_error("pread gzip");
+            if (!n) throw std::runtime_error("truncated or changed input");
+            count -= size_t(n); p += n; offset += uint64_t(n);
+        }
+        io.seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+    }
     swbwa_mpi_decoder_metrics &metrics_;
     int fd_ = -1;
     uint64_t size_ = 0;
+    size_t prefetch_limit_ = size_t(128) << 20;
+    uint64_t pending_offset_ = 0;
+    size_t pending_size_ = 0;
+    std::future<Transfer> pending_;
+    int io_target_ = -1;
+    std::mutex io_mutex_;
+    std::condition_variable io_ready_;
+    std::packaged_task<Transfer()> io_request_;
+    std::thread io_worker_;
+    bool io_stopping_ = false;
+    bool io_bound_ = false; // Accessed only by the persistent worker.
+    std::unique_ptr<SwbwaParallelPread> reads_;
 };
 
 template<class T> void release(std::vector<T> &v) { std::vector<T>().swap(v); }
@@ -149,10 +318,15 @@ struct swbwa_mpi_decoder {
     uint64_t fixed_bytes = 0;
     Window history;
     SwbwaCrcCombine combine;
-    std::vector<unsigned char> input;
+    std::unique_ptr<unsigned char[]> input;
+    size_t input_size = 0;
+    uint64_t input_base = 0;
+    unsigned gap_repair_limit = 8;
+    bool parallel_history = false;
     std::unique_ptr<unsigned char[]> bytes;
     size_t bytes_size = 0;
     std::vector<std::unique_ptr<uint16_t[]>> symbols;
+    std::vector<std::unique_ptr<unsigned char[]>> tails;
     std::vector<std::vector<uint32_t>> lines;
     std::vector<swbwa_mpi_decoded_extent> extents;
 
@@ -168,7 +342,20 @@ struct swbwa_mpi_decoder {
         if (!path || !*path || std::strlen(path) > 4096)
             throw std::runtime_error("invalid gzip path");
         if (options) config = *options;
-        else swbwa_mpi_decoder_config_init(&config);
+        else swbwa_mpi_decoder_config_init(&config, 384);
+        if (const char *setting = std::getenv("SWBWA_GZIP_GAP_REPAIR_LIMIT")) {
+            char *end = nullptr;
+            errno = 0;
+            const unsigned long value = std::strtoul(setting, &end, 10);
+            if (errno || !*setting || *end || value > 8)
+                throw std::runtime_error("gzip gap repair limit must be 0..8");
+            gap_repair_limit = unsigned(value);
+        }
+        if (const char *setting = std::getenv("SWBWA_GZIP_PARALLEL_HISTORY")) {
+            if (std::strcmp(setting, "0") && std::strcmp(setting, "1"))
+                throw std::runtime_error("SWBWA_GZIP_PARALLEL_HISTORY must be 0 or 1");
+            parallel_history = setting[0] == '1';
+        }
         if (config.chunk_bytes < 1024 || config.chunk_bytes > (64U << 20) ||
             config.lookahead_bytes < 1024 || config.lookahead_bytes > (64U << 20) ||
             config.memory_bytes < (2U << 20) || config.decoded_bytes < 65536 ||
@@ -184,7 +371,11 @@ struct swbwa_mpi_decoder {
         // descriptors and window temporaries, then per-job payload allocations.
         fixed_bytes = add(multiply(slots, sizeof(Meta) + sizeof(Plan) + 32),
             add(multiply(config.jobs_per_rank, sizeof(swbwa_codec_job) * 3 + 512), HISTORY * 4));
-        if (!job_count(capacity)) throw std::runtime_error("initial job does not fit memory/decoded budget");
+        if (parallel_history) fixed_bytes = add(fixed_bytes,
+            add(multiply(unsigned(ranks), sizeof(HistorySummary)),
+                add(HISTORY * 4, HISTORY_TRACE_SLOTS * sizeof(HistoryTraceEntry))));
+        metrics.initial_batch_jobs = job_count(capacity);
+        if (!metrics.initial_batch_jobs) throw std::runtime_error("initial job does not fit memory/decoded budget");
 
         std::array<char, 4097> root_path{};
         if (rank == 0) std::memcpy(root_path.data(), path, std::strlen(path));
@@ -193,10 +384,10 @@ struct swbwa_mpi_decoder {
         source.reset(new Source(path, metrics));
         uint32_t header_crc = 0;
         cursor = source->header(0, header_crc);
-        std::array<uint64_t, 12> values{{1, source->size(), cursor, header_crc, source->trailer_word(source->size() - 8),
+        std::array<uint64_t, 14> values{{2, source->size(), cursor, header_crc, source->trailer_word(source->size() - 8),
             config.chunk_bytes, config.lookahead_bytes,
             config.memory_bytes, config.decoded_bytes, config.initial_output_bytes,
-            config.jobs_per_rank, config.workers}};
+            config.jobs_per_rank, config.workers, gap_repair_limit, uint64_t(parallel_history)}};
         decltype(values) low{}, high{};
         mpi_check(MPI_Allreduce(values.data(), low.data(), values.size(), MPI_UINT64_T, MPI_MIN, comm));
         mpi_check(MPI_Allreduce(values.data(), high.data(), values.size(), MPI_UINT64_T, MPI_MAX, comm));
@@ -204,7 +395,7 @@ struct swbwa_mpi_decoder {
             const char *names[] = {"protocol", "file_size", "header_end", "header_crc",
                 "trailer", "chunk_bytes",
                 "lookahead_bytes", "memory_bytes", "decoded_bytes", "initial_output_bytes",
-                "jobs_per_rank", "workers"};
+                "jobs_per_rank", "workers", "gap_repair_limit", "parallel_history"};
             for (size_t i = 0; i < values.size(); ++i) {
                 if (low[i] == high[i]) continue;
                 char detail[256];
@@ -219,17 +410,38 @@ struct swbwa_mpi_decoder {
     }
 
     unsigned job_count(size_t cap) const {
-        const uint64_t overhead = add(fixed_bytes, add(config.lookahead_bytes, GUARD));
+        // A next-window prefetch can coexist with the current compressed input.
+        const uint64_t overhead = add(fixed_bytes, multiply(2, add(config.lookahead_bytes, GUARD)));
         if (overhead >= config.memory_bytes || cap > config.decoded_bytes) return 0;
-        const uint64_t per_job = add(multiply(cap, 3), add(config.chunk_bytes,
-            add(HISTORY, multiply((cap + PAGE - 1) / PAGE, sizeof(uint32_t)))));
+        const uint64_t per_job = add(multiply(cap, 3), add(multiply(config.chunk_bytes, 2),
+            add(HISTORY * 2, multiply((cap + PAGE - 1) / PAGE, sizeof(uint32_t)))));
         return unsigned(std::min<uint64_t>(config.jobs_per_rank,
             std::min<uint64_t>((config.memory_bytes - overhead) / per_job, config.decoded_bytes / cap)));
     }
 
+    struct InputWindow { unsigned count; uint64_t base; size_t bytes; };
+    InputWindow input_window() const {
+        unsigned count = job_count(capacity);
+        if (!count) throw std::runtime_error("anchored DISCOVER exhausted memory/decoded budget");
+        const uint64_t remaining = source->size() - cursor / 8;
+        const uint64_t strides = remaining / config.chunk_bytes + (remaining % config.chunk_bytes != 0);
+        const uint64_t per_rank = strides / unsigned(ranks) + (strides % unsigned(ranks) != 0);
+        count = unsigned(std::min<uint64_t>(count, per_rank));
+        if (!count) throw std::runtime_error("no compressed data before validated EOF");
+        const unsigned anchor = unsigned(epoch % unsigned(ranks));
+        const uint64_t group = (unsigned(rank) + unsigned(ranks) - anchor) % unsigned(ranks);
+        const uint64_t base = add(cursor / 8, multiply(multiply(group, count), config.chunk_bytes));
+        const size_t bytes = base < source->size() ? size_t(std::min<uint64_t>(source->size() - base,
+            add(multiply(count, config.chunk_bytes), config.lookahead_bytes))) : 0;
+        return {count, base, bytes};
+    }
+
     void launch(std::vector<swbwa_codec_job> &jobs, bool resolve) {
         if (jobs.empty()) return;
-        swbwa_codec_batch batch{jobs.data(), unsigned(jobs.size()), config.workers, 0, 0};
+        uint64_t &peak = resolve ? metrics.max_resolve_jobs : metrics.max_discover_jobs;
+        peak = std::max<uint64_t>(peak, jobs.size());
+        swbwa_codec_batch batch{};
+        batch.jobs = jobs.data(); batch.count = unsigned(jobs.size()); batch.workers = config.workers;
         AccumulateTime timer(resolve ? metrics.resolve_wall_s : metrics.discover_wall_s);
         swbwa_codec_launch(&batch);
         if (resolve) {
@@ -240,10 +452,80 @@ struct swbwa_mpi_decoder {
         }
     }
 
+    void describe(const swbwa_codec_job &job, Meta &m) {
+        m[OK] = job.status == Z_OK; m[OUTPUT_FULL] = job.output_full != 0;
+        m[KNOWN] = job.known_start;
+        metrics.discover_failed_jobs += !m[OK];
+        metrics.discover_output_full_jobs += m[OUTPUT_FULL];
+        if (m[OK]) {
+            m[START] = add(m[BASE], job.start_bit);
+            m[START_MAX] = add(m[BASE], job.start_max_bit);
+            m[END] = add(m[BASE], job.end_bit);
+            m[BYTES] = job.output_size; m[FINAL] = job.final_block != 0;
+        }
+    }
+
+    void repair_gaps(std::vector<swbwa_codec_job> &jobs, std::vector<Meta> &local_meta,
+                     std::vector<Meta> &all_meta, std::vector<Plan> &plan,
+                     Chain &chain, unsigned count, unsigned anchor) {
+        if (!gap_repair_limit) return;
+        AccumulateTime timer(metrics.gap_repair_s);
+        for (unsigned attempt = 0; attempt < gap_repair_limit; ++attempt) {
+            std::array<uint64_t, 2> request{};
+            double phase = MPI_Wtime();
+            if (!rank) {
+                const size_t id = repair_slot(all_meta, plan, chain, unsigned(ranks), count,
+                    anchor, cursor / 8 * 8, config.chunk_bytes * 8);
+                if (id != all_meta.size()) request = {{id + 1, chain.cursor}};
+            }
+            metrics.metadata_local_s += MPI_Wtime() - phase;
+            phase = MPI_Wtime();
+            mpi_check(MPI_Bcast(request.data(), request.size(), MPI_UINT64_T, 0, comm));
+            metrics.metadata_mpi_s += MPI_Wtime() - phase;
+            if (!request[0]) break;
+            const size_t id = size_t(request[0] - 1), j = id % count;
+            const int owner = int(id / count);
+            Meta replacement{};
+            if (rank == owner) {
+                phase = MPI_Wtime();
+                ++metrics.discarded_jobs;
+                if (local_meta[j][OK]) metrics.discarded_output_bytes += local_meta[j][BYTES];
+                std::vector<swbwa_codec_job> retry(1, jobs[j]);
+                retry[0].start_bit = size_t(request[1] - local_meta[j][BASE]);
+                retry[0].known_start = 2;
+                retry[0].dictionary = nullptr; retry[0].dictionary_size = 0;
+                metrics.prepare_s += MPI_Wtime() - phase;
+                // The prefix proves this bit position, but its dictionary is
+                // still unknown. Decode to markers; normal RESOLVE supplies it.
+                launch(retry, false);
+                phase = MPI_Wtime();
+                jobs[j] = retry[0];
+                describe(jobs[j], local_meta[j]);
+                replacement = local_meta[j];
+                ++metrics.gap_repair_jobs;
+                metrics.gap_repair_ok += replacement[OK];
+                metrics.metadata_local_s += MPI_Wtime() - phase;
+            }
+            phase = MPI_Wtime();
+            mpi_check(MPI_Bcast(replacement.data(), FIELDS, MPI_UINT64_T, owner, comm));
+            metrics.metadata_mpi_s += MPI_Wtime() - phase;
+            phase = MPI_Wtime();
+            if (!rank) {
+                all_meta[id] = replacement;
+                chain = select(all_meta, plan, unsigned(ranks), count, anchor,
+                               cursor, decoded, source->size() * 8, capacity);
+            }
+            metrics.metadata_local_s += MPI_Wtime() - phase;
+            // A very long block can require more capacity. Commit the proven
+            // prefix and let the regular next-epoch anchor grow its budget.
+            if (!replacement[OK]) break;
+        }
+    }
+
     void clear_payload() {
         AccumulateTime timer(metrics.cleanup_s);
         release(extents); bytes.reset(); bytes_size = 0;
-        release(lines); release(symbols); release(input);
+        release(lines); release(symbols); release(tails); input.reset(); input_size = 0;
     }
 
     int next(swbwa_mpi_decoded_batch &out) {
@@ -273,29 +555,30 @@ struct swbwa_mpi_decoder {
             clear_payload();
             phase = MPI_Wtime();
             const double io_before = metrics.io_s;
-            count = job_count(capacity);
-            if (!count) throw std::runtime_error("anchored DISCOVER exhausted memory/decoded budget");
-            const uint64_t group = (unsigned(rank) + unsigned(ranks) - anchor) % unsigned(ranks);
-            const uint64_t base = add(cursor / 8, multiply(multiply(group, count), config.chunk_bytes));
+            const InputWindow window = input_window();
+            count = window.count;
+            const uint64_t base = window.base;
+            input_base = base;
             local_meta.resize(count);
-            jobs.reserve(count); symbols.reserve(count);
+            jobs.reserve(count); symbols.reserve(count); tails.reserve(count);
             if (rank == 0) all_meta.resize(size_t(ranks) * count);
             if (base < source->size()) {
-                const size_t n = size_t(std::min<uint64_t>(source->size() - base,
-                    add(multiply(count, config.chunk_bytes), config.lookahead_bytes)));
-                input.resize(n + GUARD, 0);
-                source->read(base, input.data(), n);
+                const size_t n = window.bytes;
+                input_size = n + GUARD;
+                input = source->read_batch(base, n);
                 for (unsigned j = 0; j < count; ++j) {
                     const uint64_t offset = multiply(j, config.chunk_bytes);
                     if (offset >= source->size() - base) break;
                     symbols.emplace_back(new uint16_t[capacity]);
+                    tails.emplace_back(new unsigned char[HISTORY]);
                     swbwa_codec_job job{};
-                    job.input = input.data() + offset;
+                    job.input = input.get() + offset;
                     job.logical_size = size_t(std::min<uint64_t>(source->size() - base - offset,
                         config.chunk_bytes + config.lookahead_bytes));
                     job.input_size = job.logical_size + GUARD;
                     job.output_capacity = capacity;
                     job.symbols = symbols.back().get();
+                    job.tail = tails.back().get();
                     job.known_start = unsigned(rank) == anchor && j == 0;
                     job.start_bit = job.known_start ? cursor % 8 : 0;
                     job.stop_bit = config.chunk_bytes * 8;
@@ -310,24 +593,15 @@ struct swbwa_mpi_decoder {
                     local_meta[j][KNOWN] = job.known_start;
                 }
             }
-            const uint64_t estimate = add(fixed_bytes, add(input.size(), multiply(jobs.size(),
-                add(multiply(capacity, 3), add(HISTORY, ((capacity + PAGE - 1) / PAGE) * 4)))));
+            const uint64_t estimate = add(fixed_bytes, add(input_size, multiply(jobs.size(),
+                add(multiply(capacity, 3), add(HISTORY * 2, ((capacity + PAGE - 1) / PAGE) * 4)))));
             if (estimate > config.memory_bytes) throw std::runtime_error("adapter buffer budget exceeded");
             metrics.peak_buffer_bytes = std::max(metrics.peak_buffer_bytes, estimate);
             metrics.prepare_s += MPI_Wtime() - phase - (metrics.io_s - io_before);
             launch(jobs, false);
             phase = MPI_Wtime();
             for (size_t j = 0; j < jobs.size(); ++j) {
-                const auto &job = jobs[j]; auto &m = local_meta[j];
-                m[OK] = job.status == Z_OK; m[OUTPUT_FULL] = job.output_full != 0;
-                metrics.discover_failed_jobs += !m[OK];
-                metrics.discover_output_full_jobs += m[OUTPUT_FULL];
-                if (m[OK]) {
-                    m[START] = add(m[BASE], job.start_bit);
-                    m[START_MAX] = add(m[BASE], job.start_max_bit);
-                    m[END] = add(m[BASE], job.end_bit);
-                    m[BYTES] = job.output_size; m[FINAL] = job.final_block != 0;
-                }
+                describe(jobs[j], local_meta[j]);
             }
             metrics.metadata_local_s += MPI_Wtime() - phase;
             phase = MPI_Wtime();
@@ -368,6 +642,7 @@ struct swbwa_mpi_decoder {
         if (rank == 0) chain = select(all_meta, plan, unsigned(ranks), count, anchor,
                                      cursor, decoded, source->size() * 8, capacity);
         metrics.metadata_local_s += MPI_Wtime() - phase;
+        repair_gaps(jobs, local_meta, all_meta, plan, chain, count, anchor);
         phase = MPI_Wtime();
         mpi_check(MPI_Bcast(plan.data(), plan.size() * 3, MPI_UINT64_T, 0, comm));
         metrics.metadata_mpi_s += MPI_Wtime() - phase;
@@ -381,34 +656,71 @@ struct swbwa_mpi_decoder {
         size_t local_bytes = 0;
         metrics.prepare_s += MPI_Wtime() - phase;
         const double window_begin = MPI_Wtime(), window_mpi_before = metrics.window_mpi_s;
-        // Rank blocks are contiguous in stream order. Propagate only their
-        // final dictionary, not every job's tail and never a decoded body.
-        for (unsigned group = 0; group < unsigned(ranks); ++group) {
-            const unsigned owner = (anchor + group) % unsigned(ranks);
-            bool active = false;
-            for (unsigned j = 0; j < count; ++j) active |= plan[size_t(owner) * count + j][0] != 0;
-            if (!active) continue;
-            if (unsigned(rank) == owner) {
-                for (size_t j = 0; j < jobs.size(); ++j) {
-                    if (!plan[size_t(rank) * count + j][0]) continue;
-                    auto job = jobs[j];
-                    std::copy(next_history.begin(), next_history.end(), dictionaries[j].begin());
-                    job.dictionary = dictionaries[j].data(); job.dictionary_size = unsigned(next_history.size());
+        const auto prepare_local = [&] {
+            for (size_t j = 0; j < jobs.size(); ++j) {
+                if (!plan[size_t(rank) * count + j][0]) continue;
+                auto job = jobs[j];
+                std::copy(next_history.begin(), next_history.end(), dictionaries[j].begin());
+                job.dictionary = dictionaries[j].data(); job.dictionary_size = unsigned(next_history.size());
+                if (job.tail_known) {
+                    next_history.assign(job.tail, job.tail + HISTORY);
+                    ++metrics.known_tail_jobs;
+                } else {
                     next_history = advance(next_history, symbols[j].get(), job.output_size);
-                    job.operation = SWBWA_CODEC_RESOLVE;
-                    resolved.push_back(job); selected.push_back(j);
-                    local_bytes = size_t(add(local_bytes, job.output_size));
+                    ++metrics.repaired_tail_jobs;
                 }
+                job.operation = SWBWA_CODEC_RESOLVE;
+                resolved.push_back(job); selected.push_back(j);
+                local_bytes = size_t(add(local_bytes, job.output_size));
             }
-            unsigned size = unsigned(next_history.size());
+        };
+        if (parallel_history) {
+            std::vector<HistorySummary> summaries(ranks);
+            auto &own = summaries[rank];
+            std::vector<SymbolSpan> spans;
+            spans.reserve(jobs.size());
+            for (size_t j = 0; j < jobs.size(); ++j) {
+                if (!plan[size_t(rank) * count + j][0]) continue;
+                spans.push_back({symbols[j].get(), jobs[j].output_size});
+            }
+            summarize_history(spans, own);
+            // One symbolic transfer function per rank replaces the serialized
+            // broadcasts of every rank's locally reconstructed dictionaries.
             phase = MPI_Wtime();
-            mpi_check(MPI_Bcast(&size, 1, MPI_UNSIGNED, owner, comm));
+            mpi_check(MPI_Allgather(MPI_IN_PLACE, 0, MPI_BYTE, summaries.data(),
+                                    sizeof(HistorySummary), MPI_BYTE, comm));
             metrics.window_mpi_s += MPI_Wtime() - phase;
-            if (size > HISTORY) throw std::runtime_error("invalid propagated dictionary size");
-            next_history.resize(size);
-            phase = MPI_Wtime();
-            mpi_check(MPI_Bcast(next_history.data(), size, MPI_BYTE, owner, comm));
-            metrics.window_mpi_s += MPI_Wtime() - phase;
+            Window global_history = history, incoming;
+            for (unsigned group = 0; group < unsigned(ranks); ++group) {
+                const unsigned owner = (anchor + group) % unsigned(ranks);
+                if (summaries[owner].bytes > config.decoded_bytes)
+                    throw std::runtime_error("history summary exceeds decoded budget");
+                if (unsigned(rank) == owner) incoming = global_history;
+                global_history = resolve_history(global_history, summaries[owner]);
+            }
+            next_history.swap(incoming);
+            prepare_local();
+            next_history.swap(global_history);
+            ++metrics.parallel_history_epochs;
+        } else {
+            // General case: rank blocks are contiguous in stream order.
+            for (unsigned group = 0; group < unsigned(ranks); ++group) {
+                const unsigned owner = (anchor + group) % unsigned(ranks);
+                bool active = false;
+                for (unsigned j = 0; j < count; ++j) active |= plan[size_t(owner) * count + j][0] != 0;
+                if (!active) continue;
+                if (unsigned(rank) == owner) prepare_local();
+                unsigned size = unsigned(next_history.size());
+                phase = MPI_Wtime();
+                mpi_check(MPI_Bcast(&size, 1, MPI_UNSIGNED, owner, comm));
+                metrics.window_mpi_s += MPI_Wtime() - phase;
+                if (size > HISTORY) throw std::runtime_error("invalid propagated dictionary size");
+                next_history.resize(size);
+                phase = MPI_Wtime();
+                mpi_check(MPI_Bcast(next_history.data(), size, MPI_BYTE, owner, comm));
+                metrics.window_mpi_s += MPI_Wtime() - phase;
+            }
+            ++metrics.serial_history_epochs;
         }
         metrics.window_local_s += MPI_Wtime() - window_begin - (metrics.window_mpi_s - window_mpi_before);
         phase = MPI_Wtime();
@@ -519,18 +831,35 @@ struct swbwa_mpi_decoder {
         ++epoch; ++metrics.epochs;
         metrics.commit_local_s += MPI_Wtime() - phase;
         phase = MPI_Wtime();
-        release(symbols); release(input);
+        release(symbols); release(tails);
         metrics.cleanup_s += MPI_Wtime() - phase;
+        phase = MPI_Wtime();
+        if (!eof) {
+            const InputWindow next = input_window();
+            const uint64_t retained = add(add(fixed_bytes, bytes_size), input_size);
+            const uint64_t request_bytes = add(next.bytes, GUARD);
+            if (next.bytes && retained < config.memory_bytes &&
+                request_bytes <= config.memory_bytes - retained) {
+                source->prefetch(next.base, next.bytes, input.get(), input_base,
+                                 input_size ? input_size - GUARD : 0);
+                metrics.peak_buffer_bytes = std::max(metrics.peak_buffer_bytes, add(retained, request_bytes));
+            }
+        }
+        input.reset(); input_size = 0;
+        metrics.prepare_s += MPI_Wtime() - phase;
         return 1;
     }
 };
 
-extern "C" void swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *c) {
+extern "C" void swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *c, unsigned workers) {
     if (!c) return;
     *c = swbwa_mpi_decoder_config{};
     c->chunk_bytes = 256U << 10; c->lookahead_bytes = 1U << 20;
-    c->memory_bytes = 512U << 20; c->decoded_bytes = 128U << 20;
-    c->initial_output_bytes = 2U << 20; c->jobs_per_rank = 64; c->workers = 384;
+    const size_t budget_workers = std::max(64U, std::min(workers, 384U));
+    c->memory_bytes = budget_workers * (8U << 20);
+    c->decoded_bytes = budget_workers * (2U << 20);
+    c->initial_output_bytes = 2U << 20;
+    c->jobs_per_rank = workers; c->workers = workers;
 }
 
 extern "C" int swbwa_mpi_decoder_open(MPI_Comm comm, const char *path,

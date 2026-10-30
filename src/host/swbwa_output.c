@@ -4,11 +4,16 @@
 #include "swbwa_discard_digest.h"
 #include "swbwa_host_workers.h"
 #include "swbwa_sam_md5.h"
+#if SWBWA_ENABLE_GZIP_OUTPUT
+#include "swbwa_gzip_output.h"
+#include <sys/uio.h>
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <pthread.h>
 #include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,6 +21,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(__sw_host__) && SWBWA_HOST_MPE_THREADS > 1
+#include <athread.h>
+#endif
 #if SWBWA_OUTPUT_RMA_ONLY
 #include <zlib.h>
 #endif
@@ -24,6 +32,10 @@
 
 #if SWBWA_USE_MPI
 #include <mpi.h>
+#endif
+
+#if SWBWA_ENABLE_GZIP_OUTPUT
+enum { SWBWA_GZIP_IOV_CAPACITY = 1024 };
 #endif
 
 #if SWBWA_OUTPUT_RMA_ONLY
@@ -83,6 +95,16 @@ typedef struct {
     int fd;
     int owns_fd;
     int stream_md5;
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    swbwa_gzip_output *gzip;
+    uint64_t gzip_batches;
+    uint64_t gzip_file_bytes;
+    int gzip_parallel_write;
+    int gzip_prepare_output;
+    int gzip_prefix_ahead;
+    unsigned gzip_iov_limit;
+    double gzip_write_wall_seconds;
+#endif
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     int discard_hash_enabled;
 #endif
@@ -101,12 +123,49 @@ typedef struct {
     int ordered_online;
     int64_t ordered_count, last_chunk;
     uint64_t ordered_empty_chunks, ordered_polls;
+    unsigned ordered_poll_us;
     double ordered_wait_seconds;
 #endif
 #endif
 } swbwa_output_state_t;
 
 static swbwa_output_state_t output_state;
+
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && SWBWA_ENABLE_GZIP_OUTPUT
+typedef struct prefix_request {
+    void *handle;
+    int64_t id;
+    uint64_t bytes, offset;
+    int ready;
+    struct prefix_request *next;
+} prefix_request_t;
+
+static struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t changed;
+    pthread_t thread;
+    prefix_request_t requests[SWBWA_PIPELINE_BUFFER_COUNT], *first, *last;
+    int started, initialized, stopping, error;
+    int64_t last_id;
+    uint64_t submitted, idle_probes;
+    double writer_wait_s, idle_probe_s;
+} prefix_ahead = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
+
+static void prefix_check(int error)
+{
+    if (!error) return;
+    fprintf(stderr, "[E::output prefix] synchronization failed: %s\n", strerror(error));
+    abort();
+}
+
+static prefix_request_t *prefix_find(void *handle)
+{
+    unsigned i;
+    for (i = 0; i < SWBWA_PIPELINE_BUFFER_COUNT; ++i)
+        if (prefix_ahead.requests[i].handle == handle) return &prefix_ahead.requests[i];
+    return NULL;
+}
+#endif
 
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
 static int discard_hash_enabled(void)
@@ -302,14 +361,17 @@ static char *make_split_name(const char *path, int rank)
     size_t stem_length = length;
     size_t capacity;
     char *name;
+    int gzip = length >= 3 && strcmp(path + length - 3, ".gz") == 0;
 
-    if (length >= sizeof(suffix) - 1 &&
-        strcmp(path + length - (sizeof(suffix) - 1), suffix) == 0)
+    if (gzip) stem_length -= 3;
+
+    if (stem_length >= sizeof(suffix) - 1 &&
+        memcmp(path + stem_length - (sizeof(suffix) - 1), suffix, sizeof(suffix) - 1) == 0)
         stem_length -= sizeof(suffix) - 1;
-    capacity = stem_length + sizeof(".rank000000.sam") + 16;
+    capacity = stem_length + sizeof(".rank000000.sam.gz") + 16;
     name = malloc(capacity);
     if (name == NULL) return NULL;
-    snprintf(name, capacity, "%.*s.rank%06d.sam", (int)stem_length, path, rank);
+    snprintf(name, capacity, "%.*s.rank%06d.sam%s", (int)stem_length, path, rank, gzip ? ".gz" : "");
     return name;
 }
 
@@ -385,6 +447,24 @@ static int mpi_check(int result, const char *operation)
 }
 
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+static void ordered_poll_pause(uint64_t polls)
+{
+    struct timespec deadline;
+    if (polls <= 8 || output_state.ordered_poll_us == 0 ||
+        clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
+        sched_yield();
+        return;
+    }
+    deadline.tv_nsec += (long)output_state.ordered_poll_us * 1000L;
+    if (deadline.tv_nsec >= 1000000000L) {
+        ++deadline.tv_sec;
+        deadline.tv_nsec -= 1000000000L;
+    }
+    /* Absolute deadlines survive the frequent signals on Sunway. No local
+     * dispatch/runtime mutex is held while this writer yields its MPE. */
+    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL) == EINTR) {}
+}
+
 /* Global input tickets make each rank's FIFO monotonic. Therefore the first
  * unpublished prefix cannot be blocked behind a later chunk on that rank. */
 static int reserve_ordered(int64_t id, uint64_t bytes, uint64_t *offset,
@@ -410,7 +490,7 @@ static int reserve_ordered(int64_t id, uint64_t bytes, uint64_t *offset,
             if (mpi_check(result, "read online ordered ID") != 0) return -1;
             ++polls;
             if (ready > (uint64_t)id) { errno = EINVAL; return -1; }
-            if (ready != (uint64_t)id) sched_yield();
+            if (ready != (uint64_t)id) ordered_poll_pause(polls);
         } while (ready != (uint64_t)id);
         result = MPI_Fetch_and_op(NULL, offset, MPI_UINT64_T, 0, 1,
                                   MPI_NO_OP, output_state.offset_window);
@@ -422,7 +502,7 @@ static int reserve_ordered(int64_t id, uint64_t bytes, uint64_t *offset,
         if (result == MPI_SUCCESS) result = MPI_Win_flush(0, output_state.offset_window);
         if (mpi_check(result, "read ordered prefix") != 0) return -1;
         ++polls;
-        if (*offset == UINT64_MAX) sched_yield();
+        if (*offset == UINT64_MAX) ordered_poll_pause(polls);
     } while (*offset == UINT64_MAX);
     if (*offset > (uint64_t)INT64_MAX - bytes) {
         errno = EOVERFLOW;
@@ -455,6 +535,147 @@ static int reserve_ordered(int64_t id, uint64_t bytes, uint64_t *offset,
     return 0;
 }
 
+#if SWBWA_ENABLE_GZIP_OUTPUT
+static void *prefix_worker(void *unused)
+{
+    int binding_error = 0;
+    (void)unused;
+#if defined(__sw_host__) && SWBWA_HOST_MPE_THREADS > 1
+    unsigned long actual;
+    SET_TO_SWCG(SWBWA_HOST_MPE_THREADS - 1);
+    __asm__ volatile("rcid %0" : "=r"(actual));
+    if ((actual & 7) != SWBWA_HOST_MPE_THREADS - 1) binding_error = EINVAL;
+#endif
+    prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+    prefix_ahead.error = binding_error;
+    prefix_ahead.initialized = 1;
+    prefix_check(pthread_cond_broadcast(&prefix_ahead.changed));
+    while (!prefix_ahead.error) {
+        prefix_request_t *request;
+        int result, saved;
+        while (!prefix_ahead.first && !prefix_ahead.stopping) {
+            struct timespec deadline;
+            int wait_result, available;
+            double begin;
+            if (swbwa_mpi_progress_thread_active()) {
+                prefix_check(pthread_cond_wait(&prefix_ahead.changed, &prefix_ahead.mutex));
+                continue;
+            }
+            if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) {
+                prefix_ahead.error = errno;
+                break;
+            }
+            deadline.tv_nsec += 100000L;
+            if (deadline.tv_nsec >= 1000000000L) {
+                ++deadline.tv_sec;
+                deadline.tv_nsec -= 1000000000L;
+            }
+            wait_result = pthread_cond_timedwait(&prefix_ahead.changed,
+                                                  &prefix_ahead.mutex, &deadline);
+            if (wait_result != ETIMEDOUT) { prefix_check(wait_result); continue; }
+            /* A software-progress MPI must also serve peers while this rank
+             * has no new batch, including when its disk writer is blocked. */
+            prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+            begin = output_debug_now();
+            result = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD,
+                                 &available, MPI_STATUS_IGNORE);
+            prefix_ahead.idle_probe_s += output_debug_now() - begin;
+            ++prefix_ahead.idle_probes;
+            prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+            if (result != MPI_SUCCESS) { prefix_ahead.error = EIO; break; }
+        }
+        if (prefix_ahead.error) {
+            prefix_check(pthread_cond_broadcast(&prefix_ahead.changed));
+            break;
+        }
+        if (!prefix_ahead.first) break;
+        request = prefix_ahead.first;
+        prefix_ahead.first = request->next;
+        if (!prefix_ahead.first) prefix_ahead.last = NULL;
+        prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+        result = reserve_ordered(request->id, request->bytes, &request->offset, 1);
+        saved = errno;
+        prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+        request->ready = 1;
+        if (result) prefix_ahead.error = saved ? saved : EIO;
+        prefix_check(pthread_cond_broadcast(&prefix_ahead.changed));
+    }
+    prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+    return NULL;
+}
+
+static int prefix_start(void)
+{
+    int error, level;
+    if (!output_state.gzip_prefix_ahead) return 0;
+    if (MPI_Query_thread(&level) != MPI_SUCCESS || level < MPI_THREAD_MULTIPLE) {
+        errno = ENOTSUP;
+        return -1;
+    }
+    memset(prefix_ahead.requests, 0, sizeof(prefix_ahead.requests));
+    prefix_ahead.first = prefix_ahead.last = NULL;
+    prefix_ahead.initialized = prefix_ahead.stopping = prefix_ahead.error = 0;
+    prefix_ahead.last_id = -1;
+    prefix_ahead.submitted = 0;
+    prefix_ahead.idle_probes = 0;
+    prefix_ahead.writer_wait_s = 0;
+    prefix_ahead.idle_probe_s = 0;
+    error = pthread_create(&prefix_ahead.thread, NULL, prefix_worker, NULL);
+    if (error) { errno = error; return -1; }
+    prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+    while (!prefix_ahead.initialized)
+        prefix_check(pthread_cond_wait(&prefix_ahead.changed, &prefix_ahead.mutex));
+    error = prefix_ahead.error;
+    prefix_ahead.started = !error;
+    prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+    if (error) { prefix_check(pthread_join(prefix_ahead.thread, NULL)); errno = error; return -1; }
+    return 0;
+}
+
+static int prefix_wait(void *handle, int64_t id, uint64_t bytes, uint64_t *offset)
+{
+    prefix_request_t *request;
+    int error;
+    double begin = output_debug_now();
+    prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+    request = prefix_find(handle);
+    if (!request || request->id != id || request->bytes != bytes) {
+        prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+        errno = EINVAL;
+        return -1;
+    }
+    while (!request->ready && !prefix_ahead.error)
+        prefix_check(pthread_cond_wait(&prefix_ahead.changed, &prefix_ahead.mutex));
+    error = prefix_ahead.error;
+    *offset = request->offset;
+    memset(request, 0, sizeof(*request));
+    prefix_ahead.writer_wait_s += output_debug_now() - begin;
+    prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+    if (error) { errno = error; return -1; }
+    return 0;
+}
+
+static int prefix_stop(void)
+{
+    int error;
+    if (!prefix_ahead.started) return 0;
+    prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+    prefix_ahead.stopping = 1;
+    prefix_check(pthread_cond_broadcast(&prefix_ahead.changed));
+    prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+    prefix_check(pthread_join(prefix_ahead.thread, NULL));
+    prefix_ahead.started = 0;
+    error = prefix_ahead.error;
+    fprintf(stderr, "[SWBWA gzip prefix rank %06d/%06d] ahead=1 submitted=%" PRIu64
+            " writer_wait_s=%.6f error=%d idle_probes=%" PRIu64 " idle_probe_s=%.6f\n",
+            swbwa_mpi_rank(), swbwa_mpi_size(), prefix_ahead.submitted,
+            prefix_ahead.writer_wait_s, error, prefix_ahead.idle_probes,
+            prefix_ahead.idle_probe_s);
+    if (error) { errno = error; return -1; }
+    return 0;
+}
+#endif
+
 int swbwa_output_ordered_skip(int64_t id)
 {
     uint64_t offset;
@@ -469,7 +690,7 @@ int swbwa_output_ordered_skip(int64_t id)
 }
 #endif
 
-static int write_single_unordered(const unsigned char *data, size_t length)
+static int reserve_unordered(uint64_t length, uint64_t *reserved_offset)
 {
     uint64_t increment;
     uint64_t offset;
@@ -513,6 +734,15 @@ static int write_single_unordered(const unsigned char *data, size_t length)
     }
     output_state.reserved_bytes += increment;
     output_state.last_offset = offset;
+    *reserved_offset = offset;
+    return 0;
+}
+
+static int write_single_unordered(const unsigned char *data, size_t length)
+{
+    uint64_t offset;
+    if (length == 0) return 0;
+    if (reserve_unordered(length, &offset) != 0) return -1;
 
     /*
      * RMA gives every rank a disjoint file extent.  POSIX pwrite keeps those
@@ -539,6 +769,8 @@ static int output_open(const char *path, int debug_enabled, int online)
 {
     const char *md5_option = getenv("SWBWA_OUTPUT_MD5");
     int stream_md5 = md5_option != NULL && strcmp(md5_option, "1") == 0;
+    size_t path_length = path ? strlen(path) : 0;
+    int gzip = path_length >= 3 && strcmp(path + path_length - 3, ".gz") == 0;
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD
     size_t capacity = 0;
 #else
@@ -549,6 +781,18 @@ static int output_open(const char *path, int debug_enabled, int online)
         errno = EALREADY;
         return -1;
     }
+    if (gzip && (stream_md5 || SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)) {
+        fprintf(stderr, "[E::output] gzip output cannot be combined with discard or streaming MD5\n");
+        errno = EINVAL;
+        return -1;
+    }
+#if !SWBWA_ENABLE_GZIP_OUTPUT
+    if (gzip) {
+        fprintf(stderr, "[E::output] .gz output requires GZIP_OUTPUT=1\n");
+        errno = ENOTSUP;
+        return -1;
+    }
+#endif
     if (md5_option && strcmp(md5_option, "0") && strcmp(md5_option, "1")) {
         fprintf(stderr, "[E::output] SWBWA_OUTPUT_MD5 must be 0 or 1\n");
         errno = EINVAL;
@@ -571,7 +815,53 @@ static int output_open(const char *path, int debug_enabled, int online)
     output_state.fd = -1;
     output_state.capacity = capacity;
     output_state.debug_enabled = debug_enabled != 0 || SWBWA_OUTPUT_RMA_ONLY;
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (gzip) {
+        long iov_limit = sysconf(_SC_IOV_MAX);
+        const char *parallel = getenv("SWBWA_GZIP_PARALLEL_WRITE");
+        const char *prepare = getenv("SWBWA_GZIP_PREPARE_OUTPUT");
+        output_state.gzip_iov_limit = iov_limit > 0
+            ? (unsigned)(iov_limit < SWBWA_GZIP_IOV_CAPACITY ? iov_limit : SWBWA_GZIP_IOV_CAPACITY)
+            : 16; /* POSIX minimum if the runtime limit is unavailable. */
+        if (parallel && strcmp(parallel, "0") && strcmp(parallel, "1")) {
+            errno = EINVAL;
+            goto fail;
+        }
+        output_state.gzip_parallel_write = parallel && strcmp(parallel, "0");
+        if (prepare && strcmp(prepare, "0") && strcmp(prepare, "1")) {
+            errno = EINVAL;
+            goto fail;
+        }
+        output_state.gzip_prepare_output = !prepare || !strcmp(prepare, "1");
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+        {
+            const char *ahead = getenv("SWBWA_GZIP_PREFIX_AHEAD");
+            if (ahead && strcmp(ahead, "0") && strcmp(ahead, "1")) { errno = EINVAL; goto fail; }
+            output_state.gzip_prefix_ahead = ahead && !strcmp(ahead, "1") &&
+                output_state.gzip_prepare_output;
+        }
+#endif
+        output_state.gzip = swbwa_gzip_output_create(SWBWA_CPE_COUNT);
+        if (!output_state.gzip) goto fail;
+        capacity = 0;
+        output_state.capacity = 0;
+    }
+#endif
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+    {
+        const char *value = getenv("SWBWA_ORDERED_POLL_US");
+        char *end;
+        unsigned long delay = 0;
+        if (value) {
+            errno = 0;
+            delay = strtoul(value, &end, 10);
+            if (errno || !*value || *end || delay > 1000) {
+                errno = EINVAL;
+                goto fail;
+            }
+        }
+        output_state.ordered_poll_us = (unsigned)delay;
+    }
     output_state.ordered_online = online;
 #else
     (void)online;
@@ -587,15 +877,17 @@ static int output_open(const char *path, int debug_enabled, int online)
             limit = strtol(value, &end, 10);
             if (errno || *end || limit < 0 || limit > INT_MAX) {
                 errno = EINVAL;
-                return -1;
+                goto fail;
             }
             output_state.sample_limit = (int)limit;
         }
     }
 #endif
 #if !(SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_DISCARD)
-    output_state.buffer = malloc(capacity);
-    if (output_state.buffer == NULL) return -1;
+    if (capacity) {
+        output_state.buffer = malloc(capacity);
+        if (output_state.buffer == NULL) goto fail;
+    }
 #endif
 
     if (stream_md5) {
@@ -720,6 +1012,9 @@ static int output_open(const char *path, int debug_enabled, int online)
     if (output_state.name == NULL) goto fail;
 #endif
 
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && SWBWA_ENABLE_GZIP_OUTPUT
+    if (prefix_start() != 0) goto fail_locked_window;
+#endif
     output_state.opened = 1;
     return 0;
 
@@ -733,6 +1028,9 @@ fail:
     if (output_state.owns_fd && output_state.fd >= 0) close(output_state.fd);
     free(output_state.name);
     free(output_state.buffer);
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    swbwa_gzip_output_destroy(output_state.gzip);
+#endif
     memset(&output_state, 0, sizeof(output_state));
     output_state.fd = -1;
     return -1;
@@ -799,6 +1097,150 @@ int swbwa_output_write_digest(const void *record)
 }
 #endif
 
+#if SWBWA_ENABLE_GZIP_OUTPUT
+typedef struct {
+    const struct iovec *vectors;
+    unsigned count, workers;
+    unsigned first[SWBWA_HOST_MPE_THREADS], end[SWBWA_HOST_MPE_THREADS];
+    uint64_t offsets[SWBWA_HOST_MPE_THREADS];
+    uint64_t calls[SWBWA_HOST_MPE_THREADS], bytes[SWBWA_HOST_MPE_THREADS];
+    double seconds[SWBWA_HOST_MPE_THREADS];
+    int errors[SWBWA_HOST_MPE_THREADS];
+} gzip_write_task;
+
+/* Scatter/gather writes preserve member order without packing compressed data.
+ * Short writes and EINTR may stop inside a member and are resumed exactly. */
+static void write_gzip_slice(void *opaque, int worker, int workers)
+{
+    gzip_write_task *task = opaque;
+    const struct iovec *vectors = task->vectors;
+    unsigned first = task->first[worker], end = task->end[worker];
+    uint64_t offset = task->offsets[worker];
+    size_t skip = 0;
+    if (workers == 1 && task->workers > 1) {
+        first = 0;
+        end = task->count;
+        offset = task->offsets[0];
+    }
+    while (first < end) {
+        struct iovec batch[SWBWA_GZIP_IOV_CAPACITY];
+        unsigned n = end - first > output_state.gzip_iov_limit
+                   ? output_state.gzip_iov_limit : end - first, i;
+        ssize_t written;
+        size_t remaining;
+        double start;
+        for (i = 0; i < n; ++i) batch[i] = vectors[first + i];
+        batch[0].iov_base = (unsigned char *)batch[0].iov_base + skip;
+        batch[0].iov_len -= skip;
+        start = output_debug_now();
+        written = pwritev(output_state.fd, batch, (int)n, (off_t)offset);
+        if (output_state.debug_enabled) {
+            ++task->calls[worker];
+            task->seconds[worker] += output_debug_now() - start;
+            if (written > 0) task->bytes[worker] += (uint64_t)written;
+        }
+        if (written < 0) { if (errno == EINTR) continue; task->errors[worker] = errno; return; }
+        if (!written) { task->errors[worker] = EIO; return; }
+        offset += (uint64_t)written;
+        remaining = (size_t)written;
+        while (first < end && remaining >= vectors[first].iov_len - skip) {
+            remaining -= vectors[first].iov_len - skip;
+            ++first;
+            skip = 0;
+        }
+        skip += remaining;
+    }
+}
+
+static int write_gzip_vectors(const struct iovec *vectors, unsigned count, uint64_t offset)
+{
+#if SWBWA_OUTPUT_RMA_ONLY
+    (void)vectors; (void)count; (void)offset;
+    return 0;
+#else
+    gzip_write_task task;
+    unsigned worker, index = 0;
+    unsigned workers = output_state.gzip_parallel_write && count >= SWBWA_HOST_MPE_THREADS
+                     ? SWBWA_HOST_MPE_THREADS : 1;
+    double start = output_debug_now();
+    memset(&task, 0, sizeof(task));
+    task.vectors = vectors;
+    task.count = count;
+    task.workers = workers;
+    for (worker = 0; worker < workers; ++worker) {
+        task.first[worker] = index;
+        task.end[worker] = (unsigned)((uint64_t)count * (worker + 1) / workers);
+        task.offsets[worker] = offset;
+        for (; index < task.end[worker]; ++index) offset += vectors[index].iov_len;
+    }
+    if (workers > 1) {
+        if (swbwa_host_io_workers_run(write_gzip_slice, &task) != 0) return -1;
+    } else write_gzip_slice(&task, 0, 1);
+    output_state.gzip_write_wall_seconds += output_debug_now() - start;
+    for (worker = 0; worker < workers; ++worker) {
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+        output_state.pwrite_calls += task.calls[worker];
+        output_state.pwrite_bytes += task.bytes[worker];
+        output_state.pwrite_seconds += task.seconds[worker];
+#else
+        output_state.posix_write_calls += task.calls[worker];
+        output_state.posix_write_bytes += task.bytes[worker];
+        output_state.posix_write_seconds += task.seconds[worker];
+#endif
+        if (task.errors[worker]) { errno = task.errors[worker]; return -1; }
+    }
+    return 0;
+#endif
+}
+
+static int gzip_stream_write(const void *data, size_t length)
+{
+    const struct iovec *vectors;
+    unsigned count;
+    uint64_t bytes, offset = output_state.gzip_file_bytes;
+    if (swbwa_gzip_output_bytes(output_state.gzip, data, length, &vectors, &count, &bytes) != 0)
+        return -1;
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+    if (reserve_unordered(bytes, &offset) != 0) return -1;
+#endif
+    if (bytes > INT64_MAX || offset > (uint64_t)INT64_MAX - bytes) {
+        errno = EOVERFLOW;
+        return -1;
+    }
+    if (write_gzip_vectors(vectors, count, offset) != 0) return -1;
+    ++output_state.gzip_batches;
+    output_state.gzip_file_bytes += bytes;
+    return 0;
+}
+
+static int gzip_record_extent(int64_t id, int64_t start, int64_t end,
+                              int reads, uint64_t offset, uint64_t bytes)
+{
+    swbwa_output_extent_t *extent;
+    if (!output_state.debug_enabled) return 0;
+    if (output_state.extent_count == output_state.extent_capacity) {
+        size_t capacity = output_state.extent_capacity ? output_state.extent_capacity * 2 : 16;
+        swbwa_output_extent_t *extents;
+        if (capacity < output_state.extent_capacity || capacity > SIZE_MAX / sizeof(*extents)) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        extents = realloc(output_state.extents, capacity * sizeof(*extents));
+        if (!extents) return -1;
+        output_state.extents = extents;
+        output_state.extent_capacity = capacity;
+    }
+    extent = &output_state.extents[output_state.extent_count++];
+    extent->id = id;
+    extent->start = start;
+    extent->end = end;
+    extent->reads = reads;
+    extent->offset = offset;
+    extent->bytes = bytes;
+    return 0;
+}
+#endif
+
 int swbwa_output_write(const void *data, size_t length)
 {
     const unsigned char *source = data;
@@ -861,6 +1303,9 @@ int swbwa_output_write(const void *data, size_t length)
         ++output_state.write_calls;
         output_state.submitted_bytes += (uint64_t)length;
     }
+#endif
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (output_state.gzip) return gzip_stream_write(data, length);
 #endif
     if (length > output_state.capacity - output_state.used &&
         swbwa_output_flush() != 0)
@@ -938,17 +1383,172 @@ static void pack_chunk(void *opaque, int worker, int workers)
 }
 #endif
 
-int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
-                             const bseq1_t *seqs, const int *sam_lengths,
-                             int reads, int paired)
+int swbwa_output_prepare_chunk(const bseq1_t *seqs, const int *sam_lengths,
+                               int reads, void **handle)
+{
+    if (!handle) { errno = EINVAL; return -1; }
+    *handle = NULL;
+    if (!output_state.opened || reads < 0 || (reads && !seqs)) {
+        errno = EINVAL;
+        return -1;
+    }
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (output_state.gzip && output_state.gzip_prepare_output) {
+        swbwa_gzip_output_batch *batch;
+        if (swbwa_gzip_output_prepare(output_state.gzip, seqs, sam_lengths, reads, &batch))
+            return -1;
+        *handle = batch;
+    }
+#else
+    (void)sam_lengths;
+#endif
+    return 0;
+}
+
+int swbwa_output_release_prepared_chunk(void *handle)
+{
+    if (!handle) return 0;
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && SWBWA_ENABLE_GZIP_OUTPUT
+    if (prefix_ahead.started) {
+        int pending;
+        prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+        pending = prefix_find(handle) != NULL;
+        prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+        if (pending) { errno = EBUSY; return -1; }
+    }
+#endif
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    return swbwa_gzip_output_release(output_state.gzip, handle);
+#else
+    errno = EINVAL;
+    return -1;
+#endif
+}
+
+int swbwa_output_publish_prepared_chunk(int64_t id, int reads, void *handle)
+{
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && SWBWA_ENABLE_GZIP_OUTPUT
+    if (prefix_ahead.started && handle) {
+        prefix_request_t *request;
+        const struct iovec *vectors;
+        unsigned count;
+        uint64_t raw_bytes, bytes;
+        int error;
+        if (id < 0 || swbwa_gzip_output_batch_data(output_state.gzip, handle, reads,
+                &vectors, &count, &raw_bytes, &bytes)) { errno = EINVAL; return -1; }
+        prefix_check(pthread_mutex_lock(&prefix_ahead.mutex));
+        error = prefix_ahead.error;
+        request = prefix_find(NULL);
+        if (!error && (id <= prefix_ahead.last_id || prefix_find(handle))) error = EINVAL;
+        if (!error && !request) error = EAGAIN;
+        if (!error) {
+            *request = (prefix_request_t){.handle=handle, .id=id, .bytes=bytes};
+            if (prefix_ahead.last) prefix_ahead.last->next = request;
+            else prefix_ahead.first = request;
+            prefix_ahead.last = request;
+            prefix_ahead.last_id = id;
+            ++prefix_ahead.submitted;
+            prefix_check(pthread_cond_broadcast(&prefix_ahead.changed));
+        }
+        prefix_check(pthread_mutex_unlock(&prefix_ahead.mutex));
+        if (error) { errno = error; return -1; }
+    }
+#else
+    (void)id; (void)reads; (void)handle;
+#endif
+    return 0;
+}
+
+static int output_write_chunk(int64_t id, int64_t start, int64_t end,
+                               const bseq1_t *seqs, const int *sam_lengths,
+                               int reads, int paired, void *prepared)
 {
     int i;
     if (!output_state.opened || id < 0 || start < 0 || end < start ||
-        reads < 0 || (reads && seqs == NULL) ||
+        reads < 0 || (reads && seqs == NULL && (!prepared || SWBWA_OUTPUT_RMA_ONLY)) ||
         (paired != 0 && paired != 1) || (paired && (reads & 1))) {
         errno = EINVAL;
         return -1;
     }
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (output_state.gzip) {
+        const struct iovec *vectors;
+        unsigned count;
+        uint64_t raw_bytes, gzip_bytes, offset = output_state.gzip_file_bytes;
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+        if (id <= output_state.last_chunk) { errno = EINVAL; return -1; }
+#endif
+        if (prepared) {
+            if (swbwa_gzip_output_batch_data(output_state.gzip, prepared, reads,
+                                             &vectors, &count, &raw_bytes, &gzip_bytes))
+                return -1;
+        } else if (swbwa_gzip_output_encode(output_state.gzip, seqs, sam_lengths, reads,
+                                             &vectors, &count, &raw_bytes, &gzip_bytes))
+            return -1;
+#if SWBWA_OUTPUT_RMA_ONLY
+        if (swbwa_output_begin_chunk(id, start, end, reads, paired) != 0) return -1;
+        for (i = 0; i < reads; ++i) {
+            size_t length = sam_lengths ? (size_t)sam_lengths[i] : strlen(seqs[i].sam);
+            if (!output_state.sample_limit || i < output_state.sample_limit) {
+                const unsigned char *cursor = (const unsigned char *)seqs[i].sam;
+                size_t remaining = length;
+                uint64_t hash = hash_sam_record(cursor, length);
+                while (remaining) {
+                    const unsigned char *lf = memchr(cursor, '\n', remaining);
+                    if (!lf) break;
+                    ++output_state.chunk.sam_records;
+                    remaining -= (size_t)(lf - cursor) + 1;
+                    cursor = lf + 1;
+                }
+                ++output_state.chunk.sample_reads;
+                output_state.chunk.sample_bytes += length;
+                output_state.chunk.sum += hash;
+                output_state.chunk.xor ^= hash;
+            }
+            if (!output_state.sample_limit) {
+                size_t pos = 0;
+                while (pos < length) {
+                    uInt part = length - pos > UINT_MAX ? UINT_MAX : (uInt)(length - pos);
+                    output_state.chunk.packed_crc32 = (uint32_t)crc32(output_state.chunk.packed_crc32,
+                                            (const Bytef *)seqs[i].sam + pos, part);
+                    pos += part;
+                }
+            }
+        }
+        output_state.chunk.reads = (uint64_t)reads;
+        output_state.chunk.bytes = raw_bytes;
+#endif
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+#if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
+        if (prefix_ahead.started) {
+            if (!prepared) { errno = EINVAL; return -1; }
+            if (prefix_wait(prepared, id, gzip_bytes, &offset) != 0) return -1;
+        } else if (reserve_ordered(id, gzip_bytes, &offset, 1) != 0) return -1;
+        output_state.last_chunk = id;
+#else
+        if (reserve_unordered(gzip_bytes, &offset) != 0) return -1;
+#endif
+#endif
+        if (gzip_bytes > INT64_MAX || offset > (uint64_t)INT64_MAX - gzip_bytes) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        if (write_gzip_vectors(vectors, count, offset) != 0) return -1;
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+        if (gzip_record_extent(id, start, end, reads, offset, gzip_bytes) != 0) return -1;
+#endif
+        ++output_state.gzip_batches;
+        output_state.gzip_file_bytes += gzip_bytes;
+        ++output_state.chunk_calls;
+        output_state.write_calls += (uint64_t)reads;
+        output_state.submitted_bytes += raw_bytes;
+#if SWBWA_OUTPUT_RMA_ONLY
+        if (swbwa_output_end_chunk() != 0) return -1;
+#endif
+        return 0;
+    }
+#endif
+    if (prepared) { errno = EINVAL; return -1; }
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
     {
         output_pack_t task;
@@ -1095,6 +1695,24 @@ int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
 #endif
 }
 
+int swbwa_output_write_prepared_chunk(int64_t id, int64_t start, int64_t end,
+                                      const bseq1_t *seqs, const int *sam_lengths,
+                                      int reads, int paired, void *handle)
+{
+    int result = output_write_chunk(id, start, end, seqs, sam_lengths, reads, paired, handle);
+    int saved = errno;
+    int released = swbwa_output_release_prepared_chunk(handle);
+    if (result) errno = saved;
+    return result ? result : released;
+}
+
+int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
+                             const bseq1_t *seqs, const int *sam_lengths,
+                             int reads, int paired)
+{
+    return swbwa_output_write_prepared_chunk(id, start, end, seqs, sam_lengths, reads, paired, NULL);
+}
+
 int swbwa_output_flush(void)
 {
     size_t bytes;
@@ -1231,8 +1849,10 @@ static void print_output_debug_report_body(void)
         output_state.reservation_calls, 4);
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
     fprintf(stderr, "    ordered prefix polls                         %12" PRIu64 "\n"
-                    "    ordered empty chunks                         %12" PRIu64 "\n",
-            output_state.ordered_polls, output_state.ordered_empty_chunks);
+                    "    ordered empty chunks                         %12" PRIu64 "\n"
+                    "    ordered poll pause after 8 misses (us)       %12u\n",
+            output_state.ordered_polls, output_state.ordered_empty_chunks,
+            output_state.ordered_poll_us);
     print_output_debug_time("ordered prefix wait and publication",
                             output_state.ordered_wait_seconds,
                             output_state.reservation_calls, 6);
@@ -1263,7 +1883,7 @@ static void print_output_debug_report_body(void)
         output_state.pwrite_seconds,
         output_state.pwrite_calls, 4);
     print_output_debug_rate(
-        "POSIX pwrite effective bandwidth",
+        "pwrite bytes / summed syscall time",
         output_state.pwrite_bytes,
         output_state.pwrite_seconds, 4);
 #else
@@ -1279,9 +1899,17 @@ static void print_output_debug_report_body(void)
         output_state.posix_write_seconds,
         output_state.posix_write_calls, 4);
     print_output_debug_rate(
-        "POSIX write effective bandwidth",
+        "write bytes / summed syscall time",
         output_state.posix_write_bytes,
         output_state.posix_write_seconds, 4);
+#endif
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (output_state.gzip) {
+        fprintf(stderr, "    Parallel syscall times are worker sums, not wall time.\n");
+        print_output_debug_rate("gzip write wall bandwidth",
+            output_state.pwrite_bytes + output_state.posix_write_bytes,
+            output_state.gzip_write_wall_seconds, 4);
+    }
 #endif
 
     fprintf(stderr, "\n  Output close timing\n");
@@ -1325,6 +1953,12 @@ int swbwa_output_close(void)
     double start;
 
     if (!output_state.opened) return 0;
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (output_state.gzip && swbwa_gzip_output_pending(output_state.gzip)) {
+        errno = EBUSY;
+        return -1;
+    }
+#endif
 #if SWBWA_OUTPUT_RMA_ONLY
     if (output_state.chunk_active) {
         errno = EINVAL;
@@ -1332,6 +1966,35 @@ int swbwa_output_close(void)
     }
 #endif
     if (swbwa_output_flush() != 0) status = -1;
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED && SWBWA_ENABLE_GZIP_OUTPUT
+    if (prefix_stop() != 0) status = -1;
+#endif
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (output_state.gzip) {
+        uint64_t batches = output_state.gzip_batches;
+        static const unsigned char empty_gzip[20] = {
+            31, 139, 8, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+#if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
+        uint64_t total = 0;
+        if (mpi_check(MPI_Allreduce(&batches, &total, 1, MPI_UINT64_T, MPI_SUM,
+                                    MPI_COMM_WORLD), "count gzip output batches") != 0) status = -1;
+        batches = swbwa_mpi_rank() == 0 ? total : 1;
+#endif
+#if !SWBWA_OUTPUT_RMA_ONLY
+        if (!batches && status == 0 && write_all(output_state.fd, empty_gzip, sizeof(empty_gzip)) != 0)
+            status = -1;
+#else
+        (void)batches;
+        (void)empty_gzip;
+#endif
+        swbwa_gzip_output_report(output_state.gzip, stderr, swbwa_mpi_rank(), swbwa_mpi_size());
+        fprintf(stderr, "[SWBWA gzip sink rank %06d/%06d] parallel_write=%d iov_limit=%u write_wall_s=%.6f"
+                " syscall_worker_s=%.6f\n", swbwa_mpi_rank(), swbwa_mpi_size(),
+                output_state.gzip_parallel_write, output_state.gzip_iov_limit, output_state.gzip_write_wall_seconds,
+                output_state.posix_write_seconds + output_state.pwrite_seconds);
+    }
+#endif
 
 #if SWBWA_USE_MPI && SWBWA_OUTPUT_SINGLE_FILE
 #if SWBWA_OUTPUT_MODE == SWBWA_OUTPUT_SINGLE_ORDERED
@@ -1370,7 +2033,7 @@ int swbwa_output_close(void)
                 status = -1;
             }
             fprintf(stderr, "[SWBWA ordered stream rank %06d/%06d] chunks=%" PRIu64
-                    " expected_chunks=%" PRId64 " sam_bytes=%" PRIu64 " validated=%d\n",
+                    " expected_chunks=%" PRId64 " file_bytes=%" PRIu64 " validated=%d\n",
                     swbwa_mpi_rank(), swbwa_mpi_size(), total,
                     output_state.ordered_count, bytes, status == 0);
         }
@@ -1424,6 +2087,9 @@ int swbwa_output_close(void)
     free(output_state.buffer);
     free(output_state.record_lengths);
     free(output_state.extents);
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    swbwa_gzip_output_destroy(output_state.gzip);
+#endif
     memset(&output_state, 0, sizeof(output_state));
     output_state.fd = -1;
     return status;

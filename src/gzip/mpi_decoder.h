@@ -14,10 +14,10 @@ typedef struct swbwa_mpi_decoder swbwa_mpi_decoder;
 typedef struct {
     size_t chunk_bytes;          /* Compressed task stride; default 256 KiB. */
     size_t lookahead_bytes;      /* Bounded compressed block lookahead; 1 MiB. */
-    size_t memory_bytes;         /* Adapter buffer budget per rank; 512 MiB. */
-    size_t decoded_bytes;        /* Delivered bytes per rank at most 128 MiB. */
+    size_t memory_bytes;         /* Adapter budget; 512 MiB per 64 workers. */
+    size_t decoded_bytes;        /* Decoded budget; 128 MiB per 64 workers. */
     size_t initial_output_bytes; /* Initial decoded symbols per job; 2 MiB. */
-    unsigned jobs_per_rank;      /* Maximum queued jobs, 1..384; default 64. */
+    unsigned jobs_per_rank;      /* Maximum queued jobs, 1..384; matches workers. */
     unsigned workers;           /* Passed unchanged to codec launch; 1..384. */
 } swbwa_mpi_decoder_config;
 
@@ -48,6 +48,14 @@ typedef struct {
     uint64_t epochs, discover_jobs, accepted_jobs, speculative_accepted;
     uint64_t discarded_jobs, capacity_retries, source_read_bytes, decoded_bytes;
     uint64_t peak_buffer_bytes;
+    uint64_t initial_batch_jobs, max_discover_jobs, max_resolve_jobs;
+    uint64_t known_tail_jobs, repaired_tail_jobs;
+    uint64_t parallel_history_epochs, serial_history_epochs;
+    uint64_t prefetch_batches, prefetch_bytes, source_read_calls;
+    double source_io_s, prefetch_io_s;
+    uint64_t source_cache_bytes;
+    double source_cache_s;
+    int prefetch_cg;
     double io_s, discover_run_s, discover_wait_s, resolve_run_s, resolve_wait_s;
     /* Local job counts: discover = accepted + discarded + retry on success.
      * discarded: unselected jobs in committed attempts; retry: all jobs in
@@ -56,8 +64,12 @@ typedef struct {
      * symbols in committed attempts, not partial output or retry attempts. */
     uint64_t retry_jobs, discover_failed_jobs, discover_output_full_jobs;
     uint64_t discarded_output_bytes;
+    uint64_t gap_repair_jobs, gap_repair_ok;
+    double gap_repair_s; /* Inclusive subset of next_s and backend/MPI timers. */
     /* Per-rank accumulated wall seconds, never summed across CPEs/ranks.
-     * open_s includes open_io_s; io_s includes all pread calls, including open.
+     * open_s includes open_io_s; io_s is foreground input time, including
+     * waiting for prefetched bytes. source_io_s measures actual pread time;
+     * prefetch_io_s is its overlapping background subset, not a next_s phase.
      * next_s includes retries and repeated EOF calls. Its disjoint phases
      * are io_s-open_io_s, prepare/cleanup, discover/resolve_wall, and the
      * metadata/window/commit/EOF timers. Backend run/wait are subsets of
@@ -75,11 +87,13 @@ typedef struct {
     double retry_s;
 } swbwa_mpi_decoder_metrics;
 
-void swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *config);
+/* Match the job and buffer budgets to the available CPEs. Allocations remain
+ * demand-driven. Invalid worker counts are rejected by decoder_open. */
+void swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *config, unsigned workers);
 
 /* Collective on intracommunicator comm: duplicates it, never uses WORLD.
  * Every rank supplies identical options, path and gzip content. config=NULL
- * selects defaults. Supports seekable, immutable gzip files, including
+ * selects 384-worker defaults. Supports seekable, immutable gzip files, including
  * concatenated members. Every member's CRC/ISIZE is checked; trailing garbage
  * and padding are rejected. Inputs must remain unchanged during decoding;
  * filesystem timestamps and identity are not monitored. No pre-scan or

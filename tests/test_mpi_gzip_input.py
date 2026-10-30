@@ -24,7 +24,8 @@ def build(work, sanitizer, input_mode="static"):
              "-DSWBWA_MPI_INPUT_MODE=SWBWA_MPI_INPUT_" + input_mode.upper(),
              "-I" + str(ROOT / "include"), "-I" + str(ENGINE),
              "-I" + str(ENGINE / "vendor" / "rapidgzip")]
-    san = ["-fsanitize=" + sanitizer, "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"] if sanitizer else []
+    san = ["-fsanitize=" + sanitizer, "-fno-sanitize-recover=all", "-fno-omit-frame-pointer", "-fno-pie"] if sanitizer else []
+    link_san = [*san, *(["-no-pie"] if sanitizer else [])]
     flags += san
     sources = [ENGINE / name for name in ("mpi_input.cpp", "fastq_frame.cpp", "mpi_decoder.cpp",
                "codec_job.c", "backend_host.c", "rapid_firstpass.cpp")]
@@ -39,13 +40,13 @@ def build(work, sanitizer, input_mode="static"):
         subprocess.run([compiler, "-std=" + standard, *flags, "-c", str(source), "-o", str(obj)], check=True)
         objects.append(str(obj))
     binary = work / "test-mpi-gzip-input"
-    subprocess.run([os.environ.get("MPICXX", "mpicxx"), *objects, *san,
+    subprocess.run([os.environ.get("MPICXX", "mpicxx"), *objects, *link_san,
                     "-Wl,--wrap=swbwa_mpi_decoder_config_init", "-Wl,--wrap=swbwa_mpi_decoder_next",
                     "-lz", "-pthread", "-o", str(binary)], check=True)
     frame = work / "test-fastq-frame"
     subprocess.run([os.environ.get("CXX", "c++"), "-std=c++11", *flags,
                     str(ROOT / "tests" / "test_fastq_frame.cpp"), str(work / "fastq_frame.o"),
-                    "-o", str(frame)], check=True)
+                    *(["-no-pie"] if sanitizer else []), "-o", str(frame)], check=True)
     subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
                     "-I" + str(ROOT / "include"), "-x", "c", "-fsyntax-only", "-"],
                    input=b'#include "swbwa_mpi_gzip.h"\n', check=True)
@@ -72,7 +73,8 @@ def main():
         root = Path(temporary)
 
         def run(name, r1, r2=None, blob1=None, blob2=None, ranks=2,
-                target=32768, mode="normal", error=None, defaults=False, lookahead=1 << 20, ready=4):
+                target=32768, mode="normal", error=None, defaults=False, lookahead=1 << 20, ready=4,
+                workers=384):
             raw1, gz1 = root / (name + ".R1.raw"), root / (name + ".R1.gz")
             raw1.write_bytes(r1); gz1.write_bytes(encoded(r1) if blob1 is None else blob1)
             raw2 = gz2 = "-"
@@ -80,10 +82,11 @@ def main():
                 raw2, gz2 = root / (name + ".R2.raw"), root / (name + ".R2.gz")
                 raw2.write_bytes(r2); gz2.write_bytes(encoded(r2) if blob2 is None else blob2)
             command = ["mpirun", "-launcher", "fork", "-n", str(ranks), str(binary),
-                       str(gz1), str(gz2), str(raw1), str(raw2), str(target), "384", "1", mode]
+                       str(gz1), str(gz2), str(raw1), str(raw2), str(target), str(workers), "1", mode]
             env = dict(os.environ)
             env["FASTQ_TEST_LOOKAHEAD"] = str(lookahead)
             env["SWBWA_GZIP_READY_CHUNKS"] = str(ready)
+            env["MALLOC_PERTURB_"] = "165"
             if defaults:
                 env["FASTQ_TEST_DEFAULT_CONFIG"] = "1"
             else:
@@ -104,6 +107,10 @@ def main():
             assert len(result_lines) == 1, logs[-1]
             result = json.loads(result_lines[0])
             assert result["records"] == r1.count(b"\n") // 4
+            if defaults:
+                widths = list(map(int, re.findall(r"initial_batch_jobs=(\d+)", process.stderr)))
+                assert len(widths) == ranks * (1 + (r2 is not None)), logs[-1]
+                assert all(width == workers for width in widths), logs[-1]
             estimates = set(map(int, re.findall(r"records_per_chunk=(\d+)", process.stderr)))
             assert len(estimates) == 1, logs[-1]
             k = estimates.pop()
@@ -155,7 +162,10 @@ def main():
             for ranks in (1, 2, 3):
                 result = run(f"pair-skew-ranks{ranks}", r1, r2, ranks=ranks)
                 assert result["max_epochs"] > 1 and result["boundary_records"] > 0
-            run("default-decoder-config", r1, r2, defaults=True)
+            result = run("pair-skew-swapped-ranks3", r2, r1, ranks=3)
+            assert result["max_epochs"] > 1 and result["boundary_records"] > 0
+            for workers in (64, 384):
+                run(f"default-decoder-config-workers{workers}", r1, r2, defaults=True, workers=workers)
             run("thread-multiple-reader", r1, r2, mode="thread")
             run("single-end", r1, ranks=3)
             for name, strategy in (("fixed", zlib.Z_FIXED), ("huffman", zlib.Z_HUFFMAN_ONLY), ("rle", zlib.Z_RLE)):
@@ -164,6 +174,8 @@ def main():
             concat1 = encoded(b"") + encoded(r1[:43]) + encoded(r1[43:451231]) + encoded(b"") + encoded(r1[451231:])
             concat2 = encoded(r2[:10101]) + encoded(b"") + encoded(r2[10101:]) + encoded(b"")
             run("concat-members-cross-record", r1, r2, blob1=concat1, blob2=concat2, ranks=3)
+            result = run("concat-members-cross-record-swapped", r2, r1, blob1=concat2, blob2=concat1, ranks=3)
+            assert result["boundary_records"] > 0
             run("exact-name-different-comments", b"@same a\nAC\n+\n++\n", b"@same\tb\nAC\n+\n@@\n")
             run("record-chunks-one", b"".join(r1parts[:101]), b"".join(r2parts[:101]), target=1, ranks=3)
             long_name = bytes(rng.choices(b"ACGT", k=100000))

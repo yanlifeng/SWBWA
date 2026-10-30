@@ -79,6 +79,7 @@ The supported build variables are:
 | `CPE_DISCARD_DIGEST` | `0`, `1` | `1` for non-MPI `cgs_cross + pool` with `OUTPUT_MODE=discard DISCARD_HASH_BYTES=0`; `0` otherwise |
 | `USE_MPI` | `0`, `1` | `1` |
 | `GZIP_INPUT` | `0`, `1` | `1` |
+| `GZIP_OUTPUT` | `0`, `1` | `1`; `.gz` names select parallel CPE compression |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
 | `OUTPUT_MODE` | `split`, `single_unordered`, `single_ordered`, `discard` | `single_unordered` with MPI; `split` otherwise |
 | `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
@@ -249,6 +250,36 @@ command and use the same run command above. Both `CPE_KERNEL_OPT` and
 ./build.sh 6 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0 \
     OUTPUT_MODE=discard DISCARD_HASH_BYTES=0 CPE_PROFILE=0
 ```
+
+### Parallel Gzip SAM Output
+
+With the default `GZIP_OUTPUT=1`, `-o output.sam.gz` produces an ordinary gzip
+file in all three file-output modes: `split`, `single_unordered`, and
+`single_ordered`. Non-MPI `split` produces one input-ordered file; MPI split names
+are `output.rank000000.sam.gz`. Compression is independent of gzip input.
+
+The engine directly reads existing SAM fragments on 64 or 384 CPEs, then writes
+compressed members with scatter/gather I/O. Six-MPE builds prepare descriptor
+metadata with their bound helpers. No whole-SAM packing copy is added on the MPE.
+Ordered MPI output assigns file positions by chunk ID using compressed lengths;
+it does not gather compressed payloads at rank 0. Standard gzip member CRCs and
+length trailers are included, without private metadata or a sidecar index.
+
+`SWBWA_GZIP_LEVEL=1..9` defaults to 1. `SWBWA_GZIP_BLOCK_KIB=0` automatically
+sizes tasks for the configured CPE count; `1..4096` selects a fixed member size.
+Six-MPE builds can also use the helper pool for parallel positioned writes with
+`SWBWA_GZIP_PARALLEL_WRITE=1`. It defaults off: concurrency is not necessarily
+faster on a bandwidth-limited shared filesystem. Descriptor preparation still
+uses all configured MPE helpers.
+By default, the processor compresses batches after alignment and before the
+writer queue, allowing compressed writes to overlap subsequent work.
+`SWBWA_GZIP_PREPARE_OUTPUT=0` restores writer-requested compression for comparison.
+Prepared results have five independent reusable buffer slots;
+their memory use grows with the largest batches. Preparation is timed separately
+between Stages 2 and 3, not counted as an alignment speedup.
+Do not combine `.gz` with `OUTPUT_MODE=discard` or `SWBWA_OUTPUT_MD5=1`.
+`OUTPUT_RMA_ONLY=1` may be used to profile compression and compressed reservations
+without physical writes. See [the engine contract](src/gzip/README.md#parallel-sam-compression).
 
 ### Chunk Output And Six-MPE Helpers
 

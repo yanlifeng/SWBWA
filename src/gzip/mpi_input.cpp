@@ -4,6 +4,7 @@
 #include "fastq_frame.h"
 #include "line_index.h"
 #include "swbwa_host_workers.h"
+#include "swbwa_pipeline.h"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -54,9 +55,9 @@ void thread_check()
     if (!main_thread && level < MPI_THREAD_MULTIPLE)
         throw std::runtime_error("MPI gzip worker thread requires MPI_THREAD_MULTIPLE");
 }
-void put(std::vector<unsigned char> &out, uint64_t v)
+void put(unsigned char *&out, uint64_t v)
 {
-    for (unsigned i = 0; i < 8; ++i) { out.push_back(static_cast<unsigned char>(v)); v >>= 8; }
+    for (unsigned i = 0; i < 8; ++i) { *out++ = static_cast<unsigned char>(v); v >>= 8; }
 }
 uint64_t get(const unsigned char *&p, const unsigned char *end)
 {
@@ -90,6 +91,16 @@ struct Local {
     size_t body_begin = 0;
 };
 
+struct SendPacket {
+    uint64_t first, records;
+    const unsigned char *data;
+    SwbwaLineIndex lines;
+};
+struct SendPlan {
+    std::vector<SendPacket> packets;
+    uint64_t bytes = 0;
+};
+
 struct ReadyChunk {
     swbwa_mpi_gzip_batch batch = {};
     ~ReadyChunk()
@@ -117,6 +128,37 @@ unsigned ready_chunk_limit()
     if (errno || end == value || *end || n < 1 || n > 16)
         throw std::invalid_argument("SWBWA_GZIP_READY_CHUNKS must be 1..16");
     return unsigned(n);
+}
+
+bool decode_drain_setting()
+{
+    const char *value = std::getenv("SWBWA_GZIP_DECODE_DRAIN");
+    if (!value || !std::strcmp(value, "0")) return false;
+    if (!std::strcmp(value, "1")) return true;
+    throw std::invalid_argument("SWBWA_GZIP_DECODE_DRAIN must be 0 or 1");
+}
+
+bool early_first_setting()
+{
+    const char *value = std::getenv("SWBWA_GZIP_EARLY_FIRST");
+    if (!value || !std::strcmp(value, "0")) return false;
+    if (!std::strcmp(value, "1")) return true;
+    throw std::invalid_argument("SWBWA_GZIP_EARLY_FIRST must be 0 or 1");
+}
+
+bool prepare_ahead_setting()
+{
+    const char *value = std::getenv("SWBWA_GZIP_PREPARE_AHEAD");
+    if (!value || !std::strcmp(value, "0")) return false;
+    if (!std::strcmp(value, "1")) return true;
+    throw std::invalid_argument("SWBWA_GZIP_PREPARE_AHEAD must be 0 or 1");
+}
+
+void describe_ready(const swbwa_mpi_gzip_batch &b, U64 *values)
+{
+    values[0] = U64(b.chunk_id); values[1] = U64(b.first_record);
+    values[2] = U64(b.records); values[3] = U64(b.size[0]);
+    values[4] = U64(b.size[1]); values[5] = b.partition_count;
 }
 
 fq::Split split_index(const unsigned char *data, const SwbwaLineIndex &index,
@@ -157,6 +199,7 @@ void copy_bytes(char *to, const unsigned char *from, size_t size)
 
 struct swbwa_mpi_gzip_reader {
     MPI_Comm comm = MPI_COMM_NULL;
+    MPI_Comm schedule_comm = MPI_COMM_NULL;
     int rank = 0, ranks = 0, mates = 1, debug = 0;
     unsigned workers = 0;
     size_t target = 0;
@@ -164,7 +207,22 @@ struct swbwa_mpi_gzip_reader {
     uint64_t emitted_bytes[2] = {0, 0};
     bool done = false, decoded_done = false;
     bool dynamic = SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC;
+    bool decode_drain_enabled = false;
+    bool early_first_enabled = false, preparing_ready = false;
+    std::array<U64, 9> first_values{};
+    uint64_t early_first_chunks = 0;
     unsigned ready_limit = 0;
+    bool prepare_ahead = false, producer_started = false, produced_eof = false;
+    bool producer_used = false;
+    bool delivered_eof = false;
+    uint64_t delivered_waves = 0, prepared_chunks = 0, prepared_peak_bytes = 0;
+    uint64_t prepared_bytes = 0;
+    double producer_s = 0, producer_backpressure_s = 0, prepared_wait_s = 0;
+    pthread_t producer_thread;
+    void *producer_context = NULL;
+    pthread_mutex_t prepared_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t prepared_changed = PTHREAD_COND_INITIALIZER;
+    std::deque<std::unique_ptr<ReadyChunk> > prepared;
     MPI_Win ticket_window = MPI_WIN_NULL, data_window = MPI_WIN_NULL;
     U64 ticket = 0;
     uint64_t ready_begin = 0, ready_count = 0, ready_windows = 0;
@@ -180,6 +238,7 @@ struct swbwa_mpi_gzip_reader {
     std::vector<ReadyDescriptor> descriptors;
     double decode_s = 0, frame_s = 0, exchange_s = 0, emit_s = 0, next_s = 0;
     double frame_mpi_s = 0, exchange_mpi_s = 0, ready_wait_s = 0, eof_wait_s = 0;
+    double exchange_pack_s = 0, exchange_prepare_s = 0, exchange_receive_s = 0;
     uint64_t local_payload_bytes = 0, remote_payload_bytes = 0, assembled_copy_bytes = 0;
     uint64_t mate_same_offset = 0, mate_corrected_offset = 0;
     char error[512] = "";
@@ -187,7 +246,7 @@ struct swbwa_mpi_gzip_reader {
 
     void advance(int mate);
     void exchange(Stream &, const Local &, const unsigned char *);
-    void pack(Stream &, std::vector<std::vector<unsigned char> > &, uint64_t,
+    void pack(Stream &, std::vector<SendPlan> &, uint64_t,
               const unsigned char *, const SwbwaLineIndex &);
     void insert(Stream &, uint64_t, Piece &&);
     void receive(Stream &, const unsigned char *, size_t);
@@ -196,6 +255,9 @@ struct swbwa_mpi_gzip_reader {
                     swbwa_fastq_partition_t *);
     int next(swbwa_mpi_gzip_batch &);
     int next_static(swbwa_mpi_gzip_batch &);
+    int next_prepared(swbwa_mpi_gzip_batch &);
+    void produce();
+    static void *produce_entry(void *);
     int next_dynamic(swbwa_mpi_gzip_batch &);
     bool distributed_dynamic() const { return dynamic && ranks > 1; }
     void drain_before_decode();
@@ -203,6 +265,8 @@ struct swbwa_mpi_gzip_reader {
     void release_ready();
     ~swbwa_mpi_gzip_reader()
     {
+        pthread_cond_destroy(&prepared_changed);
+        pthread_mutex_destroy(&prepared_mutex);
         pthread_cond_destroy(&completed);
         pthread_mutex_destroy(&pending_mutex);
     }
@@ -228,9 +292,10 @@ int abort_reader(swbwa_mpi_gzip_reader *r, const char *message)
 
 void swbwa_mpi_gzip_reader::drain_before_decode()
 {
-    if (!distributed_dynamic()) return;
-    /* Only another codec launch needs the processor-thread handoff. Already
-     * decoded chunks may refill a window while older alignment/output runs. */
+    if (!decode_drain_enabled || !distributed_dynamic()) return;
+    /* Optional legacy scheduling counterfactual. Shared PipelineSync services
+     * codecs during both queue waits and EOF draining; input storage lifetime
+     * is protected separately by copies and the ready-window refill barrier. */
     const double begin = MPI_Wtime();
     thread_call(pthread_mutex_lock(&pending_mutex));
     if (!pending.empty()) {
@@ -388,7 +453,7 @@ void swbwa_mpi_gzip_reader::insert(Stream &s, uint64_t first, Piece &&piece)
     s.peak_queued = std::max(s.peak_queued, s.queued);
 }
 
-void swbwa_mpi_gzip_reader::pack(Stream &s, std::vector<std::vector<unsigned char> > &send,
+void swbwa_mpi_gzip_reader::pack(Stream &s, std::vector<SendPlan> &send,
     uint64_t first, const unsigned char *bytes, const SwbwaLineIndex &lines)
 {
     if (lines.lines() % 4) throw std::runtime_error("incomplete FASTQ bulk interval");
@@ -412,16 +477,13 @@ void swbwa_mpi_gzip_reader::pack(Stream &s, std::vector<std::vector<unsigned cha
             begin += count; byte_begin = byte_end;
             continue;
         }
-        std::vector<unsigned char> &out = send[size_t(owner)];
+        SendPlan &out = send[size_t(owner)];
         const uint64_t packet_size = add(32, add(multiply(slice.spans(), 16), byte_end - byte_begin));
-        if (add(out.size(), packet_size) > std::min<uint64_t>(INT_MAX, queue_limit))
+        const uint64_t planned_bytes = add(out.bytes, packet_size);
+        if (planned_bytes > std::min<uint64_t>(INT_MAX, queue_limit))
             throw std::runtime_error("MPI FASTQ send budget exceeded");
-        put(out, ordinal); put(out, count); put(out, byte_end - byte_begin);
-        put(out, slice.spans());
-        for (size_t i = 0; i < slice.spans(); ++i) {
-            put(out, slice.span_bytes(i)); put(out, slice.span_lines(i));
-        }
-        out.insert(out.end(), bytes + byte_begin, bytes + byte_end);
+        out.packets.push_back({ordinal, count, bytes + byte_begin, std::move(slice)});
+        out.bytes = planned_bytes;
         remote_payload_bytes += byte_end - byte_begin;
         begin += count; byte_begin = byte_end;
     }
@@ -458,40 +520,68 @@ void swbwa_mpi_gzip_reader::receive(Stream &s, const unsigned char *data, size_t
 void swbwa_mpi_gzip_reader::exchange(Stream &s, const Local &local, const unsigned char *body)
 {
     const double begin = MPI_Wtime();
-    std::vector<std::vector<unsigned char> > send(static_cast<size_t>(ranks));
+    // Payloads borrow the current decoder batch or Local::crossing only until this exchange returns.
+    std::vector<SendPlan> send(static_cast<size_t>(ranks));
     pack(s, send, local.first, local.crossing.data(), local.crossing_lines);
     pack(s, send, add(local.first, !local.crossing.empty()),
          body ? body + local.body_begin : NULL, local.body_lines);
-    if (ranks == 1) { exchange_s += MPI_Wtime() - begin; return; }
+    if (ranks == 1) {
+        const double elapsed = MPI_Wtime() - begin;
+        exchange_pack_s += elapsed; exchange_s += elapsed; return;
+    }
     std::vector<int> sc(size_t(ranks), 0), rc(size_t(ranks), 0), sd(size_t(ranks), 0), rd(size_t(ranks), 0);
     uint64_t send_size = 0, recv_size = 0;
     for (int i = 0; i < ranks; ++i) {
-        sd[i] = int(send_size); sc[i] = int(send[i].size()); send_size = add(send_size, send[i].size());
+        sd[i] = int(send_size); sc[i] = int(send[i].bytes); send_size = add(send_size, send[i].bytes);
         if (send_size > std::min<uint64_t>(INT_MAX, queue_limit))
             throw std::runtime_error("MPI FASTQ total send budget exceeded");
     }
     double mpi_begin = MPI_Wtime();
+    exchange_pack_s += mpi_begin - begin;
     check(MPI_Alltoall(sc.data(), 1, MPI_INT, rc.data(), 1, MPI_INT, comm));
-    exchange_mpi_s += MPI_Wtime() - mpi_begin;
+    const double prepare_begin = MPI_Wtime();
+    exchange_mpi_s += prepare_begin - mpi_begin;
     for (int i = 0; i < ranks; ++i) {
         if (rc[i] < 0) throw std::runtime_error("negative MPI FASTQ receive size");
         rd[i] = int(recv_size); recv_size = add(recv_size, uint64_t(rc[i]));
         if (recv_size > std::min<uint64_t>(INT_MAX, queue_limit - s.queued))
             throw std::runtime_error("MPI FASTQ receive/queue budget exceeded");
     }
-    std::vector<unsigned char> packed(size_t(send_size), 0), incoming(size_t(recv_size), 0);
+    // Planning includes local Piece copies; preparation fills the final wire buffer directly.
+    // Prefix sums cover every byte: fill writes packed, blocking Alltoallv writes incoming.
+    std::unique_ptr<unsigned char, decltype(&std::free)> packed(
+        send_size ? static_cast<unsigned char *>(std::malloc(size_t(send_size))) : NULL, &std::free);
+    std::unique_ptr<unsigned char, decltype(&std::free)> incoming(
+        recv_size ? static_cast<unsigned char *>(std::malloc(size_t(recv_size))) : NULL, &std::free);
+    if ((send_size && !packed) || (recv_size && !incoming)) throw std::bad_alloc();
     for (int i = 0; i < ranks; ++i) {
-        if (sc[i]) std::memcpy(packed.data() + sd[i], send[i].data(), size_t(sc[i]));
-        std::vector<unsigned char>().swap(send[i]);
+        if (!sc[i]) continue;
+        unsigned char *p = packed.get() + sd[i], *end = p + sc[i];
+        for (const SendPacket &packet : send[i].packets) {
+            const size_t bytes = packet.lines.bytes();
+            const uint64_t size = add(32, add(multiply(packet.lines.spans(), 16), bytes));
+            if (size > uint64_t(end - p)) throw std::logic_error("MPI FASTQ send plan size mismatch");
+            put(p, packet.first); put(p, packet.records); put(p, bytes); put(p, packet.lines.spans());
+            for (size_t j = 0; j < packet.lines.spans(); ++j) {
+                put(p, packet.lines.span_bytes(j)); put(p, packet.lines.span_lines(j));
+            }
+            copy_bytes(reinterpret_cast<char *>(p), packet.data, bytes); p += bytes;
+        }
+        if (p != end) throw std::logic_error("MPI FASTQ send plan size mismatch");
+        std::vector<SendPacket>().swap(send[i].packets);
     }
     unsigned char dummy = 0;
     mpi_begin = MPI_Wtime();
-    check(MPI_Alltoallv(packed.empty() ? &dummy : packed.data(), sc.data(), sd.data(), MPI_BYTE,
-                        incoming.empty() ? &dummy : incoming.data(), rc.data(), rd.data(), MPI_BYTE, comm));
-    exchange_mpi_s += MPI_Wtime() - mpi_begin;
+    exchange_prepare_s += mpi_begin - prepare_begin;
+    check(MPI_Alltoallv(packed ? packed.get() : &dummy, sc.data(), sd.data(), MPI_BYTE,
+                        incoming ? incoming.get() : &dummy, rc.data(), rd.data(), MPI_BYTE, comm));
+    const double receive_begin = MPI_Wtime();
+    exchange_mpi_s += receive_begin - mpi_begin;
     for (int i = 0; i < ranks; ++i)
-        if (rc[i]) receive(s, incoming.data() + rd[i], size_t(rc[i]));
-    exchange_s += MPI_Wtime() - begin;
+        if (rc[i]) receive(s, incoming.get() + rd[i], size_t(rc[i]));
+    const double end = MPI_Wtime();
+    exchange_receive_s += end - receive_begin;
+    exchange_s += end - begin;
 }
 
 fq::OwnedChunk swbwa_mpi_gzip_reader::assemble(Stream &s, uint64_t id, uint64_t first,
@@ -641,6 +731,92 @@ int swbwa_mpi_gzip_reader::next_static(swbwa_mpi_gzip_batch &out)
     }
 }
 
+void *swbwa_mpi_gzip_reader::produce_entry(void *opaque)
+{
+    auto *r = static_cast<swbwa_mpi_gzip_reader *>(opaque);
+    try {
+        swbwa_pipeline_set_context(r->producer_context);
+        r->produce();
+        swbwa_pipeline_set_context(NULL);
+    } catch (const std::exception &e) {
+        abort_reader(r, e.what());
+    } catch (...) {
+        abort_reader(r, "unknown MPI gzip preparation error");
+    }
+    return NULL;
+}
+
+void swbwa_mpi_gzip_reader::produce()
+{
+    const double start = MPI_Wtime();
+    for (;;) {
+        thread_call(pthread_mutex_lock(&prepared_mutex));
+        const double wait = MPI_Wtime();
+        // One bounded READY window, plus at most one in-flight allocation.
+        while (prepared.size() >= ready_limit)
+            thread_call(pthread_cond_wait(&prepared_changed, &prepared_mutex));
+        producer_backpressure_s += MPI_Wtime() - wait;
+        thread_call(pthread_mutex_unlock(&prepared_mutex));
+        std::unique_ptr<ReadyChunk> chunk(new ReadyChunk);
+        const int status = next_static(chunk->batch);
+        thread_call(pthread_mutex_lock(&prepared_mutex));
+        if (status) {
+            prepared_bytes += uint64_t(chunk->batch.size[0]) + uint64_t(chunk->batch.size[1]);
+            prepared_peak_bytes = std::max(prepared_peak_bytes, prepared_bytes);
+            prepared.push_back(std::move(chunk));
+            ++prepared_chunks;
+        } else {
+            produced_eof = true;
+        }
+        thread_call(pthread_cond_broadcast(&prepared_changed));
+        thread_call(pthread_mutex_unlock(&prepared_mutex));
+        if (!status) break;
+    }
+    producer_s = MPI_Wtime() - start;
+}
+
+int swbwa_mpi_gzip_reader::next_prepared(swbwa_mpi_gzip_batch &out)
+{
+    if (delivered_eof) return 0;
+    if (!producer_started && prepare_ahead) {
+        // The serial (-1) pipeline has no owner service loop. Keep its codec
+        // calls on the main thread; only no1 gets a nested producer.
+        producer_context = swbwa_pipeline_context();
+        if (producer_context) {
+            thread_call(pthread_create(&producer_thread, NULL, produce_entry, this));
+            producer_started = true;
+            producer_used = true;
+        }
+    }
+    if (!producer_started) {
+        const int status = next_static(out);
+        delivered_eof = !status;
+        delivered_waves += status != 0;
+        return status;
+    }
+    const double begin = MPI_Wtime();
+    thread_call(pthread_mutex_lock(&prepared_mutex));
+    while (prepared.empty() && !produced_eof)
+        thread_call(pthread_cond_wait(&prepared_changed, &prepared_mutex));
+    const bool eof = prepared.empty();
+    if (!eof) {
+        out = prepared.front()->batch;
+        prepared.front()->batch = swbwa_mpi_gzip_batch{};
+        prepared.pop_front();
+        prepared_bytes -= uint64_t(out.size[0]) + uint64_t(out.size[1]);
+        ++delivered_waves;
+    }
+    thread_call(pthread_cond_broadcast(&prepared_changed));
+    thread_call(pthread_mutex_unlock(&prepared_mutex));
+    prepared_wait_s += MPI_Wtime() - begin;
+    if (eof) {
+        thread_call(pthread_join(producer_thread, NULL));
+        producer_started = false;
+        delivered_eof = true;
+    }
+    return !eof;
+}
+
 void swbwa_mpi_gzip_reader::release_ready()
 {
     if (data_window != MPI_WIN_NULL) {
@@ -654,28 +830,46 @@ void swbwa_mpi_gzip_reader::release_ready()
 
 bool swbwa_mpi_gzip_reader::refill()
 {
-    double begin = MPI_Wtime();
-    /* Every requester has flushed its Gets before reaching this barrier.
-     * Delivered buffers are independent of the immutable window storage. */
-    check(MPI_Barrier(comm));
-    refill_wait_s += MPI_Wtime() - begin;
-    if (data_window != MPI_WIN_NULL) check(MPI_Win_sync(data_window));
     if (local_first) throw std::logic_error("unclaimed local MPI gzip first chunk");
-    descriptors.clear(); ready_count = 0;
-    if (decoded_done) return false;
+    if (!preparing_ready) {
+        double begin = MPI_Wtime();
+        /* Every requester has flushed its Gets before reaching this barrier.
+         * Delivered buffers are independent of the immutable window storage. */
+        check(MPI_Barrier(schedule_comm));
+        refill_wait_s += MPI_Wtime() - begin;
+        if (data_window != MPI_WIN_NULL) check(MPI_Win_sync(data_window));
+        descriptors.clear(); ready_count = 0;
+        if (delivered_eof) return false;
+        ready_begin = multiply(delivered_waves, uint64_t(ranks));
+    }
     const double prepare_begin = MPI_Wtime();
-    ready_begin = multiply(wave, uint64_t(ranks));
+    if (early_first_enabled && !preparing_ready) {
+        preparing_ready = true;
+        first_values.fill(0);
+        std::unique_ptr<ReadyChunk> first(new ReadyChunk);
+        if (next_prepared(first->batch)) describe_ready(first->batch, first_values.data());
+        if (first->batch.records) {
+            /* This chunk is reserved for its owner, so no ticket or published
+             * data window is needed. Finish the shared suffix on the next call. */
+            local_first = std::move(first);
+            ++early_first_chunks;
+            refill_s += MPI_Wtime() - prepare_begin;
+            return true;
+        }
+    }
     uint64_t bytes = 0;
     std::vector<std::unique_ptr<ReadyChunk> > ready;
     std::vector<U64> local_values(size_t(ready_limit) * 9, 0);
-    for (unsigned slot = 0; slot < ready_limit; ++slot) {
+    if (preparing_ready) {
+        std::copy(first_values.begin(), first_values.end(), local_values.begin());
+        ready.emplace_back(nullptr); // Its allocation was already delivered.
+    }
+    for (unsigned slot = unsigned(ready.size()); slot < ready_limit; ++slot) {
         std::unique_ptr<ReadyChunk> chunk(new ReadyChunk);
-        if (!next_static(chunk->batch)) break;
+        if (!next_prepared(chunk->batch)) break;
         const swbwa_mpi_gzip_batch &b = chunk->batch;
         U64 *values = local_values.data() + slot * 9;
-        values[0] = U64(b.chunk_id); values[1] = U64(b.first_record);
-        values[2] = U64(b.records); values[3] = U64(b.size[0]);
-        values[4] = U64(b.size[1]); values[5] = b.partition_count;
+        describe_ready(b, values);
         /* Reserve one initial chunk for each owner. It precedes all ticketed
          * IDs, so the ordered writer still sees increasing IDs on each rank.
          * Transfer that allocation directly, without packing or self-Get. */
@@ -693,7 +887,7 @@ bool swbwa_mpi_gzip_reader::refill()
     const size_t slots = size_t(ready_limit) * size_t(ranks);
     std::vector<U64> values(slots * 9, 0);
     check(MPI_Allgather(local_values.data(), int(local_values.size()), MPI_UNSIGNED_LONG_LONG,
-        values.data(), int(local_values.size()), MPI_UNSIGNED_LONG_LONG, comm));
+        values.data(), int(local_values.size()), MPI_UNSIGNED_LONG_LONG, schedule_comm));
     descriptors.resize(slots);
     bool exhausted = false;
     for (size_t index = 0; index < slots; ++index) {
@@ -706,7 +900,7 @@ bool swbwa_mpi_gzip_reader::refill()
             throw std::runtime_error("noncontiguous MPI gzip ready window");
         ++ready_count;
     }
-    if (!ready.empty() && ready[0]->batch.records)
+    if (!ready.empty() && ready[0] && ready[0]->batch.records)
         local_first = std::move(ready[0]);
     if (ready_count > uint64_t(ranks)) {
         /* SWCH's dynamic-window Get fails with SRC_ADDR_ERR even in an isolated
@@ -716,7 +910,7 @@ bool swbwa_mpi_gzip_reader::refill()
         const double window_begin = MPI_Wtime();
         int grow = data_window == MPI_WIN_NULL || bytes > ready_payload.size;
         int any_grow = 0;
-        check(MPI_Allreduce(&grow, &any_grow, 1, MPI_INT, MPI_MAX, comm));
+        check(MPI_Allreduce(&grow, &any_grow, 1, MPI_INT, MPI_MAX, schedule_comm));
         if (any_grow) {
             if (data_window != MPI_WIN_NULL) {
                 check(MPI_Win_unlock_all(data_window));
@@ -735,7 +929,7 @@ bool swbwa_mpi_gzip_reader::refill()
                 ready_payload.size = size_t(capacity);
             }
             check(MPI_Win_create(ready_payload.data, MPI_Aint(ready_payload.size), 1,
-                                 MPI_INFO_NULL, comm, &data_window));
+                                 MPI_INFO_NULL, schedule_comm, &data_window));
             check(MPI_Win_lock_all(0, data_window));
             ++data_window_builds;
         }
@@ -760,10 +954,11 @@ bool swbwa_mpi_gzip_reader::refill()
                             MPI_UNSIGNED_LONG_LONG, MPI_REPLACE, ticket_window));
         check(MPI_Win_flush(0, ticket_window));
     }
-    check(MPI_Barrier(comm));
+    check(MPI_Barrier(schedule_comm));
+    preparing_ready = false;
     ++ready_windows;
     refill_s += MPI_Wtime() - prepare_begin;
-    if (!ready_count && !decoded_done)
+    if (!ready_count && !delivered_eof)
         throw std::logic_error("empty ready window before validated gzip EOF");
     return ready_count != 0;
 }
@@ -771,7 +966,7 @@ bool swbwa_mpi_gzip_reader::refill()
 int swbwa_mpi_gzip_reader::next_dynamic(swbwa_mpi_gzip_batch &out)
 {
     for (;;) {
-        if (!ready_count && !refill()) return 0;
+        if (!local_first && !ready_count && !refill()) return 0;
         if (local_first) {
             out = local_first->batch;
             local_first->batch = swbwa_mpi_gzip_batch{};
@@ -892,13 +1087,24 @@ extern "C" swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const c
 #endif
         r->mates = path2 ? 2 : 1; r->workers = workers; r->debug = debug; r->target = batch_bytes;
         r->ready_limit = r->dynamic ? ready_chunk_limit() : 0;
-        r->queue_limit = std::max<uint64_t>(512U << 20, multiply(batch_bytes, 3));
-        std::array<U64, 6> config = {{U64(r->mates), batch_bytes, workers, U64(debug), U64(r->dynamic), r->ready_limit}};
-        std::vector<std::array<U64, 6> > all(size_t(r->ranks), std::array<U64, 6>{{}});
-        check(MPI_Allgather(config.data(), 6, MPI_UNSIGNED_LONG_LONG, all.data(), 6, MPI_UNSIGNED_LONG_LONG, r->comm));
-        for (const auto &c : all) if (c != config) throw std::runtime_error("MPI gzip reader configuration mismatch");
+        r->decode_drain_enabled = decode_drain_setting();
+        r->early_first_enabled = early_first_setting();
+        r->prepare_ahead = prepare_ahead_setting();
         swbwa_mpi_decoder_config decoder_config;
-        swbwa_mpi_decoder_config_init(&decoder_config); decoder_config.workers = workers;
+        swbwa_mpi_decoder_config_init(&decoder_config, workers);
+        // Preserve queue headroom as decoder epochs grow with the CPE count.
+        r->queue_limit = std::max(multiply(decoder_config.decoded_bytes, 4), multiply(batch_bytes, 3));
+        std::array<U64, 9> config = {{U64(r->mates), batch_bytes, workers, U64(debug),
+                                    U64(r->dynamic), r->ready_limit, U64(r->decode_drain_enabled),
+                                    U64(r->early_first_enabled), U64(r->prepare_ahead)}};
+        std::vector<std::array<U64, 9> > all(size_t(r->ranks), std::array<U64, 9>{{}});
+        check(MPI_Allgather(config.data(), 9, MPI_UNSIGNED_LONG_LONG, all.data(), 9, MPI_UNSIGNED_LONG_LONG, r->comm));
+        for (const auto &c : all) if (c != config) throw std::runtime_error("MPI gzip reader configuration mismatch");
+        if (debug) std::fprintf(stderr,
+            "[MPI gzip rank=%d config] workers=%u jobs_per_rank=%u decoder_memory_bytes=%zu "
+            "decoder_output_bytes=%zu queue_limit_per_mate_bytes=%llu\n",
+            r->rank, workers, decoder_config.jobs_per_rank, decoder_config.memory_bytes,
+            decoder_config.decoded_bytes, U64(r->queue_limit));
         for (int m = 0; m < r->mates; ++m) {
             char error[512] = "";
             if (swbwa_mpi_decoder_open(r->comm, m ? path2 : path1, &decoder_config,
@@ -906,8 +1112,12 @@ extern "C" swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const c
                 throw std::runtime_error(error);
         }
         if (r->distributed_dynamic()) {
+            // Producer and consumer must not concurrently issue collectives
+            // on one communicator, even with MPI_THREAD_MULTIPLE.
+            check(MPI_Comm_dup(r->comm, &r->schedule_comm));
+            check(MPI_Comm_set_errhandler(r->schedule_comm, MPI_ERRORS_RETURN));
             check(MPI_Win_create(&r->ticket, r->rank == 0 ? sizeof(r->ticket) : 0,
-                                 sizeof(r->ticket), MPI_INFO_NULL, r->comm, &r->ticket_window));
+                                 sizeof(r->ticket), MPI_INFO_NULL, r->schedule_comm, &r->ticket_window));
             check(MPI_Win_lock_all(0, r->ticket_window));
         }
         return r;
@@ -963,6 +1173,34 @@ extern "C" int64_t swbwa_mpi_gzip_chunk_count(const swbwa_mpi_gzip_reader *r)
 extern "C" int swbwa_mpi_gzip_report(swbwa_mpi_gzip_reader *r, FILE *file)
 {
     if (!r || !file) return abort_reader(r, "null MPI gzip report argument");
+    if (std::fprintf(file,
+        "[MPI gzip rank=%d scheduler] mode=%s ready_chunks_per_rank=%u windows=%llu "
+        "local_claims=%llu remote_claims=%llu fetched_bytes=%llu ready_peak_bytes=%llu "
+        "refill_s=%.6f refill_wait_s=%.6f drain_wait_s=%.6f claim_rma_s=%.6f fetch_s=%.6f "
+        "pack_s=%.6f local_copy_s=%.6f direct_claims=%llu direct_bytes=%llu "
+        "data_window_builds=%llu window_capacity_bytes=%zu window_s=%.6f decode_drains=%llu "
+        "decode_drain_enabled=%d early_first_enabled=%d early_first_chunks=%llu\n",
+        r->rank, r->dynamic ? "dynamic" : "static", r->ready_limit, U64(r->ready_windows),
+        U64(r->local_claims), U64(r->remote_claims), U64(r->fetched_bytes), U64(r->ready_peak_bytes),
+        r->refill_s, r->refill_wait_s, r->producer_started ? 0 : r->drain_wait_s, r->claim_s, r->fetch_s,
+        r->pack_s, r->local_copy_s, U64(r->direct_claims), U64(r->direct_bytes),
+        U64(r->data_window_builds), r->ready_payload.size, r->window_s,
+        r->producer_started ? 0ULL : U64(r->decode_drains),
+        int(r->decode_drain_enabled), int(r->early_first_enabled), U64(r->early_first_chunks)) < 0)
+        return abort_reader(r, "MPI gzip scheduler report write failed");
+    if (r->producer_started) {
+        // The caller owns scheduler fields, but the producer may be updating
+        // decode metrics. Full metrics are only read after its EOF join.
+        if (std::fprintf(file, "[MPI gzip rank=%d] snapshot=scheduler_only producer_active=1\n",
+                         r->rank) < 0) return abort_reader(r, "MPI gzip report write failed");
+        return 0;
+    }
+    if (std::fprintf(file,
+        "[MPI gzip rank=%d prepare_ahead] enabled=%d used=%d prepared_chunks=%llu "
+        "peak_fastq_bytes=%llu producer_s=%.6f backpressure_s=%.6f consumer_wait_s=%.6f\n",
+        r->rank, int(r->prepare_ahead), int(r->producer_used), U64(r->prepared_chunks),
+        U64(r->prepared_peak_bytes), r->producer_s, r->producer_backpressure_s,
+        r->prepared_wait_s) < 0) return abort_reader(r, "MPI gzip preparation report failed");
     const int result = std::fprintf(file,
         "[MPI gzip rank=%d] records=%llu chunks=%llu empty_READY=%llu records_per_chunk=%llu "
         "R1_decoded_bytes=%llu R2_decoded_bytes=%llu next_s=%.6f decode_s=%.6f frame_carry_s=%.6f "
@@ -972,34 +1210,45 @@ extern "C" int swbwa_mpi_gzip_report(swbwa_mpi_gzip_reader *r, FILE *file)
         r->frame_s, r->exchange_s, r->emit_s, int(r->done), U64(r->queue_limit));
     if (result < 0) return abort_reader(r, "MPI gzip report write failed");
     if (std::fprintf(file,
-        "[MPI gzip rank=%d scheduler] mode=%s ready_chunks_per_rank=%u windows=%llu "
-        "local_claims=%llu remote_claims=%llu fetched_bytes=%llu ready_peak_bytes=%llu "
-        "refill_s=%.6f refill_wait_s=%.6f drain_wait_s=%.6f claim_rma_s=%.6f fetch_s=%.6f "
-        "pack_s=%.6f local_copy_s=%.6f direct_claims=%llu direct_bytes=%llu "
-        "data_window_builds=%llu window_capacity_bytes=%zu window_s=%.6f decode_drains=%llu\n",
-        r->rank, r->dynamic ? "dynamic" : "static", r->ready_limit, U64(r->ready_windows),
-        U64(r->local_claims), U64(r->remote_claims), U64(r->fetched_bytes), U64(r->ready_peak_bytes),
-        r->refill_s, r->refill_wait_s, r->drain_wait_s, r->claim_s, r->fetch_s,
-        r->pack_s, r->local_copy_s, U64(r->direct_claims), U64(r->direct_bytes),
-        U64(r->data_window_builds), r->ready_payload.size, r->window_s, U64(r->decode_drains)) < 0)
-        return abort_reader(r, "MPI gzip scheduler report write failed");
-    if (std::fprintf(file,
         "[MPI gzip rank=%d reader_local] frame_local_s=%.6f exchange_local_s=%.6f "
         "emit_local_s=%.6f adapter_local_s=%.6f frame_mpi_s=%.6f exchange_mpi_s=%.6f "
         "ready_wait_s=%.6f eof_wait_s=%.6f local_payload_bytes=%llu remote_payload_bytes=%llu "
         "assembled_copy_bytes=%llu mate_same_offset=%llu mate_corrected_offset=%llu "
+        "exchange_pack_s=%.6f exchange_prepare_s=%.6f exchange_receive_s=%.6f "
+        "exchange_pack_mode=plan_and_local_copy exchange_prepare_mode=direct_wire_fill "
         "record_validation=CPE_format timers=rank_local_wall_seconds\n",
         r->rank, r->frame_s - r->frame_mpi_s, r->exchange_s - r->exchange_mpi_s,
         r->emit_s - r->ready_wait_s,
         r->frame_s + r->exchange_s + r->emit_s - r->frame_mpi_s - r->exchange_mpi_s - r->ready_wait_s,
         r->frame_mpi_s, r->exchange_mpi_s, r->ready_wait_s, r->eof_wait_s,
         U64(r->local_payload_bytes), U64(r->remote_payload_bytes), U64(r->assembled_copy_bytes),
-        U64(r->mate_same_offset), U64(r->mate_corrected_offset)) < 0)
+        U64(r->mate_same_offset), U64(r->mate_corrected_offset),
+        r->exchange_pack_s, r->exchange_prepare_s, r->exchange_receive_s) < 0)
         return abort_reader(r, "MPI gzip report write failed");
     for (int m = 0; m < r->mates; ++m) {
         swbwa_mpi_decoder_metrics d = {};
         if (swbwa_mpi_decoder_get_metrics(r->streams[m].decoder, &d))
             return abort_reader(r, "MPI gzip decoder metrics unavailable");
+        if (std::fprintf(file,
+            "[MPI gzip rank=%d mate=%d concurrency] workers=%u initial_batch_jobs=%llu "
+            "max_discover_jobs=%llu max_resolve_jobs=%llu\n",
+            r->rank, m + 1, r->workers, U64(d.initial_batch_jobs),
+            U64(d.max_discover_jobs), U64(d.max_resolve_jobs)) < 0)
+            return abort_reader(r, "MPI gzip concurrency report write failed");
+        if (std::fprintf(file,
+            "[MPI gzip rank=%d mate=%d tails] known_tail_jobs=%llu repaired_tail_jobs=%llu "
+            "parallel_history_epochs=%llu serial_history_epochs=%llu\n",
+            r->rank, m + 1, U64(d.known_tail_jobs), U64(d.repaired_tail_jobs),
+            U64(d.parallel_history_epochs), U64(d.serial_history_epochs)) < 0)
+            return abort_reader(r, "MPI gzip tail report write failed");
+        if (std::fprintf(file,
+            "[MPI gzip rank=%d mate=%d source] foreground_input_s=%.6f source_io_s=%.6f "
+            "prefetch_io_s=%.6f prefetch_batches=%llu prefetch_bytes=%llu source_read_calls=%llu prefetch_cg=%d "
+            "prefetch_io_overlaps_reader=1 source_cache_bytes=%llu source_cache_s=%.6f\n",
+            r->rank, m + 1, d.io_s, d.source_io_s, d.prefetch_io_s,
+            U64(d.prefetch_batches), U64(d.prefetch_bytes), U64(d.source_read_calls), d.prefetch_cg,
+            U64(d.source_cache_bytes), d.source_cache_s) < 0)
+            return abort_reader(r, "MPI gzip source report write failed");
         if (std::fprintf(file,
             "[MPI gzip rank=%d mate=%d] epochs=%llu decoded_bytes=%llu source_read_bytes=%llu "
             "io_s=%.6f discover_run_s=%.6f discover_wait_s=%.6f resolve_run_s=%.6f resolve_wait_s=%.6f "
@@ -1011,6 +1260,10 @@ extern "C" int swbwa_mpi_gzip_report(swbwa_mpi_gzip_reader *r, FILE *file)
         const double accounted = next_io + d.prepare_s + d.cleanup_s + d.discover_wall_s +
             d.resolve_wall_s + d.metadata_local_s + d.metadata_mpi_s + d.window_local_s +
             d.window_mpi_s + d.commit_local_s + d.commit_mpi_s + d.commit_barrier_s + d.eof_barrier_s;
+        if (std::fprintf(file,
+            "[MPI gzip rank=%d mate=%d repair] jobs=%llu ok=%llu total_s=%.6f included_in_next=1\n",
+            r->rank, m + 1, U64(d.gap_repair_jobs), U64(d.gap_repair_ok), d.gap_repair_s) < 0)
+            return abort_reader(r, "MPI gzip report write failed");
         if (std::fprintf(file,
             "[MPI gzip rank=%d mate=%d decoder] open_s=%.6f open_io_s=%.6f next_s=%.6f "
             "next_io_s=%.6f prepare_s=%.6f cleanup_s=%.6f other_s=%.6f\n"
@@ -1050,10 +1303,13 @@ extern "C" void swbwa_mpi_gzip_close(swbwa_mpi_gzip_reader *r)
             const bool incomplete = !r->pending.empty();
             thread_call(pthread_mutex_unlock(&r->pending_mutex));
             if (incomplete) throw std::runtime_error("MPI gzip close requires completed output batches");
-            check(MPI_Barrier(r->comm));
+            if (r->producer_started || !r->prepared.empty())
+                throw std::runtime_error("MPI gzip close before preparation completion");
+            check(MPI_Barrier(r->schedule_comm));
             r->release_ready();
             check(MPI_Win_unlock_all(r->ticket_window));
             check(MPI_Win_free(&r->ticket_window));
+            check(MPI_Comm_free(&r->schedule_comm));
         }
         for (int m = 0; m < r->mates; ++m) {
             if (!r->streams[m].eof || r->streams[m].carry_size || !r->streams[m].chunks.empty())

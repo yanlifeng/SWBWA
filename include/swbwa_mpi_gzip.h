@@ -45,14 +45,16 @@ swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const char *path2,
 int swbwa_mpi_gzip_next(swbwa_mpi_gzip_reader *, swbwa_mpi_gzip_batch *);
 /* Call once per nonempty chunk, in local delivery order, after its output has
  * been consumed (Stage 3). Thread-safe; no MPI on the normal path. STATIC and
- * single-rank readers are no-ops. Distributed DYNAMIC waits for completions
- * before new codec collectives, not decoded-only refills, to avoid processor-
- * handoff/ordered-output deadlocks. Does not free buffers. */
+ * single-rank readers are no-ops. The optional DECODE_DRAIN counterfactual
+ * waits for completions before new codec collectives. Does not free buffers. */
 int swbwa_mpi_gzip_complete(swbwa_mpi_gzip_reader *, int64_t chunk_id);
 /* Exact global count of nonempty chunks, available only after validated EOF. */
 int64_t swbwa_mpi_gzip_chunk_count(const swbwa_mpi_gzip_reader *);
 const char *swbwa_mpi_gzip_error(const swbwa_mpi_gzip_reader *);
 /* Local report, no collective. Timings are rank-local seconds, bytes decoded.
+ * Call from the next() consumer or after it has finished, never concurrently.
+ * While background preparation is active only scheduler fields are reported;
+ * full decode metrics become available after next() reaches EOF and joins it.
  * close is collective during normal operation and precedes MPI_Finalize.
  * It requires global EOF and all completion callbacks to have finished.
  * EOF alone need not drain in-flight output; premature close aborts.

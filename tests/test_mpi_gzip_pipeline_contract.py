@@ -236,6 +236,27 @@ int swbwa_output_write_chunk(int64_t id, int64_t start, int64_t end,
     errno = EIO;
     return is_case("write") ? -1 : 0;
 }
+#if SWBWA_ENABLE_GZIP_OUTPUT
+int swbwa_output_prepare_chunk(const bseq1_t *seqs, const int *lengths,
+                                int reads, void **prepared) {
+    (void)lengths;
+    assert(seqs && reads > 0 && prepared && !*prepared);
+    errno = EIO;
+    if (is_case("prepare")) return -1;
+    *prepared = (void *)seqs;
+    return 0;
+}
+int swbwa_output_publish_prepared_chunk(int64_t id, int reads, void *prepared) {
+    assert(id >= 0 && reads > 0 && prepared);
+    errno = EIO;
+    return is_case("publish") ? -1 : 0;
+}
+int swbwa_output_write_prepared_chunk(int64_t id, int64_t start, int64_t end,
+        const bseq1_t *seqs, const int *lengths, int reads, int is_paired, void *prepared) {
+    assert(prepared == (void *)seqs);
+    return swbwa_output_write_chunk(id, start, end, seqs, lengths, reads, is_paired);
+}
+#endif
 int swbwa_gzip_read_next(swbwa_gzip_reader *r, char **a, int64_t *b,
                          char **c, int64_t *d) {
     (void)r; (void)a; (void)b; (void)c; (void)d; unexpected(); return -1;
@@ -276,6 +297,7 @@ void swbwa_mpi_fastq_scheduler_close(void) { unexpected(); }
 
 static void actual_teardown(ktp_aux_t aux) {
     int gzip_input = 1;
+    int saved_report_stderr = -1;
     double t0 = GetTime();
 #include "actual_teardown.inc"
 }
@@ -392,6 +414,10 @@ def main():
             run(cc + ['-std=gnu11', *common, *poison, *includes, *flags,
                       '-fsyntax-only', str(ROOT / 'src/host/fastmap.c')])
             syntax_count += 1
+            run(cc + ['-std=gnu11', *common, *includes, *flags,
+                      '-DSWBWA_ENABLE_GZIP_OUTPUT=1', '-fsyntax-only',
+                      str(ROOT / 'src/host/fastmap.c')])
+            syntax_count += 1
             if mpi and gzip and output == 'SINGLE_ORDERED':
                 run(cc + ['-std=gnu11', *common, *includes, *flags,
                           '-DSWBWA_OUTPUT_RMA_ONLY=1', '-fsyntax-only',
@@ -459,6 +485,19 @@ def main():
                 assert '[MPI_ABORT]' in result.stderr and '[LOCAL_FATAL]' not in result.stderr
                 cases += 1
             print(f'PASS {mode}/{output}: SE/PE, single/queue, empty READY, EOF, close, injected errors', flush=True)
+        for mode in ('STATIC', 'DYNAMIC'):
+            flags = defines(1, 1, mode, 'SINGLE_ORDERED') + ['-DSWBWA_ENABLE_GZIP_OUTPUT=1']
+            executable = build(f'prepared-{mode}', flags, 'pipeline.c', True)
+            for paired, threaded, scenario in itertools.product((0, 1), (0, 1), ('mixed', 'empty', 'boundary')):
+                run([executable, scenario, str(paired), str(threaded)],
+                    env=dict(os.environ, ASAN_OPTIONS='detect_leaks=1:halt_on_error=1'))
+                cases += 1
+            for threaded, scenario in itertools.product((0, 1), ('prepare', 'publish')):
+                result = run([executable, scenario, '1', str(threaded)], expected=86,
+                             env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0:halt_on_error=1'))
+                assert f'failed to {scenario} gzip output' in result.stderr
+                cases += 1
+            print(f'PASS {mode}: prepared gzip batches and preparation errors', flush=True)
         print(f'PASS {cases} pipeline cases; no MPI launcher, remote commands or native CPE execution', flush=True)
 
 

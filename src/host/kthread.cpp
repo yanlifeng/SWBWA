@@ -168,15 +168,19 @@ static void pipeline_thread_check(int error)
     abort();
 }
 
-/* Single producer/consumer; closure and the last item share one mutex.
- * Direct pthread references also prevent unresolved weak gthread symbols
- * in the Sunway static libstdc++ link (notably cond_broadcast). */
-class BatchQueue {
-    std::vector<DataType> items;
-    size_t head = 0, tail = 0, count = 0;
-    bool closed = false;
-    void (*processor_call)(void *) = nullptr;
-    void *processor_argument = nullptr;
+/* Both queues share a condition variable so a reader OR writer codec request
+ * can wake the owner, including during output backpressure and final draining. */
+class PipelineSync {
+    struct Call {
+        void (*function)(void *);
+        void *argument;
+        Call *next;
+        bool done;
+    };
+    Call *first = nullptr, *last = nullptr;
+    bool writer_done = false;
+
+public:
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_cond_t changed = PTHREAD_COND_INITIALIZER;
 
@@ -185,94 +189,122 @@ class BatchQueue {
         pipeline_thread_check(error);
     }
 
-    template<class Predicate>
-    void wait(Predicate ready, QueueWait& stats)
+    ~PipelineSync()
     {
-        if (ready()) return;
-        const auto start = std::chrono::steady_clock::now();
-        while (!ready()) checked(pthread_cond_wait(&changed, &mutex));
-        ++stats.events;
-        stats.seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    }
-
-public:
-    explicit BatchQueue(size_t capacity) : items(capacity) { assert(capacity > 0); }
-    ~BatchQueue()
-    {
+        assert(!first);
         checked(pthread_cond_destroy(&changed));
         checked(pthread_mutex_destroy(&mutex));
     }
+    void service()
+    {
+        while (first) {
+            Call *request = first;
+            first = request->next;
+            if (!first) last = nullptr;
+            checked(pthread_mutex_unlock(&mutex));
+            request->function(request->argument);
+            checked(pthread_mutex_lock(&mutex));
+            request->done = true;
+            checked(pthread_cond_broadcast(&changed));
+        }
+    }
+    void call(void (*function)(void *), void *argument)
+    {
+        Call request{function, argument, nullptr, false};
+        checked(pthread_mutex_lock(&mutex));
+        if (last) last->next = &request;
+        else first = &request;
+        last = &request;
+        checked(pthread_cond_broadcast(&changed));
+        while (!request.done) checked(pthread_cond_wait(&changed, &mutex));
+        checked(pthread_mutex_unlock(&mutex));
+    }
+    template<class Predicate>
+    void wait(Predicate ready, QueueWait& stats, bool owner)
+    {
+        bool counted = false;
+        for (;;) {
+            if (owner) service();
+            if (ready()) return;
+            const auto start = std::chrono::steady_clock::now();
+            checked(pthread_cond_wait(&changed, &mutex));
+            if (!counted) { ++stats.events; counted = true; }
+            stats.seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        }
+    }
+    void finish_writer()
+    {
+        checked(pthread_mutex_lock(&mutex));
+        writer_done = true;
+        checked(pthread_cond_broadcast(&changed));
+        checked(pthread_mutex_unlock(&mutex));
+    }
+    void drain()
+    {
+        QueueWait ignored;
+        checked(pthread_mutex_lock(&mutex));
+        wait([this] { return writer_done; }, ignored, true);
+        checked(pthread_mutex_unlock(&mutex));
+    }
+};
+
+/* Single producer/consumer; closure and the last item share one mutex. */
+class BatchQueue {
+    std::vector<DataType> items;
+    size_t head = 0, tail = 0, count = 0;
+    bool closed = false;
+    PipelineSync& sync;
+
+public:
+    BatchQueue(size_t capacity, PipelineSync& shared) : items(capacity), sync(shared) { assert(capacity > 0); }
     BatchQueue(const BatchQueue&) = delete;
     BatchQueue& operator=(const BatchQueue&) = delete;
 
-    void wait_for_space(QueueWait& stats)
+    void wait_for_space(QueueWait& stats, bool owner = false)
     {
-        checked(pthread_mutex_lock(&mutex));
-        wait([this] { return count < items.size(); }, stats);
-        checked(pthread_mutex_unlock(&mutex));
+        PipelineSync::checked(pthread_mutex_lock(&sync.mutex));
+        sync.wait([this] { return count < items.size(); }, stats, owner);
+        PipelineSync::checked(pthread_mutex_unlock(&sync.mutex));
     }
 
     void push(DataType item)
     {
-        checked(pthread_mutex_lock(&mutex));
+        PipelineSync::checked(pthread_mutex_lock(&sync.mutex));
         assert(!closed && count < items.size());
         items[tail] = item;
         tail = (tail + 1) % items.size();
         ++count;
-        checked(pthread_cond_broadcast(&changed));
-        checked(pthread_mutex_unlock(&mutex));
+        PipelineSync::checked(pthread_cond_broadcast(&sync.changed));
+        PipelineSync::checked(pthread_mutex_unlock(&sync.mutex));
     }
 
-    bool pop(DataType& item, QueueWait& stats)
+    bool pop(DataType& item, QueueWait& stats, bool owner = false)
     {
-        checked(pthread_mutex_lock(&mutex));
-        for (;;) {
-            wait([this] { return processor_call || count != 0 || closed; }, stats);
-            if (!processor_call) break;
-            void (*call)(void *) = processor_call;
-            void *argument = processor_argument;
-            /* Do not hold the queue mutex during a CPE launch or MPI progress. */
-            checked(pthread_mutex_unlock(&mutex));
-            call(argument);
-            checked(pthread_mutex_lock(&mutex));
-            processor_call = nullptr;
-            processor_argument = nullptr;
-            checked(pthread_cond_broadcast(&changed));
-        }
+        PipelineSync::checked(pthread_mutex_lock(&sync.mutex));
+        sync.wait([this] { return count != 0 || closed; }, stats, owner);
         if (!count) {
-            checked(pthread_mutex_unlock(&mutex));
+            PipelineSync::checked(pthread_mutex_unlock(&sync.mutex));
             return false;
         }
         item = items[head];
         head = (head + 1) % items.size();
         --count;
-        checked(pthread_cond_broadcast(&changed));
-        checked(pthread_mutex_unlock(&mutex));
+        PipelineSync::checked(pthread_cond_broadcast(&sync.changed));
+        PipelineSync::checked(pthread_mutex_unlock(&sync.mutex));
         return true;
-    }
-
-    void call_on_consumer(void (*call)(void *), void *argument)
-    {
-        checked(pthread_mutex_lock(&mutex));
-        assert(call && !processor_call && !closed);
-        processor_argument = argument;
-        processor_call = call;
-        checked(pthread_cond_broadcast(&changed));
-        while (processor_call) checked(pthread_cond_wait(&changed, &mutex));
-        checked(pthread_mutex_unlock(&mutex));
     }
 
     void close()
     {
-        checked(pthread_mutex_lock(&mutex));
+        PipelineSync::checked(pthread_mutex_lock(&sync.mutex));
         closed = true;
-        checked(pthread_cond_broadcast(&changed));
-        checked(pthread_mutex_unlock(&mutex));
+        PipelineSync::checked(pthread_cond_broadcast(&sync.changed));
+        PipelineSync::checked(pthread_mutex_unlock(&sync.mutex));
     }
 };
 
-/* This compiler-TLS pointer was observed corrupted after native alignment.
- * Keep the reader's handoff pointer in pthread-managed storage instead. */
+/* Compiler TLS was observed corrupted after native alignment. Keep pipeline
+ * handoff pointers in pthread-managed storage for both reader and writer. */
 static pthread_key_t reader_processor_key;
 static pthread_once_t reader_processor_key_once = PTHREAD_ONCE_INIT;
 
@@ -290,17 +322,29 @@ extern "C" void swbwa_pipeline_call_on_processor(void (*call)(void *), void *arg
 {
     assert(call);
     prepare_reader_processor_key();
-    BatchQueue *queue = static_cast<BatchQueue *>(pthread_getspecific(reader_processor_key));
-    if (queue)
-        queue->call_on_consumer(call, argument);
+    PipelineSync *sync = static_cast<PipelineSync *>(pthread_getspecific(reader_processor_key));
+    if (sync)
+        sync->call(call, argument);
     else
         call(argument);
 }
 
-static void reader_thread(ktp_t* p, BatchQueue& queue)
+extern "C" void *swbwa_pipeline_context(void)
 {
     prepare_reader_processor_key();
-    pipeline_thread_check(pthread_setspecific(reader_processor_key, &queue));
+    return pthread_getspecific(reader_processor_key);
+}
+
+extern "C" void swbwa_pipeline_set_context(void *context)
+{
+    prepare_reader_processor_key();
+    pipeline_thread_check(pthread_setspecific(reader_processor_key, context));
+}
+
+static void reader_thread(ktp_t* p, BatchQueue& queue, PipelineSync& sync)
+{
+    prepare_reader_processor_key();
+    pipeline_thread_check(pthread_setspecific(reader_processor_key, &sync));
     for (;;) {
         queue.wait_for_space(pipeline_waits.reader_full);
         DataType item = p->func(p->shared, 0, nullptr);
@@ -314,20 +358,24 @@ static void reader_thread(ktp_t* p, BatchQueue& queue)
 static void processor_thread(ktp_t* p, BatchQueue& input, BatchQueue& output)
 {
     DataType item;
-    while (input.pop(item, pipeline_waits.processor_empty)) {
+    while (input.pop(item, pipeline_waits.processor_empty, true)) {
         /* Reserve before touching a SAM ring slot, not after producing it.
          * The writer's active item is outside the queue and still owns a slot. */
-        output.wait_for_space(pipeline_waits.processor_full);
+        output.wait_for_space(pipeline_waits.processor_full, true);
         output.push(p->func(p->shared, 1, item));
     }
     output.close();
 }
 
-static void writer_thread(ktp_t* p, BatchQueue& queue)
+static void writer_thread(ktp_t* p, BatchQueue& queue, PipelineSync& sync)
 {
+    prepare_reader_processor_key();
+    pipeline_thread_check(pthread_setspecific(reader_processor_key, &sync));
     DataType item;
     while (queue.pop(item, pipeline_waits.writer_empty)) p->func(p->shared, 2, item);
     p->func(p->shared, 3, nullptr);
+    pipeline_thread_check(pthread_setspecific(reader_processor_key, nullptr));
+    sync.finish_writer();
 }
 
 extern "C" void kt_pipeline_wait_report(void)
@@ -353,13 +401,26 @@ extern "C" void kt_pipeline_queue(int n_threads, void* (*func)(void*, int, void*
     assert(n_threads == 3);
     assert(n_steps == 3);
 
-    BatchQueue read_queue(read_queue_item_limit), write_queue(write_queue_item_limit);
+    int input_limit = read_queue_item_limit;
+    if (const char *setting = std::getenv("SWBWA_INPUT_QUEUE_CHUNKS")) {
+        char *end = nullptr;
+        const long value = std::strtol(setting, &end, 10);
+        if (!*setting || *end || value < 1 || value > 8) {
+            std::fprintf(stderr, "[E::pipeline] SWBWA_INPUT_QUEUE_CHUNKS must be 1..8\n");
+            std::abort();
+        }
+        input_limit = int(value);
+    }
+    std::fprintf(stderr, "[pipeline] input_queue_chunks=%d\n", input_limit);
+    PipelineSync sync;
+    BatchQueue read_queue(input_limit, sync), write_queue(write_queue_item_limit, sync);
     pipeline_waits = {};
     pipeline_waits.enabled = true;
-    std::thread reader(reader_thread, &aux, std::ref(read_queue));
-    std::thread writer(writer_thread, &aux, std::ref(write_queue));
+    std::thread reader(reader_thread, &aux, std::ref(read_queue), std::ref(sync));
+    std::thread writer(writer_thread, &aux, std::ref(write_queue), std::ref(sync));
 
     processor_thread(&aux, read_queue, write_queue);
+    sync.drain();
     reader.join();
     writer.join();
 }

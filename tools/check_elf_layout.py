@@ -93,7 +93,10 @@ class Image:
         require([p.p_vaddr for p in loads] == sorted(p.p_vaddr for p in loads),
                 "PT_LOAD virtual addresses are not ordered")
         for p in self.programs:
-            self.bytes(p.p_offset, p.p_filesz)
+            # A pure zero-fill LOAD/TLS segment has no file bytes. Its aligned
+            # offset can be beyond EOF after nonallocated metadata is stripped.
+            if p.p_filesz or p.p_type not in (PT_LOAD, PT_TLS):
+                self.bytes(p.p_offset, p.p_filesz)
             if p.p_type not in (PT_LOAD, PT_TLS):
                 continue
             require(p.p_filesz <= p.p_memsz, "segment filesz exceeds memsz")

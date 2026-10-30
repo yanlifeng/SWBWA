@@ -20,6 +20,7 @@ AR  = ar
 # CPE_LDM_MODE:   0 (off) | 1 (legacy tiered pool) | 2 (manual) | 3 (unified pool)
 # Unified pool defaults on for non-MPI cgs_cross+pool; other builds use manual.
 # OUTPUT_MODE:   split | single_unordered | single_ordered | discard
+# GZIP_OUTPUT:   0 | 1 (.gz output; independent of GZIP_INPUT)
 # OUTPUT_RMA_ONLY: 0 | 1 (dynamic single-file benchmark, no disk writes)
 # DISCARD_HASH_BYTES: 0 hashes each full SAM blob; N is profiling only
 # CPE_DISCARD_DIGEST: 0 | 1 (defaults on for FULL discard on non-MPI cross+pool)
@@ -38,6 +39,7 @@ KSW_U8_MODE         ?= int32_16
 KSW_I16_MODE        ?= int32_8
 MATESW_DUAL_FORWARD ?= 1
 GZIP_INPUT          ?= 1
+GZIP_OUTPUT         ?= 1
 LWPF3_DIR            ?= ../lwpf3
 
 USE_MPI              ?= 1
@@ -64,8 +66,17 @@ endif
 VALID_EXEC_MODES     := single cgs cgs_cross
 VALID_CPE_ALLOCATORS := system pool
 VALID_BOOLEAN_VALUES := 0 1
-ifeq ($(filter $(GZIP_INPUT),$(VALID_BOOLEAN_VALUES)),)
+ifneq ($(words $(GZIP_INPUT)),1)
 $(error GZIP_INPUT must be 0 or 1)
+endif
+ifeq ($(filter $(VALID_BOOLEAN_VALUES),$(GZIP_INPUT)),)
+$(error GZIP_INPUT must be 0 or 1)
+endif
+ifneq ($(words $(GZIP_OUTPUT)),1)
+$(error GZIP_OUTPUT must be 0 or 1)
+endif
+ifeq ($(filter $(VALID_BOOLEAN_VALUES),$(GZIP_OUTPUT)),)
+$(error GZIP_OUTPUT must be 0 or 1)
 endif
 VALID_KSW_U8_MODES    := int32_16 float16_16 float16_32
 VALID_KSW_I16_MODES   := scalar_8 int32_8
@@ -237,6 +248,7 @@ SWBWA_CPPFLAGS := \
 	-DSWBWA_KSW_I16_MODE=$(KSW_I16_MODE_VALUE_$(KSW_I16_MODE)) \
 	-DSWBWA_ENABLE_MATESW_DUAL_FORWARD=$(MATESW_DUAL_FORWARD) \
 	-DSWBWA_ENABLE_GZIP_INPUT=$(GZIP_INPUT) \
+	-DSWBWA_ENABLE_GZIP_OUTPUT=$(GZIP_OUTPUT) \
 	-DSWBWA_USE_MPI=$(USE_MPI) \
 	-DSWBWA_ENABLE_CPE_KERNEL_OPT=$(CPE_KERNEL_OPT) \
 	-DSWBWA_CPE_LDM_MODE=$(CPE_LDM_MODE) \
@@ -302,16 +314,25 @@ SLAVE_SOURCES := $(wildcard $(SLAVE_DIR)/*.c)
 SLAVE_OBJECTS := $(SLAVE_SOURCES:.c=.o)
 GZIP_DIR := src/gzip
 GZIP_OBJECTS :=
+GZIP_HOST_OBJECTS :=
+ifneq ($(filter 1,$(GZIP_INPUT) $(GZIP_OUTPUT)),)
+GZIP_CPE_OBJECTS := $(addprefix $(GZIP_DIR)/, codec_job.o backend_cpe.o)
+GZIP_ZLIB_OBJECTS := $(addprefix $(GZIP_DIR)/z_, $(addsuffix .o,adler32 crc32 deflate trees zutil))
+GZIP_FLAGS := -DSWBWA_CODEC_LDM=2
+GZIP_CPE_FLAGS = $(GZIP_FLAGS) -DSWBWA_CODEC_CPE=1 -DZ_PREFIX -I$(GZIP_DIR)/vendor/zlib
+GZIP_OBJECTS = $(GZIP_HOST_OBJECTS) $(GZIP_CPE_OBJECTS) $(GZIP_ZLIB_OBJECTS) $(GZIP_DIR)/backend_swbwa.o
+endif
+ifeq ($(GZIP_OUTPUT),1)
+GZIP_HOST_OBJECTS += $(GZIP_DIR)/output.o
+endif
 ifeq ($(GZIP_INPUT),1)
-GZIP_HOST_OBJECTS := $(addprefix $(GZIP_DIR)/, input.o gzip_stream.o rapid_reader.o)
+GZIP_HOST_OBJECTS += $(addprefix $(GZIP_DIR)/, input.o gzip_stream.o rapid_reader.o)
+GZIP_HOST_OBJECTS += $(addprefix $(GZIP_DIR)/, mpe_decode.o mpe_codec_job.o mpe_rapid_firstpass.o)
 ifeq ($(USE_MPI),1)
 GZIP_HOST_OBJECTS += $(addprefix $(GZIP_DIR)/, mpi_decoder.o mpi_input.o fastq_frame.o)
 endif
-GZIP_CPE_OBJECTS := $(addprefix $(GZIP_DIR)/, codec_job.o backend_cpe.o rapid_firstpass.o)
-GZIP_ZLIB_OBJECTS := $(addprefix $(GZIP_DIR)/z_, $(addsuffix .o,adler32 crc32 deflate trees zutil))
-GZIP_OBJECTS := $(GZIP_HOST_OBJECTS) $(GZIP_CPE_OBJECTS) $(GZIP_ZLIB_OBJECTS) $(GZIP_DIR)/backend_swbwa.o
-GZIP_FLAGS := -DSWBWA_CODEC_RAPID=1 -DSWBWA_CODEC_LDM=2
-GZIP_CPE_FLAGS := $(GZIP_FLAGS) -DSWBWA_CODEC_CPE=1 -DZ_PREFIX -I$(GZIP_DIR)/vendor/zlib
+GZIP_CPE_OBJECTS += $(GZIP_DIR)/rapid_firstpass.o
+GZIP_FLAGS += -DSWBWA_CODEC_RAPID=1
 endif
 DEPFILES      := $(LIB_OBJS:.o=.d) $(APP_OBJS:.o=.d) \
 	$(HOST_DIR)/main.d $(SLAVE_OBJECTS:.o=.d) $(GZIP_OBJECTS:.o=.d)
@@ -338,6 +359,7 @@ endif
 	@echo "CPE_LDM_MODE=$(CPE_LDM_MODE)"
 	@echo "CPE_DISCARD_DIGEST=$(CPE_DISCARD_DIGEST)"
 	@echo "GZIP_INPUT=$(GZIP_INPUT)"
+	@echo "GZIP_OUTPUT=$(GZIP_OUTPUT)"
 	@echo "OUTPUT_MODE=$(OUTPUT_MODE)"
 	@echo "OUTPUT_RMA_ONLY=$(OUTPUT_RMA_ONLY)"
 	@echo "DISCARD_HASH_BYTES=$(DISCARD_HASH_BYTES)"
@@ -349,11 +371,27 @@ endif
 	@echo "MPI_LINK_VARIANT=$(MPI_LINK_VARIANT)"
 
 # Compile rules
-$(GZIP_HOST_OBJECTS): $(GZIP_DIR)/%.o: $(GZIP_DIR)/%.cpp $(CONFIG_HEADER)
+$(filter-out $(addprefix $(GZIP_DIR)/,output.o mpe_decode.o mpe_codec_job.o mpe_rapid_firstpass.o),$(GZIP_HOST_OBJECTS)): $(GZIP_DIR)/%.o: $(GZIP_DIR)/%.cpp $(CONFIG_HEADER)
 	$(CXX) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(CXXFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_FLAGS) $< -o $@
+
+$(GZIP_DIR)/output.o: $(GZIP_DIR)/output.c $(CONFIG_HEADER)
+	$(CC) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
 
 $(GZIP_DIR)/backend_swbwa.o: $(GZIP_DIR)/backend_swbwa.c $(CONFIG_HEADER)
 	$(CC) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
+
+GZIP_MPE_SYMBOLS := -Dswbwa_codec_execute=swbwa_codec_execute_mpe \
+	-Dswbwa_codec_gzip_worker=swbwa_codec_gzip_worker_mpe \
+	-Dswbwa_rapid_discover=swbwa_rapid_discover_mpe
+
+$(GZIP_DIR)/mpe_decode.o: $(GZIP_DIR)/mpe_decode.c $(CONFIG_HEADER)
+	$(CC) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $< -o $@
+
+$(GZIP_DIR)/mpe_codec_job.o: $(GZIP_DIR)/codec_job.c $(CONFIG_HEADER)
+	$(CC) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_FLAGS) $(GZIP_MPE_SYMBOLS) $< -o $@
+
+$(GZIP_DIR)/mpe_rapid_firstpass.o: $(GZIP_DIR)/rapid_firstpass.cpp $(CONFIG_HEADER)
+	$(CXX) $(HOST_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_FLAGS) -USWBWA_CODEC_LDM -DSWBWA_CODEC_LDM=0 -DSWBWA_CODEC_MPE=1 $(GZIP_MPE_SYMBOLS) -std=c++17 -DNDEBUG -I$(GZIP_DIR)/vendor/rapidgzip $< -o $@
 
 $(GZIP_DIR)/codec_job.o: $(GZIP_DIR)/codec_job.c
 	$(CC) $(SLAVE_ARCH_FLAGS) -c $(DEPFLAGS) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) $(GZIP_CPE_FLAGS) $< -o $@

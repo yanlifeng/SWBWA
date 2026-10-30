@@ -3,6 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -fno-sanitize-recover=all -g -O1 -Iinclude tests/test_cross_layout.c -o "$tmp/cross_layout"
+"$tmp/cross_layout"
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter \
     -Wno-deprecated-declarations -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 \
     -Itests/stubs -Isrc/slave -Iinclude -include include/swbwa_config.h \
@@ -14,6 +17,10 @@ trap 'rm -rf "$tmp"' EXIT
     -Iinclude -DSWBWA_HOST_MPE_THREADS=6 tests/test_host_workers.c \
     src/host/swbwa_host_workers.c -o "$tmp/host_workers"
 "$tmp/host_workers"
+"${CXX:-c++}" -std=c++11 -Wall -Wextra -Werror -pthread -O1 -g \
+    -fsanitize=address,undefined -fno-sanitize-recover=all -fno-pie -no-pie \
+    tests/test_parallel_pread.cpp -o "$tmp/parallel_pread"
+"$tmp/parallel_pread"
 for mpi in 0 1; do
     "${CXX:-c++}" -std=c++11 -Wall -Wextra -Werror -Wno-unused-parameter -pthread -O1 -g \
         -fsanitize=address,undefined -fno-sanitize-recover=all -fno-pie -no-pie \

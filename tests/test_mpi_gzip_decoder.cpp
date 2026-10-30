@@ -19,6 +19,9 @@ static unsigned largest_launch = 0;
 static bool fail_comm_free = false;
 static int stat_time_skew = 0;
 static unsigned stat_time_skew_calls = 0;
+static bool inject_gap = false, gap_injected = false;
+static bool fail_repair = false;
+static bool force_tail_markers = false;
 static int skew_stat_time(int result, struct stat64 *info) {
     if (!result && stat_time_skew) {
         info->st_mtim.tv_sec -= stat_time_skew;
@@ -50,6 +53,26 @@ extern "C" void __wrap_swbwa_codec_launch(swbwa_codec_batch *batch) {
     assert(batch->workers >= 1 && batch->workers <= 384);
     largest_launch = std::max(largest_launch, batch->count);
     __real_swbwa_codec_launch(batch);
+    if (force_tail_markers)
+        for (unsigned j = 0; j < batch->count; ++j)
+            if (batch->jobs[j].operation == SWBWA_CODEC_DISCOVER)
+                batch->jobs[j].tail_known = 0;
+    if (fail_repair && batch->count == 1 && batch->jobs[0].known_start == 2 &&
+        batch->jobs[0].operation == SWBWA_CODEC_DISCOVER) {
+        batch->jobs[0].status = Z_BUF_ERROR;
+        batch->jobs[0].output_full = 1;
+        fail_repair = false;
+    }
+    if (inject_gap && !gap_injected) {
+        for (unsigned j = 0; j < batch->count; ++j) {
+            auto &job = batch->jobs[j];
+            if (job.operation != SWBWA_CODEC_DISCOVER || job.known_start || job.status != Z_OK)
+                continue;
+            job.start_bit = job.start_max_bit = job.end_bit - 1;
+            gap_injected = true;
+            break;
+        }
+    }
 }
 
 static void require(bool ok, const char *what) {
@@ -57,6 +80,13 @@ static void require(bool ok, const char *what) {
 }
 
 static void unit() {
+    for (unsigned workers : {1U, 64U, 128U, 384U}) {
+        swbwa_mpi_decoder_config config;
+        swbwa_mpi_decoder_config_init(&config, workers);
+        assert(config.workers == workers && config.jobs_per_rank == workers);
+        assert(config.memory_bytes == size_t(std::max(64U, workers)) * (8U << 20));
+        assert(config.decoded_bytes == size_t(std::max(64U, workers)) * (2U << 20));
+    }
     using namespace swbwa_mpi_gzip;
     std::vector<Meta> metas(6);
     for (unsigned i = 0; i < 6; ++i) {
@@ -73,6 +103,10 @@ static void unit() {
     assert(chain.jobs == std::vector<size_t>({4, 5, 0, 1, 2, 3}));
     assert(chain.final && chain.cursor == 140 && chain.decoded == 135);
     assert(plan[0][1] == 107 && plan[4][1] == 100);
+    assert(repair_slot(metas, plan, chain, 3, 2, 2, 80, 10) == metas.size());
+    metas[5][START] = metas[5][START_MAX] = 99;
+    chain = select(metas, plan, 3, 2, 2, 80, 100, 200, 65536);
+    assert(chain.cursor == 90 && repair_slot(metas, plan, chain, 3, 2, 2, 80, 10) == 5);
     metas[5][OK] = 0;
     metas[4][END] = metas[4][LIMIT] = 100;
     metas[0][START] = 98; metas[0][BASE] = 98; metas[0][START_MAX] = 102;
@@ -89,6 +123,56 @@ static void unit() {
     failed = false;
     try { add(UINT64_MAX, 1); } catch (const std::exception &) { failed = true; }
     assert(failed);
+    for (size_t initial : {size_t(0), size_t(3), HISTORY - 1, HISTORY}) {
+        Window original(initial), expected;
+        for (size_t i = 0; i < initial; ++i) original[i] = static_cast<unsigned char>(i);
+        expected = original;
+        HistorySummary summary{};
+        std::array<uint16_t, HISTORY> scratch;
+        std::vector<std::vector<uint16_t>> storage;
+        std::vector<SymbolSpan> spans;
+        uint16_t *current = summary.symbols.data(), *next = scratch.data();
+        for (size_t i = 0; i < HISTORY; ++i) current[i] = uint16_t(65536U - HISTORY + i);
+        for (size_t length : {size_t(0), size_t(1), size_t(100), HISTORY - 1, HISTORY + 7, size_t(19)}) {
+            storage.emplace_back(length);
+            auto &values = storage.back();
+            for (size_t i = 0; i < length; ++i)
+                values[i] = expected.empty() || i % 3 == 0 ? uint16_t(i % 256)
+                    : uint16_t(65536U - expected.size() + i % expected.size());
+            advance_symbols(current, values.data(), values.size(), next);
+            std::swap(current, next);
+            summary.bytes += length;
+            HistorySummary emitted = summary;
+            std::copy_n(current, HISTORY, emitted.symbols.begin());
+            spans.push_back({values.data(), values.size()});
+            HistorySummary traced{};
+            summarize_history(spans, traced);
+            assert(traced.bytes == emitted.bytes && traced.symbols == emitted.symbols);
+            expected = advance(expected, values.data(), values.size());
+            assert(resolve_history(original, emitted) == expected);
+        }
+    }
+    {
+        // A long marker chain across tiny and empty jobs must terminate at
+        // the incoming dictionary, not an intermediate symbolic window.
+        uint16_t marker = 65535;
+        std::vector<SymbolSpan> spans(80, SymbolSpan{&marker, 1});
+        spans.insert(spans.begin() + 3, SymbolSpan{nullptr, 0});
+        HistorySummary traced{};
+        summarize_history(spans, traced);
+        assert(resolve_history(Window{42}, traced) == Window(81, 42));
+        std::vector<uint16_t> repeated(HISTORY, 65535);
+        spans.assign(80, SymbolSpan{repeated.data(), repeated.size()});
+        summarize_history(spans, traced);
+        assert(resolve_history(Window{42}, traced) == Window(HISTORY, 42));
+        assert(std::all_of(traced.symbols.begin(), traced.symbols.end(),
+                           [](uint16_t value) { return value == 65535; }));
+        uint16_t bad = 256;
+        failed = false;
+        try { summarize_history(std::vector<SymbolSpan>{{&bad, 1}}, traced); }
+        catch (const std::exception &) { failed = true; }
+        assert(failed);
+    }
     std::puts("MPI_GZIP_PROTOCOL_PASS");
 }
 
@@ -129,23 +213,33 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank); MPI_Comm_size(MPI_COMM_WORLD, &n);
     try {
         require(argc == 11, "source reference jobs capacity chunk lookahead memory decoded mode");
-        swbwa_mpi_decoder_config cfg;
-        swbwa_mpi_decoder_config_init(&cfg);
-        cfg.jobs_per_rank = unsigned(std::strtoul(argv[3], nullptr, 10));
-        cfg.initial_output_bytes = std::strtoull(argv[4], nullptr, 10);
-        cfg.chunk_bytes = std::strtoull(argv[5], nullptr, 10);
-        cfg.lookahead_bytes = std::strtoull(argv[6], nullptr, 10);
-        cfg.memory_bytes = std::strtoull(argv[7], nullptr, 10);
-        cfg.decoded_bytes = std::strtoull(argv[8], nullptr, 10);
         const std::string mode = argv[9];
+        swbwa_mpi_decoder_config cfg;
+        swbwa_mpi_decoder_config_init(&cfg, unsigned(std::strtoul(argv[10], nullptr, 10)));
+        if (mode != "worker-defaults") {
+            cfg.jobs_per_rank = unsigned(std::strtoul(argv[3], nullptr, 10));
+            cfg.initial_output_bytes = std::strtoull(argv[4], nullptr, 10);
+            cfg.chunk_bytes = std::strtoull(argv[5], nullptr, 10);
+            cfg.lookahead_bytes = std::strtoull(argv[6], nullptr, 10);
+            cfg.memory_bytes = std::strtoull(argv[7], nullptr, 10);
+            cfg.decoded_bytes = std::strtoull(argv[8], nullptr, 10);
+        }
         struct stat original{};
         if (mode == "touch") require(stat(argv[1], &original) == 0, "initial timestamp stat");
         if (mode == "stat-time-skew") stat_time_skew = 60 * (world_rank + 1);
-        cfg.workers = unsigned(std::strtoul(argv[10], nullptr, 10));
+        inject_gap = mode == "repair-gap" || mode == "repair-disabled" || mode == "repair-capacity";
+        fail_repair = mode == "repair-capacity";
+        force_tail_markers = mode == "history-markers";
         MPI_Comm parent = MPI_COMM_NULL;
         MPI_Comm_split(MPI_COMM_WORLD, 0, mode == "reverse" ? n - world_rank : world_rank, &parent);
         MPI_Comm_rank(parent, &rank);
         if (mode == "config-mismatch" && rank == n - 1) ++cfg.chunk_bytes;
+        if (mode == "repair-mismatch" && rank == n - 1)
+            setenv("SWBWA_GZIP_GAP_REPAIR_LIMIT", "0", 1);
+        if (mode == "history-mismatch" && rank == n - 1) {
+            const char *setting = std::getenv("SWBWA_GZIP_PARALLEL_HISTORY");
+            setenv("SWBWA_GZIP_PARALLEL_HISTORY", setting && !std::strcmp(setting, "1") ? "0" : "1", 1);
+        }
         if (mode == "invalid-local" && rank == n - 1) cfg.workers = 0;
         std::string path = argv[1];
         if (mode == "path-mismatch" && rank == n - 1) path += ".missing";
@@ -223,11 +317,26 @@ int main(int argc, char **argv) {
         std::fclose(reference);
         swbwa_mpi_decoder_metrics m{};
         require(!swbwa_mpi_decoder_get_metrics(decoder, &m), "metrics failed");
+        if (mode == "repair-gap" || mode == "repair-disabled") {
+            uint64_t local[2] = {uint64_t(gap_injected), m.gap_repair_ok}, totals[2]{};
+            MPI_Allreduce(local, totals, 2, MPI_UINT64_T, MPI_SUM, parent);
+            require(totals[0] > 0, "gap injection not exercised");
+            require(mode == "repair-gap" ? totals[1] > 0 : totals[1] == 0,
+                    "gap repair policy not exercised");
+        }
+        if (mode == "repair-capacity") {
+            const uint64_t failed = m.gap_repair_jobs - m.gap_repair_ok;
+            uint64_t failures = 0;
+            MPI_Allreduce(&failed, &failures, 1, MPI_UINT64_T, MPI_SUM, parent);
+            require(failures > 0, "capacity fallback not exercised");
+        }
         require(m.peak_buffer_bytes <= cfg.memory_bytes && m.epochs == epoch, "metrics budget mismatch");
         require(m.discover_jobs == m.accepted_jobs + m.discarded_jobs + m.retry_jobs,
                 "discover job accounting mismatch");
         require(m.discover_output_full_jobs <= m.discover_failed_jobs &&
                 m.discover_failed_jobs <= m.discover_jobs, "failed job accounting mismatch");
+        require(m.gap_repair_ok <= m.gap_repair_jobs && m.gap_repair_jobs <= m.discover_jobs,
+                "gap repair accounting mismatch");
         const double phases = m.io_s - m.open_io_s + m.prepare_s + m.cleanup_s +
             m.discover_wall_s + m.resolve_wall_s + m.metadata_local_s + m.metadata_mpi_s +
             m.window_local_s + m.window_mpi_s + m.commit_local_s + m.commit_mpi_s +
@@ -235,7 +344,8 @@ int main(int argc, char **argv) {
         const double tolerance = 1e-6;
         require(phases <= m.next_s + tolerance, "overlapping next phase timers");
         require(m.open_io_s <= m.open_s + tolerance && m.open_io_s <= m.io_s + tolerance &&
-                m.retry_s <= m.next_s + tolerance, "inclusive timer accounting mismatch");
+                m.retry_s <= m.next_s + tolerance && m.gap_repair_s <= m.next_s + tolerance,
+                "inclusive timer accounting mismatch");
         require(m.discover_run_s + m.discover_wait_s <= m.discover_wall_s + tolerance &&
                 m.resolve_run_s + m.resolve_wait_s <= m.resolve_wall_s + tolerance,
                 "codec run/wait not contained in wall time");
@@ -251,10 +361,28 @@ int main(int argc, char **argv) {
         static_assert(timer_count == sizeof(timer_names) / sizeof(timer_names[0]), "timer names mismatch");
         for (double seconds : local_times)
             require(std::isfinite(seconds) && seconds >= 0, "invalid timer value");
+        require(std::max(m.max_discover_jobs, m.max_resolve_jobs) == largest_launch,
+                "batch width metrics mismatch");
+        require(m.known_tail_jobs + m.repaired_tail_jobs == m.accepted_jobs,
+                "dictionary fast-path accounting mismatch");
+        require(m.parallel_history_epochs + m.serial_history_epochs == m.epochs,
+                "dictionary protocol accounting mismatch");
+        if (mode == "worker-defaults")
+            require(m.initial_batch_jobs == cfg.workers, "default budgets leave workers idle");
         const char *work_names[] = {"discover_jobs", "retry_jobs", "discover_failed_jobs",
-                                   "discover_output_full_jobs", "discarded_output_bytes"};
+                                   "discover_output_full_jobs", "discarded_output_bytes",
+                                   "initial_batch_jobs", "max_discover_jobs", "max_resolve_jobs",
+                                   "prefetch_batches", "prefetch_bytes", "source_read_calls",
+                                   "known_tail_jobs", "repaired_tail_jobs", "gap_repair_jobs", "gap_repair_ok",
+                                   "parallel_history_epochs", "serial_history_epochs"};
         const uint64_t local_work[] = {m.discover_jobs, m.retry_jobs, m.discover_failed_jobs,
-                                      m.discover_output_full_jobs, m.discarded_output_bytes};
+                                      m.discover_output_full_jobs, m.discarded_output_bytes,
+                                      m.initial_batch_jobs, m.max_discover_jobs, m.max_resolve_jobs,
+                                      m.prefetch_batches, m.prefetch_bytes, m.source_read_calls,
+                                      m.known_tail_jobs, m.repaired_tail_jobs, m.gap_repair_jobs, m.gap_repair_ok,
+                                      m.parallel_history_epochs, m.serial_history_epochs};
+        static_assert(sizeof(local_work) / sizeof(local_work[0]) ==
+                      sizeof(work_names) / sizeof(work_names[0]), "work names mismatch");
         constexpr int work_count = sizeof(local_work) / sizeof(local_work[0]);
         std::vector<double> times(size_t(n) * timer_count);
         std::vector<uint64_t> work(size_t(n) * work_count);

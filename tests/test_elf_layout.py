@@ -118,6 +118,24 @@ class LayoutTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 Image(data)
 
+    def test_zero_fill_load_offset_beyond_compacted_file(self):
+        compact = fixture()
+        offset = HEADER.size + 3 * PHDR.size
+        compact = patch(compact, HEADER, 0, 10, 4)
+        PHDR.pack_into(compact, offset, 1, 6, 0x8000, 0x300000,
+                       0x300000, 0, 0x100, 0x1000)
+        shoff = Image(compact).header.e_shoff
+        compact = patch(compact, SHDR, shoff + 5 * SHDR.size, 3, 0x300000)
+        compact = patch(compact, SHDR, shoff + 5 * SHDR.size, 4, 0x8000)
+        before = compact + bytes(0x9000 - len(compact))
+        check_pair(Image(before), Image(compact))
+        with self.assertRaisesRegex(ValueError, "out of bounds"):
+            Image(patch(compact, PHDR, offset, 5, 1)).validate()
+        with self.assertRaisesRegex(ValueError, "alignment mismatch"):
+            Image(patch(compact, PHDR, offset, 2, 0x8001)).validate()
+        with self.assertRaisesRegex(ValueError, "runtime PHDR changed"):
+            check_pair(Image(before), Image(patch(compact, PHDR, offset, 6, 0x200)))
+
     def test_cross_header(self):
         header = "\n".join("#define SWBWA_CPE_" + name + " " + value + "UL" for name, value in (
             ("TEXT_START_ADDRESS", "0x100000"), ("TEXT_SEGMENT_BYTES", "0x40"),

@@ -52,9 +52,11 @@
 #include "swbwa_input.h"
 #include "swbwa_discard_digest.h"
 #include "swbwa_cpe_profile.h"
+#if SWBWA_ENABLE_CODEC
+#include "swbwa_codec_runtime.h"
+#endif
 #if SWBWA_ENABLE_GZIP_INPUT
 #include "swbwa_gzip.h"
-#include "swbwa_codec_runtime.h"
 #if SWBWA_USE_MPI
 #include "swbwa_mpi_gzip.h"
 #include <mpi.h>
@@ -153,6 +155,9 @@ static int input_readers;
 #if SWBWA_ENABLE_GZIP_INPUT
 static int timing_gzip_input;
 #endif
+#if SWBWA_ENABLE_GZIP_OUTPUT
+static double output_prepare_seconds;
+#endif
 
 long long s_reg_sum = 0;
 long long c_px2 = 0;
@@ -215,14 +220,18 @@ static void print_timing_report_body(void)
     print_timing_line("total - complete three-stage pipeline", t_tot, 4);
     print_timing_line("stage 1 - allocate and read raw FASTQ blocks", t_step1, 4);
     print_timing_line("stage 2 - align reads and generate SAM records", t_step2, 4);
-#if SWBWA_ENABLE_GZIP_INPUT
-    if (timing_gzip_input)
-        print_timing_line("included: wait for shared CPE decoder/runtime",
-                          swbwa_alignment_runtime_wait_seconds(), 6);
+#if SWBWA_ENABLE_CODEC
+    print_timing_line("included: wait for shared CPE codec/runtime",
+                      swbwa_alignment_runtime_wait_seconds(), 6);
 #endif
     print_timing_line("stage 3 - write SAM and release batch data", t_step3, 4);
     print_timing_line("SAM output writes", t_step3_1, 6);
     print_timing_line("batch cleanup and loop overhead (derived)", stage3_cleanup, 6);
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    if (output_prepare_seconds > 0.0)
+        print_timing_line("gzip preparation between stages 2 and 3",
+                          output_prepare_seconds, 4);
+#endif
 
     fprintf(stderr, "\n  Stage 1 input details\n");
 #if SWBWA_ENABLE_GZIP_INPUT
@@ -366,7 +375,27 @@ typedef struct {
 	long long fastq_size[2];
 	swbwa_fastq_partition_t *fastq_partitions;
 	int64_t chunk_start, chunk_end;
+#if SWBWA_ENABLE_GZIP_OUTPUT
+	void *prepared_output;
+#endif
 } ktp_data_t;
+
+static void prepare_batch_output(ktp_data_t *data)
+{
+#if SWBWA_ENABLE_GZIP_OUTPUT
+    double begin = GetTime();
+    if (swbwa_output_prepare_chunk(data->seqs, data->sam_lengths, data->n_seqs,
+                                   &data->prepared_output) != 0)
+        swbwa_pipeline_fatal(__func__, "failed to prepare gzip output: %s", strerror(errno));
+    if (swbwa_output_publish_prepared_chunk(data->chunk_id, data->n_seqs,
+                                           data->prepared_output) != 0)
+        swbwa_pipeline_fatal(__func__, "failed to publish gzip output size: %s", strerror(errno));
+    if (data->prepared_output != NULL)
+        output_prepare_seconds += GetTime() - begin;
+#else
+    (void)data;
+#endif
+}
 
 static void skip_to_line_end(char *data_, long long *pos_, const long long size_) {
     while (*pos_ < size_ && data_[*pos_] != '\n') {
@@ -797,6 +826,7 @@ static void *process(void *shared, int step, void *_data)
 				fprintf(stderr, "[MPI gzip rank %06d/%06d] chunk=%lld records=[%lld,%lld) stage2=%.6f s\n",
 				        swbwa_mpi_rank(), swbwa_mpi_size(), (long long)data->chunk_id,
 				        (long long)data->chunk_start, (long long)data->chunk_end, elapsed);
+			prepare_batch_output(data);
 			return data;
 		}
 #endif
@@ -818,6 +848,7 @@ static void *process(void *shared, int step, void *_data)
 		aux->n_processed += data->n_seqs;
 		t_step2 += GetTime() - t0;
 #endif
+		prepare_batch_output(data);
 		return data;
 	} else if (step == 2) {
         double t0 = GetTime();
@@ -838,9 +869,16 @@ static void *process(void *shared, int step, void *_data)
             }
 		}
 #else
+#if SWBWA_ENABLE_GZIP_OUTPUT
+        if (swbwa_output_write_prepared_chunk(data->chunk_id, data->chunk_start,
+                                              data->chunk_end, data->seqs, data->sam_lengths,
+                                              data->n_seqs, aux->is_paired,
+                                              data->prepared_output) != 0)
+#else
         if (swbwa_output_write_chunk(data->chunk_id, data->chunk_start,
                                      data->chunk_end, data->seqs, data->sam_lengths,
                                      data->n_seqs, aux->is_paired) != 0)
+#endif
             swbwa_pipeline_fatal(__func__, "failed to write output chunk: %s", strerror(errno));
 #endif
 		t_step3_1 += GetTime() - write_start;
@@ -957,7 +995,7 @@ int main_mem(int argc, char *argv[])
     int gzip_input = 0;
     const char *gzip_backend = NULL;
 #endif
-#if SWBWA_OUTPUT_RMA_ONLY
+#if SWBWA_USE_MPI || SWBWA_OUTPUT_RMA_ONLY
     int saved_report_stderr = -1;
 #endif
 	int64_t fastq_bytes_per_cg = SWBWA_DEFAULT_FASTQ_BYTES_PER_CG;
@@ -1454,7 +1492,7 @@ int main_mem(int argc, char *argv[])
     }
 #endif
     swbwa_host_workers_destroy();
-#if SWBWA_OUTPUT_RMA_ONLY
+#if SWBWA_USE_MPI || SWBWA_OUTPUT_RMA_ONLY
     {
         const char *prefix = getenv("SWBWA_RANK_REPORT_PREFIX");
         if (prefix != NULL && *prefix != '\0') {
@@ -1512,9 +1550,12 @@ int main_mem(int argc, char *argv[])
 	swbwa_mpi_progress_thread_report();
 	swbwa_cpe_progress_debug_report();
 	swbwa_cpe_profile_report(stderr);
+#if SWBWA_ENABLE_CODEC
+    if (bwa_verbose >= 4) swbwa_codec_runtime_report(stderr);
+#endif
     print_timing_report();
     if (bwa_verbose >= 4 && !no_mt_io) kt_pipeline_wait_report();
-#if SWBWA_OUTPUT_RMA_ONLY
+#if SWBWA_USE_MPI || SWBWA_OUTPUT_RMA_ONLY
     if (saved_report_stderr >= 0) {
         if (fflush(stderr) != 0)
             swbwa_pipeline_fatal(__func__, "failed to flush stderr: %s", strerror(errno));

@@ -66,6 +66,7 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--sanitize", choices=("undefined", "address,undefined"))
     parser.add_argument("--binary", type=Path)
+    parser.add_argument("--parallel-history", action="store_true")
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -80,13 +81,19 @@ def main():
 
         def run(name, raw, blob=None, ranks=3, jobs=4, capacity=1 << 20,
                 chunk=32768, lookahead=1 << 20, memory=32 << 20,
-                decoded=8 << 20, mode="normal", error=None, workers=64):
+                decoded=8 << 20, mode="normal", error=None, workers=64, prefetch=128):
             source, reference = root / (name + ".gz"), root / (name + ".raw")
             source.write_bytes(encoded(raw) if blob is None else blob)
             reference.write_bytes(raw)
             command = launcher + ["-n", str(ranks), str(binary), str(source), str(reference),
                 *map(str, (jobs, capacity, chunk, lookahead, memory, decoded)), mode, str(workers)]
-            process = subprocess.run(command, text=True, capture_output=True, timeout=90)
+            env = dict(os.environ, SWBWA_GZIP_PREFETCH_MIB=str(prefetch))
+            env['SWBWA_GZIP_PARALLEL_HISTORY'] = str(int(args.parallel_history))
+            if mode == 'history-serial':
+                env['SWBWA_GZIP_PARALLEL_HISTORY'] = '0'
+            if mode == "repair-disabled":
+                env['SWBWA_GZIP_GAP_REPAIR_LIMIT'] = '0'
+            process = subprocess.run(command, text=True, capture_output=True, timeout=90, env=env)
             logs.append(dict(case=name, command=shlex.join(command), returncode=process.returncode,
                              stdout=process.stdout, stderr=process.stderr))
             if error:
@@ -113,17 +120,37 @@ def main():
             run("close-mpi-error", b"close\n", mode="close-error", error="decoder close failed:")
             dna = bytes(rng.choices(b"ACGTN\n", weights=(25, 25, 25, 25, 1, 2), k=2 << 20))
             dynamic = encoded(dna)
+            run("repair-injected-gap", dna, dynamic, mode="repair-gap")
+            run("repair-disabled", dna, dynamic, mode="repair-disabled")
+            run("repair-capacity", dna, dynamic, mode="repair-capacity")
+            run("repair-mismatch", dna, dynamic, mode="repair-mismatch", error="gap_repair_limit")
+            run("history-mismatch", dna, dynamic, mode="history-mismatch", error="parallel_history")
+            markers = run("history-markers", dna, dynamic, mode="history-markers")
+            assert all(w['known_tail_jobs'] == 0 for w in markers['work'])
+            fallback = run("history-serial", dna, dynamic, mode="history-serial")
+            assert all(w['parallel_history_epochs'] == 0 for w in fallback['work'])
             for ranks in (1, 2, 3, 5):
                 result = run(f"dynamic-ranks{ranks}", dna, dynamic, ranks=ranks)
                 assert max(s[5] for s in result["stats"]) > 1
                 assert sum(s[1] for s in result["stats"]) > 0
                 assert all(s[0] > 0 and s[4] > 0 for s in result["stats"])
+                assert sum(w["known_tail_jobs"] for w in result["work"]) > 0
+                if args.parallel_history:
+                    assert sum(w['parallel_history_epochs'] for w in result['work']) > 0
             run("reversed-communicator", dna, dynamic, mode="reverse")
             run("independent-dual-readers", dna, dynamic, mode="dual")
+            result = run("prefetch-disabled", dna, dynamic, prefetch=0)
+            assert all(w["prefetch_batches"] == w["prefetch_bytes"] == 0 for w in result["work"])
+            result = run("prefetch-prefix", dna, stored(dna), ranks=1, jobs=64,
+                         chunk=32768, memory=128 << 20, decoded=32 << 20, prefetch=1)
+            assert sum(w["prefetch_bytes"] for w in result["work"]) > 0
+            assert all(w["prefetch_bytes"] <= w["prefetch_batches"] * (1 << 20) for w in result["work"])
             for jobs in (32, 64, 384):
                 run(f"jobs{jobs}", dna, dynamic, jobs=jobs, capacity=131072, chunk=4096, workers=384)
-            run("default-budgets", dna, dynamic, jobs=64, capacity=2 << 20, chunk=256 << 10,
-                memory=512 << 20, decoded=128 << 20, workers=384)
+            for workers in (64, 384):
+                result = run(f"default-budgets-workers{workers}", dna, dynamic, mode="worker-defaults",
+                    memory=workers * (8 << 20), workers=workers)
+                assert all(s[4] > 0 for s in result["stats"]), result
             random_bytes = rng.randbytes((1 << 20) + 17)
             run("stored", random_bytes, stored(random_bytes))
             result = run("full-384-job-launch", random_bytes, stored(random_bytes), ranks=1,

@@ -5,6 +5,10 @@
 void swbwa_codec_worker(swbwa_codec_batch *batch)
 {
     unsigned i;
+    if (batch->count && batch->jobs[0].operation == SWBWA_CODEC_GZIP) {
+        swbwa_codec_gzip_worker(batch, (unsigned)_MYID);
+        return;
+    }
     for (i = (unsigned)_MYID; i < batch->count; i += batch->workers) {
         if ((unsigned)_MYID >= batch->workers) break;
         swbwa_codec_execute(&batch->jobs[i]);

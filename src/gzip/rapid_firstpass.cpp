@@ -43,7 +43,7 @@ extern "C" void swbwa_rapid_discover(swbwa_codec_job *job)
                 else start_max = start;
             }
             bits.seekTo(start);
-            if (job->known_start)
+            if (job->known_start == 1)
                 block->reset(VectorView<uint8_t>(job->dictionary, job->dictionary_size));
             else
                 block->reset();

@@ -11,7 +11,7 @@
 #include "swbwa_config.h"
 #include "swbwa_cpe.h"
 #include "swbwa_cpe_profile.h"
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
 #include "../gzip/codec_job.h"
 extern void swbwa_codec_worker(swbwa_codec_batch *batch);
 #endif
@@ -26,7 +26,7 @@ extern unsigned long swbwa_cpe_data_size;
 /***********************************************************/
 
 __thread swbwa_cpe_task_t *swbwa_task;
-#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+#if SWBWA_ENABLE_CODEC && SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
 static __thread int swbwa_pool_ready;
 #endif
 
@@ -155,7 +155,7 @@ static inline void swbwa_finish_standard_task(swbwa_cpe_task_t *task)
 
 void state_init(swbwa_cpe_pool_params_t *para) {
     set_big_buffer(para->buffer, para->bytes_per_cpe);
-#if SWBWA_ENABLE_GZIP_INPUT && SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
+#if SWBWA_ENABLE_CODEC && SWBWA_CPE_ALLOC_MODE == SWBWA_CPE_ALLOC_POOL
     swbwa_pool_ready = 1;
 #endif
 }
@@ -404,7 +404,7 @@ void cpe_format_pre_cross(void)
     return;
 }
 
-#if SWBWA_ENABLE_GZIP_INPUT
+#if SWBWA_ENABLE_CODEC
 void swbwa_codec(swbwa_cpe_task_t *para)
 {
     /* Share the runtime with alignment without resetting its live SAM state. */

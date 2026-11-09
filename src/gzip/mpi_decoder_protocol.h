@@ -124,6 +124,33 @@ struct HistorySummary {
 static_assert(sizeof(HistorySummary) == sizeof(uint64_t) + HISTORY * sizeof(uint16_t),
               "history summary wire layout must be contiguous");
 
+enum class HistoryMode : unsigned { Serial = 0, Allgather = 1, Tree = 2 };
+
+inline unsigned history_tree_depth(unsigned ranks) {
+    if (!ranks) throw std::runtime_error("empty history communicator");
+    unsigned depth = 0;
+    for (unsigned n = ranks - 1; n; n >>= 1) ++depth;
+    return depth;
+}
+
+// File-order composition: apply left, then right. Output must not alias either
+// input; references in right are slots in left's right-aligned exit window.
+inline void compose_history(const HistorySummary &left, const HistorySummary &right,
+                            HistorySummary &out) {
+    if (&out == &left || &out == &right)
+        throw std::runtime_error("aliased history composition");
+    out.bytes = add(left.bytes, right.bytes);
+    for (size_t i = 0; i < HISTORY; ++i) {
+        const unsigned symbol = right.symbols[i];
+        if (symbol >= 256 && symbol < 65536U - HISTORY)
+            throw std::runtime_error("invalid composed history marker");
+        const unsigned value = symbol < 256 ? symbol : left.symbols[symbol - (65536U - HISTORY)];
+        if (value >= 256 && value < 65536U - HISTORY)
+            throw std::runtime_error("invalid substituted history marker");
+        out.symbols[i] = uint16_t(value);
+    }
+}
+
 // Compose a job's tail with a symbolic incoming 32-KiB dictionary. References
 // remain relative to the rank's incoming history, not to intermediate jobs.
 inline void advance_symbols(const uint16_t *previous, const uint16_t *symbols,

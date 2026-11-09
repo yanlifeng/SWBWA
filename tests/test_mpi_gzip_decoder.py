@@ -66,7 +66,9 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--sanitize", choices=("undefined", "address,undefined"))
     parser.add_argument("--binary", type=Path)
-    parser.add_argument("--parallel-history", action="store_true")
+    history = parser.add_mutually_exclusive_group()
+    history.add_argument("--history-mode", type=int, choices=(0, 1, 2), default=0)
+    history.add_argument("--parallel-history", dest="history_mode", action="store_const", const=1)
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -88,7 +90,7 @@ def main():
             command = launcher + ["-n", str(ranks), str(binary), str(source), str(reference),
                 *map(str, (jobs, capacity, chunk, lookahead, memory, decoded)), mode, str(workers)]
             env = dict(os.environ, SWBWA_GZIP_PREFETCH_MIB=str(prefetch))
-            env['SWBWA_GZIP_PARALLEL_HISTORY'] = str(int(args.parallel_history))
+            env['SWBWA_GZIP_PARALLEL_HISTORY'] = str(args.history_mode)
             if mode == 'history-serial':
                 env['SWBWA_GZIP_PARALLEL_HISTORY'] = '0'
             if mode == "repair-disabled":
@@ -129,14 +131,17 @@ def main():
             assert all(w['known_tail_jobs'] == 0 for w in markers['work'])
             fallback = run("history-serial", dna, dynamic, mode="history-serial")
             assert all(w['parallel_history_epochs'] == 0 for w in fallback['work'])
-            for ranks in (1, 2, 3, 5):
+            for ranks in (1, 2, 3, 5, 6, 12):
                 result = run(f"dynamic-ranks{ranks}", dna, dynamic, ranks=ranks)
                 assert max(s[5] for s in result["stats"]) > 1
                 assert sum(s[1] for s in result["stats"]) > 0
-                assert all(s[0] > 0 and s[4] > 0 for s in result["stats"])
+                # At 12 ranks this small stream leaves some ranks empty.
+                assert any(s[0] > 0 and s[4] > 0 for s in result["stats"])
+                if ranks <= 5:
+                    assert all(s[0] > 0 and s[4] > 0 for s in result["stats"])
                 assert sum(w["known_tail_jobs"] for w in result["work"]) > 0
-                if args.parallel_history:
-                    assert sum(w['parallel_history_epochs'] for w in result['work']) > 0
+                key = ('serial_history_epochs', 'parallel_history_epochs', 'tree_history_epochs')[args.history_mode]
+                assert all(w[key] == result['epochs'] for w in result['work'])
             run("reversed-communicator", dna, dynamic, mode="reverse")
             run("independent-dual-readers", dna, dynamic, mode="dual")
             result = run("prefetch-disabled", dna, dynamic, prefetch=0)

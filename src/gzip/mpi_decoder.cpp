@@ -2,6 +2,7 @@
 // metadata, CRCs and bounded dictionaries cross ranks; decoded bodies do not.
 #include "mpi_decoder.h"
 #include "mpi_decoder_protocol.h"
+#include "mpi_history_tree.h"
 #include "codec_job.h"
 #include "crc_combine.h"
 #include "parallel_pread.h"
@@ -322,7 +323,7 @@ struct swbwa_mpi_decoder {
     size_t input_size = 0;
     uint64_t input_base = 0;
     unsigned gap_repair_limit = 8;
-    bool parallel_history = false;
+    HistoryMode history_mode = HistoryMode::Serial;
     std::unique_ptr<unsigned char[]> bytes;
     size_t bytes_size = 0;
     std::vector<std::unique_ptr<uint16_t[]>> symbols;
@@ -352,10 +353,11 @@ struct swbwa_mpi_decoder {
             gap_repair_limit = unsigned(value);
         }
         if (const char *setting = std::getenv("SWBWA_GZIP_PARALLEL_HISTORY")) {
-            if (std::strcmp(setting, "0") && std::strcmp(setting, "1"))
-                throw std::runtime_error("SWBWA_GZIP_PARALLEL_HISTORY must be 0 or 1");
-            parallel_history = setting[0] == '1';
+            if (std::strcmp(setting, "0") && std::strcmp(setting, "1") && std::strcmp(setting, "2"))
+                throw std::runtime_error("SWBWA_GZIP_PARALLEL_HISTORY must be 0, 1 or 2");
+            history_mode = static_cast<HistoryMode>(setting[0] - '0');
         }
+        metrics.history_mode = unsigned(history_mode);
         if (config.chunk_bytes < 1024 || config.chunk_bytes > (64U << 20) ||
             config.lookahead_bytes < 1024 || config.lookahead_bytes > (64U << 20) ||
             config.memory_bytes < (2U << 20) || config.decoded_bytes < 65536 ||
@@ -371,9 +373,13 @@ struct swbwa_mpi_decoder {
         // descriptors and window temporaries, then per-job payload allocations.
         fixed_bytes = add(multiply(slots, sizeof(Meta) + sizeof(Plan) + 32),
             add(multiply(config.jobs_per_rank, sizeof(swbwa_codec_job) * 3 + 512), HISTORY * 4));
-        if (parallel_history) fixed_bytes = add(fixed_bytes,
-            add(multiply(unsigned(ranks), sizeof(HistorySummary)),
-                add(HISTORY * 4, HISTORY_TRACE_SLOTS * sizeof(HistoryTraceEntry))));
+        if (history_mode != HistoryMode::Serial) {
+            const unsigned summaries = history_mode == HistoryMode::Allgather
+                ? unsigned(ranks) : history_tree_depth(unsigned(ranks)) + 2;
+            metrics.history_scratch_peak_bytes = add(multiply(summaries, sizeof(HistorySummary)),
+                add(HISTORY * 4, HISTORY_TRACE_SLOTS * sizeof(HistoryTraceEntry)));
+            fixed_bytes = add(fixed_bytes, metrics.history_scratch_peak_bytes);
+        }
         metrics.initial_batch_jobs = job_count(capacity);
         if (!metrics.initial_batch_jobs) throw std::runtime_error("initial job does not fit memory/decoded budget");
 
@@ -387,7 +393,7 @@ struct swbwa_mpi_decoder {
         std::array<uint64_t, 14> values{{2, source->size(), cursor, header_crc, source->trailer_word(source->size() - 8),
             config.chunk_bytes, config.lookahead_bytes,
             config.memory_bytes, config.decoded_bytes, config.initial_output_bytes,
-            config.jobs_per_rank, config.workers, gap_repair_limit, uint64_t(parallel_history)}};
+            config.jobs_per_rank, config.workers, gap_repair_limit, uint64_t(history_mode)}};
         decltype(values) low{}, high{};
         mpi_check(MPI_Allreduce(values.data(), low.data(), values.size(), MPI_UINT64_T, MPI_MIN, comm));
         mpi_check(MPI_Allreduce(values.data(), high.data(), values.size(), MPI_UINT64_T, MPI_MAX, comm));
@@ -657,6 +663,7 @@ struct swbwa_mpi_decoder {
         metrics.prepare_s += MPI_Wtime() - phase;
         const double window_begin = MPI_Wtime(), window_mpi_before = metrics.window_mpi_s;
         const auto prepare_local = [&] {
+            AccumulateTime dictionary_timer(metrics.history_job_dict_s);
             for (size_t j = 0; j < jobs.size(); ++j) {
                 if (!plan[size_t(rank) * count + j][0]) continue;
                 auto job = jobs[j];
@@ -674,9 +681,8 @@ struct swbwa_mpi_decoder {
                 local_bytes = size_t(add(local_bytes, job.output_size));
             }
         };
-        if (parallel_history) {
-            std::vector<HistorySummary> summaries(ranks);
-            auto &own = summaries[rank];
+        const auto summarize_local = [&](HistorySummary &own) {
+            AccumulateTime summary_timer(metrics.history_summary_s);
             std::vector<SymbolSpan> spans;
             spans.reserve(jobs.size());
             for (size_t j = 0; j < jobs.size(); ++j) {
@@ -684,12 +690,22 @@ struct swbwa_mpi_decoder {
                 spans.push_back({symbols[j].get(), jobs[j].output_size});
             }
             summarize_history(spans, own);
+            if (own.bytes > config.decoded_bytes)
+                throw std::runtime_error("local history summary exceeds decoded budget");
+            metrics.history_summary_bytes += sizeof(HistorySummary);
+        };
+        if (history_mode == HistoryMode::Allgather) {
+            std::vector<HistorySummary> summaries(ranks);
+            summarize_local(summaries[rank]);
             // One symbolic transfer function per rank replaces the serialized
             // broadcasts of every rank's locally reconstructed dictionaries.
             phase = MPI_Wtime();
             mpi_check(MPI_Allgather(MPI_IN_PLACE, 0, MPI_BYTE, summaries.data(),
                                     sizeof(HistorySummary), MPI_BYTE, comm));
-            metrics.window_mpi_s += MPI_Wtime() - phase;
+            const double exchange = MPI_Wtime() - phase;
+            metrics.window_mpi_s += exchange;
+            metrics.history_exchange_s += exchange;
+            phase = MPI_Wtime();
             Window global_history = history, incoming;
             for (unsigned group = 0; group < unsigned(ranks); ++group) {
                 const unsigned owner = (anchor + group) % unsigned(ranks);
@@ -698,10 +714,20 @@ struct swbwa_mpi_decoder {
                 if (unsigned(rank) == owner) incoming = global_history;
                 global_history = resolve_history(global_history, summaries[owner]);
             }
+            metrics.history_linear_apply_s += MPI_Wtime() - phase;
             next_history.swap(incoming);
             prepare_local();
             next_history.swap(global_history);
             ++metrics.parallel_history_epochs;
+        } else if (history_mode == HistoryMode::Tree) {
+            HistoryTree tree(comm, rank, ranks, anchor, metrics);
+            summarize_local(tree.local_summary());
+            Window incoming, final;
+            tree.propagate(history, incoming, final);
+            next_history.swap(incoming);
+            prepare_local();
+            next_history.swap(final);
+            ++metrics.tree_history_epochs;
         } else {
             // General case: rank blocks are contiguous in stream order.
             for (unsigned group = 0; group < unsigned(ranks); ++group) {
@@ -722,7 +748,9 @@ struct swbwa_mpi_decoder {
             }
             ++metrics.serial_history_epochs;
         }
-        metrics.window_local_s += MPI_Wtime() - window_begin - (metrics.window_mpi_s - window_mpi_before);
+        const double window_wall = MPI_Wtime() - window_begin;
+        metrics.history_wall_s += window_wall;
+        metrics.window_local_s += window_wall - (metrics.window_mpi_s - window_mpi_before);
         phase = MPI_Wtime();
         if (local_bytes > config.decoded_bytes) throw std::runtime_error("decoded batch exceeds budget");
         // RESOLVE writes every byte before publication; a host zero-fill would

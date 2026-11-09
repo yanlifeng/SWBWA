@@ -521,7 +521,20 @@ not children of it or `refill_s`; do not sum them into foreground Stage 1.
 Midstream reports include only consumer-owned scheduler fields. Full decoder
 statistics are reported after the producer has joined at EOF.
 
-`SWBWA_GZIP_PARALLEL_HISTORY=1` enables an experimental dictionary exchange.
+`SWBWA_GZIP_PARALLEL_HISTORY=0|1|2` selects the dictionary propagation strategy
+(default **0**, identical on every rank):
+
+| Value | Strategy | History propagation critical path | Summary storage/rank |
+| --- | --- | --- | --- |
+| 0 | Serial owner preparation and broadcasts | `O(P J B)` | `O(B)` |
+| 1 | Local summary, Allgather, local linear prefix | `O(J B + P B)` | `O(P B)` |
+| 2 | Local summary, ordered binary tree up/down | `O(J B + B log P)` | `O(B log P)` |
+
+Here `P` is the rank count, `J` the maximum accepted jobs/rank, and `B=32768`.
+These are history-work bounds, not whole-decoder speedup promises. Actual local
+summarization traces only necessary symbols rather than always touching `J B`.
+
+Modes 1 and 2 use the same local summary construction.
 Each rank composes its accepted job tails into one 32-KiB symbolic dictionary:
 each 16-bit element is a literal or a reference to that rank's incoming window.
 Only the final window and the earlier symbols it references are visited; a
@@ -532,15 +545,58 @@ replacement can cause a cache miss but cannot change the result. Its storage
 is charged to the decoder memory budget. Regression tests
 compare the result against full sequential symbolic composition, including
 chains of tiny jobs and empty jobs.
-One Allgather exchanges those bounded summaries. Every rank resolves the small
+In mode 1, one Allgather exchanges those bounded summaries. Every rank resolves the small
 rank-prefix summaries, then prepares its own job dictionaries independently.
 This supports short outputs, marker-dependent tails, empty ranks and rotated
 rank order; it does not require all tails to become literal during DISCOVER.
+Mode 2 composes summaries in file order through an interval tree, then sends
+each rank its actual incoming dictionary down the tree. There are `P-1`
+compositions, `P-1` summary sends and `P-1` dictionary sends, followed by a final
+dictionary broadcast. Empty ranks contribute identity summaries. Non-power-of-
+two rank counts, short dictionaries and epoch-dependent rank rotation are
+supported. The tree uses the decoder's private communicator, without new RMA
+windows or a barrier at each level. Intermediate dictionaries are not gzip data
+and do not change the decoded output.
+
 CRC/ISIZE and member-boundary validation are unchanged. Summary storage and
-scratch buffers are included in the decoder memory budget. The default is 0
-(the existing ordered broadcast path), and all ranks must agree. Tail reports
-count parallel and serial history epochs separately; decoder tests accept
-`--parallel-history` and cover forced markers and the serial control.
+scratch buffers are included in the decoder memory budget; compare initial job
+counts and retries as well as time when testing different modes. The `history`
+report decomposes the existing `window` timer, not an additional phase. MPI
+time includes waiting for peers, not just network transfer. Decoder tests accept
+`--history-mode 0|1|2` (`--parallel-history` remains an alias for 1).
+`tests/test_mpi_gzip_history.cpp` checks tree incoming/final dictionaries against
+a serial oracle, including empty jobs, short windows and communicator rotation.
+`tests/benchmark_mpi_gzip_history.cpp` runs only the production decoder and its
+complete gzip CRC/ISIZE checks, cycling the three modes without FASTQ parsing,
+alignment or SAM output. The optional native test backend
+`tests/backend_codec_single_cg.c` uses one 64-CPE group per MPI rank.
+For a disk-independent benchmark, optionally link
+`tests/benchmark_pread_cache.cpp` with `--wrap=pread --wrap=pread64` and set
+`SWBWA_HISTORY_BENCH_CACHE=1`. An untimed warm-up captures this rank's compressed
+reads (2 GiB by default, `SWBWA_HISTORY_CACHE_MIB=1..8192` for a test-only
+override), then timed passes replay exactly those requests from
+memory and reject cache misses. This does not change production input handling.
+With a static MPI/C++ link, explicitly retaining `pthread_cond_broadcast`
+(`-Wl,-u,pthread_cond_broadcast`) may be necessary for the standalone benchmark;
+some toolchains otherwise leave libstdc++'s weak reference unresolved.
+
+To benchmark the actual cross+pool dispatcher, use a fresh source/build
+directory and keep the complete two-pass build:
+
+```sh
+MAKEFILES="$PWD/tests/benchmark_history.mk" \
+    bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=1 \
+    HOST_MPE_THREADS=6 CPE_LDM_MODE=2 GZIP_INPUT=1 GZIP_OUTPUT=1 \
+    LDFLAGS='tests/benchmark_history_runtime.o tests/benchmark_pread_cache.o -Wl,-u,pthread_cond_broadcast -Wl,--wrap=pread -Wl,--wrap=pread64'
+```
+
+This test-only make fragment replaces the main entry with the benchmark;
+the resulting `SWBWA FILE.gz 3 384` is **not an alignment executable**.
+It initializes the regular CPE pool and uses `backend_swbwa`, the cross
+dispatcher, and the generated GOT/TLS relocation files. Submit from the build
+directory with the normal cross-segment resource settings. Do not link a
+standalone binary after layout discovery: that would invalidate the addresses.
+Use a separate build directory for the regular application.
 
 This is **bounded-window dynamic alignment scheduling**, not an arbitrary
 gzip seek scheduler. Without prepare-ahead, window tails can still

@@ -1237,10 +1237,23 @@ extern "C" int swbwa_mpi_gzip_report(swbwa_mpi_gzip_reader *r, FILE *file)
             return abort_reader(r, "MPI gzip concurrency report write failed");
         if (std::fprintf(file,
             "[MPI gzip rank=%d mate=%d tails] known_tail_jobs=%llu repaired_tail_jobs=%llu "
-            "parallel_history_epochs=%llu serial_history_epochs=%llu\n",
+            "parallel_history_epochs=%llu serial_history_epochs=%llu tree_history_epochs=%llu\n",
             r->rank, m + 1, U64(d.known_tail_jobs), U64(d.repaired_tail_jobs),
-            U64(d.parallel_history_epochs), U64(d.serial_history_epochs)) < 0)
+            U64(d.parallel_history_epochs), U64(d.serial_history_epochs), U64(d.tree_history_epochs)) < 0)
             return abort_reader(r, "MPI gzip tail report write failed");
+        if (std::fprintf(file,
+            "[MPI gzip rank=%d mate=%d history] mode=%llu wall_s=%.6f summary_s=%.6f "
+            "exchange_s=%.6f linear_apply_s=%.6f job_dict_s=%.6f tree_compose_s=%.6f "
+            "tree_apply_s=%.6f tree_mpi_s=%.6f final_sync_s=%.6f scratch_accounted_bytes=%llu "
+            "summary_bytes=%llu tree_sent_bytes=%llu tree_messages=%llu tree_compose_calls=%llu "
+            "tree_apply_calls=%llu included_in_window=1\n",
+            r->rank, m + 1, U64(d.history_mode), d.history_wall_s, d.history_summary_s,
+            d.history_exchange_s, d.history_linear_apply_s, d.history_job_dict_s,
+            d.history_tree_compose_s, d.history_tree_apply_s, d.history_tree_mpi_s,
+            d.history_final_sync_s, U64(d.history_scratch_peak_bytes), U64(d.history_summary_bytes),
+            U64(d.history_tree_sent_bytes), U64(d.history_tree_messages),
+            U64(d.history_tree_compose_calls), U64(d.history_tree_apply_calls)) < 0)
+            return abort_reader(r, "MPI gzip history report write failed");
         if (std::fprintf(file,
             "[MPI gzip rank=%d mate=%d source] foreground_input_s=%.6f source_io_s=%.6f "
             "prefetch_io_s=%.6f prefetch_batches=%llu prefetch_bytes=%llu source_read_calls=%llu prefetch_cg=%d "

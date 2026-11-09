@@ -138,7 +138,9 @@ def main():
     parser.add_argument("--early-first", action="store_true", help="deliver the reserved chunk before preparing the shared suffix")
     parser.add_argument("--prefix-ahead", action="store_true", help="publish gzip output lengths independently of disk writes")
     parser.add_argument("--prepare-ahead", action="store_true", help="prepare a bounded FASTQ window on a nested producer")
-    parser.add_argument("--parallel-history", action="store_true", help="collectively exchange independent decoder tails")
+    history = parser.add_mutually_exclusive_group()
+    history.add_argument("--history-mode", type=int, choices=(0, 1, 2), default=0)
+    history.add_argument("--parallel-history", dest="history_mode", action="store_const", const=1)
     parser.add_argument("--binary", type=Path, help="reuse an already built integration executable")
     parser.add_argument("--sanitize", choices=("undefined", "address,undefined"))
     args = parser.parse_args()
@@ -233,7 +235,7 @@ def main():
                        SWBWA_GZIP_PARALLEL_WRITE="1", SWBWA_GZIP_EARLY_FIRST=str(int(args.early_first)))
             env['SWBWA_GZIP_PREFIX_AHEAD'] = str(int(args.prefix_ahead))
             env['SWBWA_GZIP_PREPARE_AHEAD'] = str(int(args.prepare_ahead))
-            env['SWBWA_GZIP_PARALLEL_HISTORY'] = str(int(args.parallel_history))
+            env['SWBWA_GZIP_PARALLEL_HISTORY'] = str(args.history_mode)
             if stress == 'prefix-ahead': env['SWBWA_GZIP_PARALLEL_WRITE'] = '0'
             if prepare is None:
                 env.pop("SWBWA_GZIP_PREPARE_OUTPUT", None)

@@ -50,7 +50,14 @@ typedef struct {
     uint64_t peak_buffer_bytes;
     uint64_t initial_batch_jobs, max_discover_jobs, max_resolve_jobs;
     uint64_t known_tail_jobs, repaired_tail_jobs;
-    uint64_t parallel_history_epochs, serial_history_epochs;
+    uint64_t parallel_history_epochs, serial_history_epochs, tree_history_epochs;
+    uint64_t history_mode;
+    /* Accounted conservative scratch peak, including the H1 trace cache.
+     * Tree payload/messages count point-to-point sends, excluding final Bcast;
+     * summary bytes count locally constructed summaries, not MPI wire traffic. */
+    uint64_t history_scratch_peak_bytes, history_summary_bytes;
+    uint64_t history_tree_sent_bytes, history_tree_messages;
+    uint64_t history_tree_compose_calls, history_tree_apply_calls;
     uint64_t prefetch_batches, prefetch_bytes, source_read_calls;
     double source_io_s, prefetch_io_s;
     uint64_t source_cache_bytes;
@@ -81,6 +88,13 @@ typedef struct {
     double metadata_local_s, metadata_mpi_s;
     /* Dictionary copies/tail marker repair/task selection vs broadcasts. */
     double window_local_s, window_mpi_s;
+    /* Inclusive history wall; the remaining history timers are disjoint
+     * subsets. MPI elapsed includes arrival/progress waits. Serial mode uses
+     * window_mpi_s for its owner broadcasts; parallel_history counts mode 1. */
+    double history_wall_s, history_summary_s, history_exchange_s;
+    double history_linear_apply_s, history_job_dict_s;
+    double history_tree_compose_s, history_tree_apply_s, history_tree_mpi_s;
+    double history_final_sync_s;
     /* Extents/CRC/header validation (excluding pread) vs digest Gather,
      * commit Bcast and the final validation barrier, counted separately. */
     double commit_local_s, commit_mpi_s, commit_barrier_s, eof_barrier_s;

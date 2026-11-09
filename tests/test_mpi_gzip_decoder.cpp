@@ -352,11 +352,17 @@ int main(int argc, char **argv) {
         const char *timer_names[] = {"open_s", "open_io_s", "next_s", "io_s", "prepare_s", "cleanup_s",
             "discover_wall_s", "discover_run_s", "discover_wait_s", "resolve_wall_s", "resolve_run_s",
             "resolve_wait_s", "metadata_local_s", "metadata_mpi_s", "window_local_s", "window_mpi_s",
-            "commit_local_s", "commit_mpi_s", "commit_barrier_s", "eof_barrier_s", "retry_s"};
+            "commit_local_s", "commit_mpi_s", "commit_barrier_s", "eof_barrier_s", "retry_s",
+            "history_wall_s", "history_summary_s", "history_exchange_s", "history_linear_apply_s",
+            "history_job_dict_s", "history_tree_compose_s", "history_tree_apply_s",
+            "history_tree_mpi_s", "history_final_sync_s"};
         const double local_times[] = {m.open_s, m.open_io_s, m.next_s, m.io_s, m.prepare_s, m.cleanup_s,
             m.discover_wall_s, m.discover_run_s, m.discover_wait_s, m.resolve_wall_s, m.resolve_run_s,
             m.resolve_wait_s, m.metadata_local_s, m.metadata_mpi_s, m.window_local_s, m.window_mpi_s,
-            m.commit_local_s, m.commit_mpi_s, m.commit_barrier_s, m.eof_barrier_s, m.retry_s};
+            m.commit_local_s, m.commit_mpi_s, m.commit_barrier_s, m.eof_barrier_s, m.retry_s,
+            m.history_wall_s, m.history_summary_s, m.history_exchange_s, m.history_linear_apply_s,
+            m.history_job_dict_s, m.history_tree_compose_s, m.history_tree_apply_s,
+            m.history_tree_mpi_s, m.history_final_sync_s};
         constexpr int timer_count = sizeof(local_times) / sizeof(local_times[0]);
         static_assert(timer_count == sizeof(timer_names) / sizeof(timer_names[0]), "timer names mismatch");
         for (double seconds : local_times)
@@ -365,8 +371,14 @@ int main(int argc, char **argv) {
                 "batch width metrics mismatch");
         require(m.known_tail_jobs + m.repaired_tail_jobs == m.accepted_jobs,
                 "dictionary fast-path accounting mismatch");
-        require(m.parallel_history_epochs + m.serial_history_epochs == m.epochs,
+        require(m.parallel_history_epochs + m.serial_history_epochs + m.tree_history_epochs == m.epochs,
                 "dictionary protocol accounting mismatch");
+        require(std::abs(m.history_wall_s - m.window_local_s - m.window_mpi_s) < 1e-5,
+                "history wall timer mismatch");
+        require(m.history_summary_s + m.history_exchange_s + m.history_linear_apply_s +
+                m.history_job_dict_s + m.history_tree_compose_s + m.history_tree_apply_s +
+                m.history_tree_mpi_s + m.history_final_sync_s <= m.history_wall_s + 1e-5,
+                "overlapping history timers");
         if (mode == "worker-defaults")
             require(m.initial_batch_jobs == cfg.workers, "default budgets leave workers idle");
         const char *work_names[] = {"discover_jobs", "retry_jobs", "discover_failed_jobs",
@@ -374,13 +386,19 @@ int main(int argc, char **argv) {
                                    "initial_batch_jobs", "max_discover_jobs", "max_resolve_jobs",
                                    "prefetch_batches", "prefetch_bytes", "source_read_calls",
                                    "known_tail_jobs", "repaired_tail_jobs", "gap_repair_jobs", "gap_repair_ok",
-                                   "parallel_history_epochs", "serial_history_epochs"};
+                                   "parallel_history_epochs", "serial_history_epochs", "tree_history_epochs",
+                                   "history_mode", "history_scratch_peak_bytes", "history_summary_bytes",
+                                   "history_tree_sent_bytes", "history_tree_messages",
+                                   "history_tree_compose_calls", "history_tree_apply_calls"};
         const uint64_t local_work[] = {m.discover_jobs, m.retry_jobs, m.discover_failed_jobs,
                                       m.discover_output_full_jobs, m.discarded_output_bytes,
                                       m.initial_batch_jobs, m.max_discover_jobs, m.max_resolve_jobs,
                                       m.prefetch_batches, m.prefetch_bytes, m.source_read_calls,
                                       m.known_tail_jobs, m.repaired_tail_jobs, m.gap_repair_jobs, m.gap_repair_ok,
-                                      m.parallel_history_epochs, m.serial_history_epochs};
+                                      m.parallel_history_epochs, m.serial_history_epochs, m.tree_history_epochs,
+                                      m.history_mode, m.history_scratch_peak_bytes, m.history_summary_bytes,
+                                      m.history_tree_sent_bytes, m.history_tree_messages,
+                                      m.history_tree_compose_calls, m.history_tree_apply_calls};
         static_assert(sizeof(local_work) / sizeof(local_work[0]) ==
                       sizeof(work_names) / sizeof(work_names[0]), "work names mismatch");
         constexpr int work_count = sizeof(local_work) / sizeof(local_work[0]);

@@ -77,8 +77,8 @@ FASTQ 格式化始终在 CPE 上执行，没有单独的格式化模式开关。
 | `GZIP_INPUT` | `0`、`1` | `1` |
 | `GZIP_OUTPUT` | `0`、`1` | `1`；`.gz` 输出名选择 CPE 并行压缩 |
 | `MPI_INPUT_MODE` | `static`、`dynamic` | MPI 构建时为 `dynamic` |
-| `OUTPUT_MODE` | `split`、`single_unordered`、`single_ordered`、`discard` | MPI 为 `single_unordered`，非 MPI 为 `split` |
-| `MPI_EXACT_READ_INDEX` | `0`、`1` | `1` |
+| `OUTPUT_MODE` | `split`、`single_unordered`、`single_ordered`、`discard` | MPI dynamic 为 `single_ordered`，MPI static 为 `single_unordered`，非 MPI 为 `split` |
+| `MPI_EXACT_READ_INDEX` | `0`、`1` | `0`（plain FASTQ 性能模式） |
 | `MPI_TAIL_PERCENT` | `0..100` | `10` |
 | `KSW_U8_MODE` | `int32_16`、`float16_16`、`float16_32` | `int32_16` |
 | `KSW_I16_MODE` | `scalar_8`、`int32_8` | `int32_8` |
@@ -99,6 +99,13 @@ Sunway 的 MPI 启动会在 `MPI_Init_thread` 前设置本进程环境变量
 元数据、CRC 等正确性检查仍然保留，失败不会作为正常完成处理。
 非 MPI 也支持 `OUTPUT_MODE=discard`；非 MPI 的 `split` 保持普通单文件输出，
 `single_unordered` 则必须启用 MPI。
+
+默认构建使用 MPI dynamic 输入和有序单文件输出，同时启用 gzip 输入、输出引擎。
+输入按 gzip 文件头识别，不依赖文件名；输出路径以 `.gz` 结尾时压缩，否则写普通
+SAM。plain/gzip 输入输出的四种组合使用同一个可执行文件，无需重新编译。
+默认保留真实磁盘写出。
+显式选择 `MPI_INPUT_MODE=static` 时，默认输出保留 `single_unordered`，以兼容普通
+FASTQ；static gzip 输入仍可显式指定 `OUTPUT_MODE=single_ordered`。
 
 ### Gzip 输入
 
@@ -147,11 +154,30 @@ READY/EOF 等待及解压等待，不能将这些包含关系重复求和。
 窗口，再通过全局单调 RMA 票号动态领取比对任务。需领取票号的数据打包进普通 MPI 窗口，
 本地领取复制、远程领取通过 RMA 获取正文和分区元数据，不再固定由解压该块的 rank 比对。
 `SWBWA_GZIP_READY_CHUNKS=1..16` 控制每 rank 的就绪块数，默认 4。
-窗口内领取无需逐块集体同步；窗口补充需要集体同步，但只有再次启动解压时才排空
-已领取任务。已解压的数据可在计算期间继续补充；每 rank 的首块直接移交原缓冲区，
+窗口内领取无需逐块集体同步；窗口补充需要集体同步。默认允许解压与此前流水线工作
+重叠，只有显式设置 `SWBWA_GZIP_DECODE_DRAIN=1` 才在推进解压前等待本地未完成输出。
+每 rank 的首块直接移交原缓冲区，
 其余块动态领取，RMA 数据窗口按容量复用。单 rank 直接返回数据，不走调度 RMA。
 增大窗口会增加内存占用，可能改善窗口尾部的不均衡。这不是任意压缩 offset 的独立
-随机访问，窗口边界仍可能等待慢任务。gzip 的有序输出使用在线 RMA 前缀，在 EOF 后验证总 chunk 数，
+随机访问，窗口边界仍可能等待慢任务。
+
+多 rank dynamic 输入可设置 `SWBWA_GZIP_DYNAMIC_TRANSFER=local`，将 FASTQ 片段保留在
+解压来源 rank，由实际执行者直接获取，省去中间 chunk owner 的正文重分布。首批每 rank
+最多一个任务，优先匹配本地数据，其余任务仍按递增 RMA 票号领取。`direct` 不做本地性
+匹配，`staged` 保留旧路径且仍是默认值。已测试的组合为：
+
+```bash
+export SWBWA_GZIP_DYNAMIC_TRANSFER=local
+export SWBWA_GZIP_EARLY_FIRST=1
+export SWBWA_GZIP_PARALLEL_HISTORY=2
+```
+
+提前交付首批任务后再准备动态后缀；历史传播 2 为树形，0（默认）与 1 分别保留串行和
+线性并行对照。直接获取模式要求 `SWBWA_GZIP_PREPARE_AHEAD=0`（默认）。新路径仍有
+集体补窗和本地复制，不改变解压算法，不等于 gzip 独立随机访问，也不保证所有规模均
+加速。详见[直接来源调度](src/gzip/README.md#direct-source-scheduling)。
+
+gzip 的有序输出使用在线 RMA 前缀，在 EOF 后验证总 chunk 数，
 也支持 `MPI_INPUT_MODE=static` 构建。`OUTPUT_RMA_ONLY=1` 仅关闭最终写盘；
 `SWBWA_OUTPUT_SAMPLE_READS=0` 可将默认每块前 100 条 read 抽样改为完整拼接 SAM
 指纹及分块 CRC32 校验。CRC 可按输出顺序合并，但不是分布式 MD5；完整校验耗时
@@ -179,7 +205,12 @@ bash build.sh 8 EXEC_MODE=cgs_cross CPE_ALLOCATOR=pool USE_MPI=0
 逐字节MD5，不排序、不创建SAM文件，结束时报告MD5、字节数和记录数。
 不能与MPI、discard或OUTPUT_RMA_ONLY组合；详见[流式校验](docs/SAM_STREAM_MD5.md)。
 
-对于未压缩 FASTQ，`MPI_EXACT_READ_INDEX=1` 用于正确性检查，程序会在比对前由 rank 0 扫描完整文件，建立精确的记录前缀索引。MPI gzip 则在线累计精确前缀，不预扫描。
+对于 dynamic 未压缩 FASTQ 输入，默认 `MPI_EXACT_READ_INDEX=0` 跳过全文件记录索引扫描，使用
+字节偏移生成比对平分时的选择种子。有序输出仍保持输入顺序，但平分候选的选择可能
+与标准 SAM 不同。严格检查 SAM MD5 时，编译时指定 `MPI_EXACT_READ_INDEX=1`：
+rank 0 会在比对前扫描完整 FASTQ，建立精确的记录前缀索引；其他比对参数也需要与
+基准一致。MPI gzip 在解压过程中始终在线累计精确 global read ID，不受此开关影响，
+不需要额外全文件扫描。
 
 动态 MPI 输入在 FASTQ 前 90% 使用配置的大块；最后 10% 使用四分之一大小的尾部块，最后两轮 rank 再使用四分之一大小的细尾块。可通过 `SWBWA_MPI_TAIL_PERCENT=0` 关闭尾部细分，或通过 `SWBWA_MPI_FINE_TAIL_WAVES=0` 保留中等尾部而关闭细尾区域。
 
@@ -377,7 +408,7 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 
 `OUTPUT_MODE=split` 为每个 rank 生成独立输出；`single_unordered` 使用 MPI RMA 原子申请单文件区间，但不保证记录顺序；`discard` 不写 SAM，适合测量 stage2 性能。
 
-对于未压缩 FASTQ，实验模式 `OUTPUT_MODE=single_ordered` 需要 MPI dynamic，自动选择全局单调
+对于未压缩 FASTQ，默认 MPI dynamic 输出模式 `OUTPUT_MODE=single_ordered` 需要 dynamic 输入，自动选择全局单调
 input ticket；若显式设置 `SWBWA_MPI_TICKET_MODE=distributed` 则报错，避免有界
 队列等待前缀时发生环形依赖。它通过 RMA 传递64位 chunk offset，每个 rank 保留
 自己的 SAM 并直接 pwrite，不需要排序、不搬运 SAM 到 master，也不逐chunk做全局

@@ -439,6 +439,11 @@ and host work than the single-process gzip path.
 
 ### Dynamic Decoded-Chunk Scheduling
 
+`SWBWA_GZIP_DYNAMIC_TRANSFER=staged|direct|local` selects the decoded-data
+handoff. The default remains `staged`; the staging protocol below describes
+that control path. All ranks must select the same mode. Static input and
+single-rank input retain their existing paths.
+
 `MPI_INPUT_MODE=dynamic` retains collective decompression but decouples alignment
 ownership from the decoding rank. `SWBWA_GZIP_READY_CHUNKS` selects 1..16 staged
 chunks per rank (default 4); all ranks must use the same value. A refill stages
@@ -623,6 +628,52 @@ existing decode/framing/layout timers and must not be added to them.
 `drain_wait_s` and `refill_wait_s` are waits, not Reader compute.
 There are no extra per-chunk collectives in the claim path.
 
+### Direct Source Scheduling
+
+The experimental `direct` and `local` handoffs retain complete FASTQ fragments
+at their decoding ranks rather than first redistributing complete chunks to
+`chunk_id % ranks`. A bounded publication exchanges only fragment descriptors:
+global chunk and record ordinals, mate, byte size, newline-span count and source
+displacement. Page newline spans remain with the payload, not in the replicated
+directory. The claimant gathers its R1/R2 fragments directly into its final
+formatting input allocations; local fragments use local copies. R2 need not be
+sent to an R1 owner before delivery to the actual consumer.
+
+Each complete fragment's bulk FASTQ crosses ranks at most once on this handoff;
+the separate small record-boundary carry protocol is outside that bound.
+This is not zero-copy: decoder output still needs lifetime-preserving local
+storage and publication packing. Dictionary/history propagation is unchanged,
+including its serial, linear-parallel and tree modes.
+
+`direct` reserves the initial ID frontier in rank order. `local` instead assigns
+that frontier using resident R1+R2 bytes, with an identity fallback and positive
+pair swaps. This bounded heuristic is not optimal matching. Each rank receives
+at most one frontier chunk; all later IDs use globally increasing RMA tickets.
+Unrestricted locality stealing could give a rank a late ID before an earlier
+one and block its bounded ordered-output FIFO, so it is deliberately avoided.
+
+With `SWBWA_GZIP_EARLY_FIRST=1`, a logical cycle first publishes up to `ranks`
+frontier chunks, returns them, and prepares its ticket-only suffix on the next
+Reader call. At the default ready limit this is one early wave plus three
+stealable waves. The refill barrier protects source fetch completion, not
+alignment completion: delivered allocations survive subsequent publications.
+All Get destinations are allocated before issuing requests, and one flush per
+contacted source completes both mates' outstanding Gets before parsing.
+
+If either mate's local queue exceeds half its budget, a complete prefix can be
+published early to leave room for decoder overshoot. Source skew means a rank
+can hold fragments for many chunks: the staged per-rank chunk bound above does
+not describe this mode. Queue limits, formatter limits and fail-fast guards
+still apply; they are not total-RSS bounds. `SWBWA_GZIP_PREPARE_AHEAD=1` is not
+supported with multi-rank direct-source handoffs.
+
+The `direct_source` report separates local/remote FASTQ bytes, descriptor
+contributions, Get/flush counts, shortened publications, layout and completion
+wait. `fetched_bytes` includes fetched newline metadata; remote FASTQ bytes are
+a subset, not an additional transfer. Descriptor contributions are not measured
+aggregate network traffic. Compare both old redistribution bytes and old RMA
+fetch bytes against the new handoff, and measure Pipeline time separately.
+
 Host tests exercise the real decoder with a host codec launcher; they do not
 replace native CPE/runtime validation:
 
@@ -631,6 +682,8 @@ python3 tests/test_mpi_gzip_decoder.py --work /tmp/swbwa-mpi-decoder-test
 python3 tests/test_mpi_gzip_input.py --work /tmp/swbwa-mpi-input-test
 python3 tests/test_mpi_gzip_input.py --input-mode dynamic --work /tmp/swbwa-mpi-dynamic-test
 python3 tests/test_mpi_gzip_dynamic_pipeline.py --work /tmp/swbwa-mpi-dynamic-pipeline-test
+python3 tests/test_mpi_gzip_input.py --input-mode dynamic --transfer local --work /tmp/swbwa-mpi-source-test
+python3 tests/test_mpi_gzip_dynamic_pipeline.py --transfer local --work /tmp/swbwa-mpi-source-pipeline-test
 python3 tests/test_mpi_gzip_pipeline_contract.py
 ```
 

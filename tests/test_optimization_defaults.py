@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 class OptimizationDefaultsTest(unittest.TestCase):
     def config(self, **options):
         env = {key: value for key, value in os.environ.items()
-               if key not in {"MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
+               if key not in {"MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKEFILES",
+                              "EXEC_MODE", "CPE_ALLOCATOR", "USE_MPI", "MPI_INPUT_MODE",
+                              "OUTPUT_MODE", "MPI_EXACT_READ_INDEX", "OUTPUT_RMA_ONLY",
+                              "DISCARD_HASH_BYTES",
                               "CPE_KERNEL_OPT", "CPE_DISCARD_DIGEST",
                               "CPE_PROFILE", "HOST_MALLOC_STATS", "HOST_MPE_THREADS",
                               "CPE_LDM_MODE", "GZIP_INPUT", "GZIP_OUTPUT"}}
@@ -21,16 +24,43 @@ class OptimizationDefaultsTest(unittest.TestCase):
              *[f"{key}={value}" for key, value in options.items()]],
             cwd=ROOT, env=env, text=True, capture_output=True)
 
+    def test_default_io_configuration(self):
+        result = self.config()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        for key, expected in {"USE_MPI": "1", "MPI_INPUT_MODE": "dynamic",
+                              "OUTPUT_MODE": "single_ordered", "MPI_EXACT_READ_INDEX": "0",
+                              "GZIP_INPUT": "1", "GZIP_OUTPUT": "1",
+                              "OUTPUT_RMA_ONLY": "0"}.items():
+            self.assertEqual(values[key], expected, key)
+
+    def test_io_configuration_overrides(self):
+        for options, expected in (
+                ({"USE_MPI": 0}, {"USE_MPI": "0", "OUTPUT_MODE": "split"}),
+                ({"MPI_EXACT_READ_INDEX": 1}, {"MPI_EXACT_READ_INDEX": "1"}),
+                ({"MPI_INPUT_MODE": "static"},
+                 {"MPI_INPUT_MODE": "static", "OUTPUT_MODE": "single_unordered"}),
+                ({"MPI_INPUT_MODE": "static", "OUTPUT_MODE": "single_ordered"},
+                 {"MPI_INPUT_MODE": "static", "OUTPUT_MODE": "single_ordered"}),
+                ({"OUTPUT_MODE": "split"}, {"OUTPUT_MODE": "split"}),
+                ({"OUTPUT_MODE": "single_unordered"}, {"OUTPUT_MODE": "single_unordered"})):
+            with self.subTest(options=options):
+                result = self.config(**options)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                values = dict(line.split("=", 1) for line in result.stdout.splitlines())
+                for key, value in expected.items():
+                    self.assertEqual(values[key], value, key)
+
     def test_default_matrix(self):
         for execution, allocator, mpi, output, prefix in itertools.product(
                 ("single", "cgs", "cgs_cross"), ("system", "pool"),
-                (0, 1), ("split", "single_unordered", "discard"), (0, 64)):
+                (0, 1), ("split", "single_unordered", "single_ordered", "discard"), (0, 64)):
             with self.subTest(execution=execution, allocator=allocator,
                               mpi=mpi, output=output, prefix=prefix):
                 result = self.config(EXEC_MODE=execution, CPE_ALLOCATOR=allocator,
                                      USE_MPI=mpi, OUTPUT_MODE=output,
                                      DISCARD_HASH_BYTES=prefix)
-                if not mpi and output == "single_unordered":
+                if not mpi and output in ("single_unordered", "single_ordered"):
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("requires USE_MPI=1", result.stderr)
                     continue

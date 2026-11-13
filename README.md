@@ -81,8 +81,8 @@ The supported build variables are:
 | `GZIP_INPUT` | `0`, `1` | `1` |
 | `GZIP_OUTPUT` | `0`, `1` | `1`; `.gz` names select parallel CPE compression |
 | `MPI_INPUT_MODE` | `static`, `dynamic` | `dynamic` with MPI |
-| `OUTPUT_MODE` | `split`, `single_unordered`, `single_ordered`, `discard` | `single_unordered` with MPI; `split` otherwise |
-| `MPI_EXACT_READ_INDEX` | `0`, `1` | `1` |
+| `OUTPUT_MODE` | `split`, `single_unordered`, `single_ordered`, `discard` | MPI dynamic: `single_ordered`; MPI static: `single_unordered`; non-MPI: `split` |
+| `MPI_EXACT_READ_INDEX` | `0`, `1` | `0` (plain FASTQ performance mode) |
 | `MPI_TAIL_PERCENT` | `0..100` | `10` |
 | `KSW_U8_MODE` | `int32_16`, `float16_16`, `float16_32` | `int32_16` |
 | `KSW_I16_MODE` | `scalar_8`, `int32_8` | `int32_8` |
@@ -97,6 +97,14 @@ kernel. `CPE_PROFILE=1` needs an installed LWPF3 library (`LWPF3_DIR`); profilin
 and detailed runtime diagnostics are disabled unless explicitly requested.
 
 `MPI_INPUT_MODE` and `MPI_EXACT_READ_INDEX` are only effective when `USE_MPI=1`. `OUTPUT_MODE=discard` is also supported without MPI; non-MPI `split` retains the ordinary single-file writer. `single_unordered` requires MPI.
+
+The default build uses MPI dynamic input and ordered single-file output, with
+both gzip codecs enabled. Input is detected by gzip magic bytes, independently
+of the filename; an output path ending in `.gz` selects gzip, otherwise plain
+SAM is written. All four plain/gzip input-output combinations use the same
+executable. Disk writes remain enabled by default.
+Selecting `MPI_INPUT_MODE=static` defaults to `single_unordered` for compatibility
+with plain FASTQ. Static gzip input can explicitly select `OUTPUT_MODE=single_ordered`.
 
 On Sunway, startup sets the process-local `SWCH_HANG_WHEN_ERROR=0` before
 `MPI_Init_thread`, overriding inherited debug-hang settings so fatal
@@ -150,12 +158,33 @@ work independently of the decoding owner. Ticketed ready data is packed into an
 ordinary MPI window; local ticketed claims copy it, while remote claims fetch
 FASTQ buffers and partition metadata using RMA.
 `SWBWA_GZIP_READY_CHUNKS=1..16` controls the staged chunks per rank (default 4).
-Refills are collective; only a new decode epoch drains prior pipeline work.
-Already-decoded refills overlap computation. The first chunk per rank transfers
+Refills are collective. Decoding may overlap prior pipeline work by default;
+`SWBWA_GZIP_DECODE_DRAIN=1` optionally waits for outstanding local output before
+a decoder advance. The first chunk per rank transfers
 locally without repacking, and ticketed payloads reuse their MPI window. There
 is no per-chunk collective in the claim path. Larger windows use more memory and
 may reduce window-tail imbalance. This is dynamic scheduling of decoded data,
 not independent arbitrary-offset access to compressed bytes.
+
+For dynamic multi-rank input, `SWBWA_GZIP_DYNAMIC_TRANSFER=local` instead keeps
+FASTQ fragments at their decoding ranks and lets the consumer fetch them directly,
+avoiding intermediate chunk-owner redistribution. It locality-matches the first
+task per rank; subsequent tasks use increasing RMA tickets. `direct` omits the
+locality matching, and `staged` remains the default legacy path. A tested combination is:
+
+```bash
+export SWBWA_GZIP_DYNAMIC_TRANSFER=local
+export SWBWA_GZIP_EARLY_FIRST=1
+export SWBWA_GZIP_PARALLEL_HISTORY=2
+```
+
+Early-first publishes the first task wave before preparing the dynamic suffix.
+History mode 2 uses tree propagation; modes 0 (default) and 1 retain serial and
+linear-parallel controls. Direct-source modes require `SWBWA_GZIP_PREPARE_AHEAD=0`
+(the default). They retain collective refills, local buffer copies, and the same
+decoder; they do not provide independently seekable gzip blocks or unconditional
+speedups. See [direct-source scheduling](src/gzip/README.md#direct-source-scheduling).
+
 Gzip `single_ordered` uses an online RMA prefix and validates the exact chunk
 count after EOF; it also supports `MPI_INPUT_MODE=static`. For no-file tests,
 use `OUTPUT_RMA_ONLY=1`; set `SWBWA_OUTPUT_SAMPLE_READS=0` for full packed-SAM
@@ -196,7 +225,14 @@ count on successful close. It does not sort and creates no output file.
 It cannot be combined with MPI, discard or output-RMA-only benchmarking.
 See [streaming validation](docs/SAM_STREAM_MD5.md).
 
-For plain FASTQ, `MPI_EXACT_READ_INDEX=1` is intended for correctness checks. Rank 0 scans the complete FASTQ once before alignment to build exact record prefixes. MPI gzip instead accumulates exact prefixes online.
+For dynamic plain FASTQ input, the default `MPI_EXACT_READ_INDEX=0` skips the full-file
+record-index scan and uses byte offsets to seed alignment tie-breaking. Ordered
+output still preserves input order, but tied alignment choices can differ from
+the reference SAM. Build with `MPI_EXACT_READ_INDEX=1` for strict SAM MD5 checks:
+rank 0 scans the complete FASTQ once before alignment to build exact record
+prefixes. Other alignment settings must also match the reference. MPI gzip
+always accumulates exact global read IDs online while decoding, independently
+of this flag, without an extra full-file scan.
 
 Dynamic MPI input uses the configured large chunks for the first 90% of the FASTQ. In the final 10% it uses chunks one quarter that size, and the final two rank waves use chunks one quarter of the medium-tail size. Set `SWBWA_MPI_TAIL_PERCENT=0` to disable tail refinement, or set `SWBWA_MPI_FINE_TAIL_WAVES=0` to keep the 10% medium tail without the final fine region.
 
@@ -408,7 +444,7 @@ bsub -I -b -q q_share -N 1 -np 6 -cgsp 64 \
 
 `OUTPUT_MODE=split` creates one output file per rank. `single_unordered` uses MPI RMA to atomically reserve ranges in one output file, but does not guarantee record order. `discard` writes no SAM and is useful for measuring stage 2 performance.
 
-For plain FASTQ, `OUTPUT_MODE=single_ordered` is an experimental dynamic-MPI writer that preserves
+For plain FASTQ, the default MPI dynamic writer, `OUTPUT_MODE=single_ordered`, requires dynamic input and preserves
 FASTQ chunk/read order without sorting. It uses global monotonic input tickets
 (automatically selected; an explicit `SWBWA_MPI_TICKET_MODE=distributed` is rejected),
 then propagates 64-bit output prefixes through RMA. Each rank keeps and writes

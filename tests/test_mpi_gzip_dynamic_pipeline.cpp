@@ -135,6 +135,22 @@ static thread_local uint64_t *prefix_result = NULL;
 static thread_local MPI_Win prefix_window = MPI_WIN_NULL;
 static thread_local bool flushing_codec = false;
 static thread_local bool preparing_output = false;
+static bool source_lifecycle_test()
+{
+    return stress == "source-growth" || stress == "source-deferred";
+}
+struct DeferredGet {
+    void *destination;
+    int count, target;
+    MPI_Aint displacement;
+    MPI_Win window;
+};
+static thread_local MPI_Win source_window = MPI_WIN_NULL;
+static thread_local std::vector<DeferredGet> deferred_gets;
+static struct {
+    unsigned windows = 0, zero_windows = 0;
+    uint64_t gets = 0, completed = 0, flushes = 0, max_pending = 0, max_flush_batch = 0;
+} source_observed;
 static struct {
     std::atomic<unsigned> pending{0}, overlap_refills{0}, codec_with_pending{0};
     std::atomic<unsigned> decode_with_pending{0}, output_codecs{0}, eof_codecs{0};
@@ -142,6 +158,7 @@ static struct {
     std::atomic<unsigned> prepared_chunks{0}, prepared_writes{0}, prepare_codecs{0}, freed_sam_chunks{0};
     std::atomic<bool> reader_eof{false};
     unsigned bulk_packets = 0, bulk_payloads = 0, wire_packets = 0, empty_sends = 0, empty_receives = 0;
+    unsigned alltoallv_calls = 0, skew_delays = 0;
     std::atomic<uint64_t> decode_calls{0}, decodes_after_overlap{0}, max_overlap_streak{0};
     uint64_t window_decode_calls = 0, overlap_streak = 0;
     std::atomic<uint64_t> read_chunks{0}, processed_chunks{0}, writer_started{0}, written_chunks{0};
@@ -214,6 +231,7 @@ extern "C" int __wrap_MPI_Alltoallv(const void *send, const int *sc, const int *
                                     void *receive, const int *rc, const int *rd, MPI_Datatype rt,
                                     MPI_Comm comm)
 {
+    ++observed.alltoallv_calls;
     assert(st == MPI_BYTE && rt == MPI_BYTE && send && receive);
     size_t sent = 0, received = 0;
     for (int i = 0; i < ranks; ++i) {
@@ -242,9 +260,59 @@ extern "C" int __wrap_MPI_Fetch_and_op(const void *origin, void *result, MPI_Dat
 }
 
 extern "C" int __real_MPI_Win_flush(int, MPI_Win);
+extern "C" int __real_MPI_Get(void *, int, MPI_Datatype, int, MPI_Aint, int, MPI_Datatype, MPI_Win);
+extern "C" int __real_MPI_Win_create(void *, MPI_Aint, int, MPI_Info, MPI_Comm, MPI_Win *);
+extern "C" int __wrap_MPI_Win_create(void *base, MPI_Aint size, int unit, MPI_Info info,
+                                     MPI_Comm comm, MPI_Win *win)
+{
+    const int status = __real_MPI_Win_create(base, size, unit, info, comm, win);
+    // Reader source windows use byte displacements; ticket windows do not.
+    if (source_lifecycle_test() && unit == 1) {
+        assert(status == MPI_SUCCESS && deferred_gets.empty());
+        source_window = *win;
+        ++source_observed.windows;
+        source_observed.zero_windows += size == 0;
+        std::fprintf(stderr, "[test source_window rank=%d] build=%u capacity_bytes=%llu\n",
+                     swbwa_mpi_rank(), source_observed.windows, (unsigned long long)size);
+    }
+    return status;
+}
+
+extern "C" int __wrap_MPI_Get(void *destination, int count, MPI_Datatype type, int target,
+                              MPI_Aint displacement, int target_count, MPI_Datatype target_type, MPI_Win win)
+{
+    if (!source_lifecycle_test() || win != source_window)
+        return __real_MPI_Get(destination, count, type, target, displacement, target_count, target_type, win);
+    assert(type == MPI_BYTE && target_type == MPI_BYTE && count == target_count && count > 0);
+    assert(target != swbwa_mpi_rank());
+    // Leave both FASTQ and newline metadata unavailable until remote completion.
+    std::memset(destination, 0xa5, size_t(count));
+    deferred_gets.push_back({destination, count, target, displacement, win});
+    ++source_observed.gets;
+    source_observed.max_pending = std::max(source_observed.max_pending, uint64_t(deferred_gets.size()));
+    return MPI_SUCCESS;
+}
+
 extern "C" int __wrap_MPI_Win_flush(int target, MPI_Win win)
 {
+    uint64_t completed = 0;
+    for (const auto &get : deferred_gets) if (get.target == target && get.window == win) {
+        const auto *bytes = static_cast<const unsigned char *>(get.destination);
+        assert(std::all_of(bytes, bytes + get.count, [](unsigned char c) { return c == 0xa5; }));
+        assert(__real_MPI_Get(get.destination, get.count, MPI_BYTE, target, get.displacement,
+                              get.count, MPI_BYTE, win) == MPI_SUCCESS);
+        ++completed;
+    }
     const int status = __real_MPI_Win_flush(target, win);
+    if (completed) {
+        assert(status == MPI_SUCCESS);
+        source_observed.completed += completed;
+        ++source_observed.flushes;
+        source_observed.max_flush_batch = std::max(source_observed.max_flush_batch, completed);
+        deferred_gets.erase(std::remove_if(deferred_gets.begin(), deferred_gets.end(),
+            [target, win](const DeferredGet &get) { return get.target == target && get.window == win; }),
+            deferred_gets.end());
+    }
     if (prefix_result && win == prefix_window && target == 0) {
         if (status == MPI_SUCCESS && *prefix_result < uint64_t(writing_chunk))
             ++observed.prefix_waits;
@@ -303,7 +371,8 @@ extern "C" void __wrap_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *c
     __real_swbwa_mpi_decoder_config_init(c, workers);
     c->chunk_bytes = 4096; c->jobs_per_rank = 1; c->initial_output_bytes = 65536;
     c->decoded_bytes = 8U << 20; c->memory_bytes = 64U << 20; c->lookahead_bytes = 1U << 20;
-    if (stress == "exchange-bulk" || stress == "exchange-bulk-chunks") {
+    if (stress == "source-pressure") c->decoded_bytes = 65536;
+    if (stress == "exchange-bulk" || stress == "exchange-bulk-chunks" || stress == "source-growth") {
         // One compressed member on rank 0 redistributes >1 MiB to each peer.
         c->chunk_bytes = 1U << 20; c->initial_output_bytes = 8U << 20;
     }
@@ -363,6 +432,7 @@ static void *process(void *context, int step, void *item)
     if (step == 0) {
         b = new Batch;
         const int status = swbwa_mpi_gzip_next(f.reader, &b->input);
+        assert(deferred_gets.empty());
         assert(status >= 0);
         if (!status) { observed.reader_eof = true; delete b; return NULL; }
         assert(b->input.chunk_id > observed.last_read);
@@ -395,7 +465,12 @@ static void *process(void *context, int step, void *item)
         alignment_active = true;
         assert(b->input.chunk_id > observed.last_processed);
         observed.last_processed = b->input.chunk_id;
-        if (!stress.empty() && f.rank == 0 &&
+        if ((stress == "source-skew" || source_lifecycle_test()) &&
+            (b->input.chunk_id == 0 || f.rank == ranks - 1)) {
+            ++observed.skew_delays;
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+        if (!stress.empty() && stress != "source-skew" && !source_lifecycle_test() && f.rank == 0 &&
             b->input.chunk_id % (int64_t(ranks) * ready_limit) == 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
         if (b->input.records && (b->input.chunk_id % 7 == 0 || f.rank == 1))
@@ -538,7 +613,8 @@ int main(int argc, char **argv)
            stress == "single-direct" || stress == "window-growth" || stress == "pending-close" ||
            stress == "prefix-full" || stress == "eof-codec" || stress == "drain-mismatch" ||
            stress == "exchange-bulk" || stress == "exchange-bulk-chunks" || stress == "early-first-mismatch" ||
-           stress == "prefix-ahead" || stress == "prepare-ahead-mismatch");
+           stress == "prefix-ahead" || stress == "prepare-ahead-mismatch" || stress == "source-skew" ||
+           stress == "source-pressure" || source_lifecycle_test());
     if (stress == "drain-mismatch")
         assert(!setenv("SWBWA_GZIP_DECODE_DRAIN", swbwa_mpi_rank() ? "1" : "0", 1));
     if (stress == "early-first-mismatch")
@@ -563,8 +639,9 @@ int main(int argc, char **argv)
     Fixture f = {NULL, std::strcmp(argv[2], "-") ? 2 : 1, swbwa_mpi_rank()};
     f.reader = swbwa_mpi_gzip_open(argv[1], f.mates == 2 ? argv[2] : NULL,
                                  stress == "window-growth" || stress == "prefix-full" || stress == "prefix-ahead" ||
-                                 stress == "exchange-bulk" ? 1 :
+                                 stress == "exchange-bulk" || stress == "source-growth" ? 1 :
                                  stress == "exchange-bulk-chunks" ? 1500000 :
+                                 stress == "source-pressure" ? 65536 :
                                  stress.empty() ? 2048 : 1024, 64, 1);
     assert(f.reader);
     if (stress == "pending-close") reject_pending_close(f.reader, f.rank);
@@ -603,13 +680,23 @@ int main(int argc, char **argv)
         assert(MPI_Comm_free(&stress_comm) == MPI_SUCCESS);
     }
     if (stress == "eof-codec") assert(observed.eof_codecs.load() == 1);
+    if (source_lifecycle_test()) {
+        assert(source_observed.gets == source_observed.completed);
+        std::fprintf(stderr,
+            "[test source_lifecycle rank=%d] windows=%u zero_windows=%u deferred_gets=%llu "
+            "completed_gets=%llu deferred_flushes=%llu max_pending_gets=%llu max_flush_batch=%llu\n",
+            f.rank, source_observed.windows, source_observed.zero_windows,
+            (unsigned long long)source_observed.gets, (unsigned long long)source_observed.completed,
+            (unsigned long long)source_observed.flushes, (unsigned long long)source_observed.max_pending,
+            (unsigned long long)source_observed.max_flush_batch);
+    }
     std::fprintf(stderr,
         "[test pipeline rank=%d] chunks=%llu decode_calls=%llu overlap_refills=%u "
         "max_overlap_streak=%llu decodes_after_overlap=%llu codec_with_pending=%u "
         "decode_with_pending=%u output_codecs=%u eof_codecs=%u prefix_waits=%u "
         "decode_full_queue=%u prefix_releases=%u prepared_chunks=%u prepared_writes=%u "
         "prepare_codecs=%u freed_sam_chunks=%u bulk_packets=%u bulk_payloads=%u wire_packets=%u "
-        "empty_sends=%u empty_receives=%u\n",
+        "empty_sends=%u empty_receives=%u alltoallv_calls=%u skew_delays=%u\n",
         f.rank, (unsigned long long)observed.read_chunks.load(), (unsigned long long)observed.decode_calls.load(),
         observed.overlap_refills.load(), (unsigned long long)observed.max_overlap_streak.load(),
         (unsigned long long)observed.decodes_after_overlap.load(), observed.codec_with_pending.load(),
@@ -618,7 +705,7 @@ int main(int argc, char **argv)
         observed.prepared_chunks.load(), observed.prepared_writes.load(),
         observed.prepare_codecs.load(), observed.freed_sam_chunks.load(),
         observed.bulk_packets, observed.bulk_payloads, observed.wire_packets,
-        observed.empty_sends, observed.empty_receives);
+        observed.empty_sends, observed.empty_receives, observed.alltoallv_calls, observed.skew_delays);
     assert(!swbwa_output_ordered_finish(swbwa_mpi_gzip_chunk_count(f.reader)));
     assert(!swbwa_mpi_gzip_report(f.reader, stderr));
     swbwa_mpi_gzip_close(f.reader);

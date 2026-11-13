@@ -22,6 +22,16 @@ extern "C" void *swbwa_pipeline_context(void) { return NULL; }
 extern "C" void swbwa_pipeline_set_context(void *context) { assert(!context); }
 
 static uint64_t decode_calls;
+static uint64_t alltoallv_calls;
+extern "C" int __real_MPI_Alltoallv(const void *, const int *, const int *, MPI_Datatype,
+                                    void *, const int *, const int *, MPI_Datatype, MPI_Comm);
+extern "C" int __wrap_MPI_Alltoallv(const void *send, const int *sc, const int *sd, MPI_Datatype st,
+                                    void *receive, const int *rc, const int *rd, MPI_Datatype rt,
+                                    MPI_Comm comm)
+{
+    ++alltoallv_calls;
+    return __real_MPI_Alltoallv(send, sc, sd, st, receive, rc, rd, rt, comm);
+}
 extern "C" void __real_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *, unsigned);
 extern "C" void __wrap_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *c, unsigned workers)
 {
@@ -32,6 +42,8 @@ extern "C" void __wrap_swbwa_mpi_decoder_config_init(swbwa_mpi_decoder_config *c
     }
     if (const char *n = std::getenv("FASTQ_TEST_LOOKAHEAD"))
         c->lookahead_bytes = size_t(std::strtoull(n, NULL, 10));
+    if (const char *n = std::getenv("FASTQ_TEST_DECODED_BYTES"))
+        c->decoded_bytes = size_t(std::strtoull(n, NULL, 10));
 }
 extern "C" int __real_swbwa_mpi_decoder_next(swbwa_mpi_decoder *, swbwa_mpi_decoded_batch *);
 extern "C" int __wrap_swbwa_mpi_decoder_next(swbwa_mpi_decoder *d, swbwa_mpi_decoded_batch *b)
@@ -83,7 +95,7 @@ static void run(int argc, char **argv)
     const bool paired = std::strcmp(argv[2], "-") != 0;
     const std::string mode = argv[8];
     const bool rejection = mode == "reject" || mode == "early-close" || mode == "config-mismatch" ||
-                           mode == "window-mismatch" || mode == "bad-complete";
+                           mode == "window-mismatch" || mode == "bad-complete" || mode == "transfer-mismatch";
     std::string reference[2];
     std::vector<swbwa_fastq::Record> records[2];
     if (!rejection) {
@@ -97,6 +109,7 @@ static void run(int argc, char **argv)
     size_t target = size_t(std::strtoull(argv[5], NULL, 10));
     if (mode == "config-mismatch" && rank) ++target;
     if (mode == "window-mismatch" && rank) setenv("SWBWA_GZIP_READY_CHUNKS", "2", 1);
+    if (mode == "transfer-mismatch") setenv("SWBWA_GZIP_DYNAMIC_TRANSFER", rank ? "direct" : "staged", 1);
     swbwa_mpi_gzip_reader *reader = swbwa_mpi_gzip_open(argv[1], paired ? argv[2] : NULL,
         target, unsigned(std::atoi(argv[6])), std::atoi(argv[7]));
     assert(reader && decode_calls == 0); // open must not sample/decode.
@@ -173,8 +186,9 @@ static void run(int argc, char **argv)
 #if SWBWA_MPI_INPUT_MODE == SWBWA_MPI_INPUT_DYNAMIC
     assert(all_chunks == uint64_t(chunks));
 #endif
-    std::fprintf(stderr, "[test consumer rank=%d] chunks=%llu records=%llu\n", rank,
-                 static_cast<unsigned long long>(rounds), static_cast<unsigned long long>(local_records));
+    std::fprintf(stderr, "[test consumer rank=%d] chunks=%llu records=%llu alltoallv_calls=%llu\n", rank,
+                 static_cast<unsigned long long>(rounds), static_cast<unsigned long long>(local_records),
+                 static_cast<unsigned long long>(alltoallv_calls));
     assert(!swbwa_mpi_gzip_report(reader, stderr));
     swbwa_mpi_gzip_close(reader);
     if (!coverage.empty()) {

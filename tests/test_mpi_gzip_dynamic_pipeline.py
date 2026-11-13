@@ -16,8 +16,11 @@ import re
 import subprocess
 import tempfile
 
-from test_mpi_gzip_input import build as build_reader
+from test_mpi_gzip_input import (add_transfer_argument, build as build_reader,
+                                 check_chunk_trace, check_payload_traffic,
+                                 check_source_frontier, check_source_traffic)
 from test_sam_stream_md5 import build_md5_object
+from test_mpi_gzip_decoder import encoded
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,6 +55,7 @@ def build(work, mode, sanitizer=None):
                     "-Wl,--wrap=swbwa_mpi_decoder_config_init", "-Wl,--wrap=swbwa_codec_launch",
                     "-Wl,--wrap=swbwa_mpi_decoder_next",
                     "-Wl,--wrap=MPI_Fetch_and_op", "-Wl,--wrap=MPI_Win_flush", "-Wl,--wrap=MPI_Alltoallv",
+                    "-Wl,--wrap=MPI_Get", "-Wl,--wrap=MPI_Win_create",
                     "-Wl,--wrap=pwritev",
                     "-Wl,--wrap=pthread_key_create", "-Wl,--wrap=pthread_setspecific",
                     "-pthread", "-o", str(binary)], check=True)
@@ -64,6 +68,47 @@ def reports(stderr, prefix):
 
 
 def check_stress(case):
+    if case["stress"] in ("source-growth", "source-deferred"):
+        lifecycle = []
+        for rank in range(case["ranks"]):
+            rows = reports(case["stderr"], f"test source_lifecycle rank={rank}")
+            assert len(rows) == 1, case
+            row = {key: int(value) for key, value in rows[0].items()}
+            source = case["source_traffic"][rank]
+            assert row["deferred_gets"] == row["completed_gets"] == int(source["get_calls"]), case
+            assert row["deferred_flushes"] == int(source["flush_calls"]), case
+            lifecycle.append(row)
+            if case["stress"] == "source-growth":
+                history = reports(case["stderr"], f"test source_window rank={rank}")
+                assert [int(w["build"]) for w in history] == [1, 2], case
+                assert [int(w["capacity_bytes"]) for w in history] == ([1 << 20, 2 << 20] if rank == 0 else [0, 0]), case
+                assert row["windows"] == 2 and row["zero_windows"] == (0 if rank == 0 else 2), case
+                assert int(source["local_fastq_bytes"]) == 0 if rank else int(source["local_fastq_bytes"]) > 0, case
+        assert sum(row["deferred_gets"] for row in lifecycle) > 0, case
+        assert max(row["max_pending_gets"] for row in lifecycle) >= 4, case
+        assert max(row["max_flush_batch"] for row in lifecycle) >= 4, case
+        case["source_lifecycle"] = lifecycle
+        delayed = reports(case["stderr"], f"test pipeline rank={case['ranks'] - 1}")
+        assert len(delayed) == 1 and int(delayed[0]["skew_delays"]) > 0, case
+        return
+    if case["stress"] == "source-pressure":
+        assert all(int(row["short_windows"]) > 0 for row in case["source_traffic"].values()), case
+        limits = set(map(int, re.findall(r"queue_limit_per_mate_bytes=(\d+)", case["stderr"])))
+        peaks = list(map(int, re.findall(r"queue_peak_accounted_bytes=(\d+)", case["stderr"])))
+        assert limits == {4 * 65536} and len(peaks) == 2 * case["ranks"], case
+        assert 2 * 65536 < max(peaks) <= 4 * 65536, case
+        if case["early_first"]:
+            assert len(re.findall(r"rank=0 source_window\].* first=-1 frontier=0", case["stderr"])) > 1, case
+        return
+    if case["stress"] == "source-skew":
+        observed = [reports(case["stderr"], f"test pipeline rank={rank}")[0]
+                    for rank in range(case["ranks"])]
+        assert sum(int(row["skew_delays"]) for row in observed) > 0, case
+        assert sum(int(row["chunks"]) for row in observed) > case["ranks"] * case["ready"], case
+        return
+    if case["transfer"] != "staged" and case["ranks"] > 1:
+        assert case["stress"] == "eof-codec", case
+        return
     scheduler = re.findall(r"\[MPI gzip rank=(\d+) scheduler\] ([^\n]+)", case["stderr"])
     metrics = {int(rank): dict(field.split("=", 1) for field in row.split())
                for rank, row in scheduler}
@@ -134,7 +179,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--input-mode", choices=("static", "dynamic"), default="dynamic")
+    add_transfer_argument(parser)
     parser.add_argument("--focused", action="store_true", help="run only the scheduler regressions")
+    parser.add_argument("--source-extra", action="store_true", help="run only supplemental source growth and deferred-Get regressions")
     parser.add_argument("--early-first", action="store_true", help="deliver the reserved chunk before preparing the shared suffix")
     parser.add_argument("--prefix-ahead", action="store_true", help="publish gzip output lengths independently of disk writes")
     parser.add_argument("--prepare-ahead", action="store_true", help="prepare a bounded FASTQ window on a nested producer")
@@ -144,14 +191,21 @@ def main():
     parser.add_argument("--binary", type=Path, help="reuse an already built integration executable")
     parser.add_argument("--sanitize", choices=("undefined", "address,undefined"))
     args = parser.parse_args()
+    if args.dynamic_transfer not in ("staged", "direct", "local"):
+        parser.error("SWBWA_GZIP_DYNAMIC_TRANSFER must be staged, direct or local")
     if args.focused and args.input_mode != "dynamic":
         parser.error("--focused requires --input-mode dynamic")
+    source_mode = args.input_mode == "dynamic" and args.dynamic_transfer != "staged"
+    if args.source_extra and not source_mode:
+        parser.error("--source-extra requires dynamic direct/local transfer")
+    if source_mode and args.prepare_ahead:
+        parser.error("direct/local distributed tests require --prepare-ahead disabled")
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
     binary = args.binary.resolve() if args.binary else build(work, args.input_mode, args.sanitize)
     rng = random.Random(509)
     records = []
-    for i in range(384):
+    for i in range(9000 if source_mode else 384):
         pair = []
         for mate in range(2):
             n = 35 + (i * 11 + mate * 7) % 151
@@ -170,7 +224,7 @@ def main():
             cases += [(3, 4, pipeline, 2, n, "", 0) for pipeline in ("single", "queue") for n in (0, 1)]
         cases = [(*case, compressed, drain, None, 0) for case in cases
                  for compressed in (False, True) for drain in (0, 1)]
-        if args.input_mode == "dynamic":
+        if args.input_mode == "dynamic" and not source_mode:
             # Expand only scheduler regressions, not the full ordinary input matrix.
             scheduler_cases = [(2, 1, "queue", 2, 192, "decoded-refills", 64),
                                (3, 2, "queue", 2, 384, "window-reuse", 128),
@@ -188,6 +242,23 @@ def main():
             cases += [(ranks, 1, "queue", 2, 8, stress, 0, True, 0, None, prepare)
                       for stress in ("exchange-bulk", "exchange-bulk-chunks")
                       for ranks in (2, 3) for prepare in (0, 1)]
+        if source_mode:
+            cases += [(3, 16, pipeline, 2, 9000, "source-pressure", 0, compressed, 0, None, 1)
+                      for pipeline in ("single", "queue") for compressed in (False, True)]
+            # No placement-dependent gates: the same skew must finish with any
+            # first-frontier bijection and subsequent monotone ticket claims.
+            cases += [(3, ready, pipeline, 2, 227, "source-skew", 37, compressed, drain, None, prepare)
+                      for ready in (1, 2, 4, 8) for pipeline in ("single", "queue")
+                      for compressed, prepare in ((False, 0), (True, 0), (True, 1))
+                      for drain in (0, 1)]
+            cases += [(1, ready, pipeline, 2, 227, "source-skew", 37, True, 0, None, 1)
+                      for ready in (1, 8) for pipeline in ("single", "queue")]
+            cases += [(3, ready, pipeline, 2, n, "", 0, compressed, 0, None, 1)
+                      for ready in ((1, 2, 4, 8) if args.early_first else (2,))
+                      for n in (0, 1, 2) for pipeline in ("single", "queue")
+                      for compressed in (False, True)]
+            cases += [(2, 1, "queue", 2, n, "eof-codec", 0, True, drain, None, prepare)
+                      for n in (0, 1) for drain in (0, 1) for prepare in (0, 1)]
         cases += [(2, 1, "single", 2, 8, "", 0, True, drain, None, prepare)
                   for drain in (0, 1) for prepare in (0, 1)]
         cases += [(2, 1, pipeline, 2, 8, "", 0, False, 0, None, 1)
@@ -200,18 +271,34 @@ def main():
                   for value in ("", "2", "-1", "true", "00", " 0")]
         cases += [(2, 4, "queue", 2, 1, "drain-mismatch", 0, True, 0,
                    "MPI gzip reader configuration mismatch", 0)]
-        cases += [(2, 4, "queue", 2, 1, "early-first-mismatch", 0, True, 0,
-                   "MPI gzip reader configuration mismatch", 0)]
-        cases += [(2, 4, "queue", 2, 1, "prepare-ahead-mismatch", 0, True, 0,
-                   "MPI gzip reader configuration mismatch", 0)]
+        if not source_mode:
+            cases += [(2, 4, "queue", 2, 1, "early-first-mismatch", 0, True, 0,
+                       "MPI gzip reader configuration mismatch", 0)]
+            cases += [(2, 4, "queue", 2, 1, "prepare-ahead-mismatch", 0, True, 0,
+                       "MPI gzip reader configuration mismatch", 0)]
         if args.prefix_ahead:
             # prefix-full injects a Writer-thread RMA stall. The new publisher
             # deliberately removes that dependency; test blocked pwrite instead.
             cases = [case for case in cases if case[5] != 'prefix-full']
-            if args.input_mode == 'dynamic':
+            if args.input_mode == 'dynamic' and not source_mode:
                 cases += [(2, 1, 'queue', 2, 8, 'prefix-ahead', 0, True, 0, None, 1)]
+        if args.source_extra:
+            cases = [(8, 2, pipeline, 2, 40, "source-growth", 0, compressed, 0, None, 1)
+                     for pipeline in ("single", "queue") for compressed in (False, True)]
+            cases += [(3, 4, pipeline, 2, 227, "source-deferred", 37, compressed, 0, None, 1)
+                      for pipeline in ("single", "queue") for compressed in (False, True)]
+            cases += [(8, ready, "queue", 2, 227, "source-deferred", 37, True, 0, None, 1)
+                      for ready in (1, 2, 8)]
         for ranks, ready, pipeline, mates, n, stress, member_records, compressed, drain, error, prepare in cases:
             selected = records[:n]
+            if stress in ("source-skew", "source-pressure", "source-deferred"):
+                selected = [[pair[0], (pair[1][0], b"A" * len(pair[1][1]), b"I" * len(pair[1][2]))]
+                            for pair in selected]
+            if stress == "source-growth":
+                # Both compressed mates decode on rank 0; record 18 grows only
+                # its source window, after all ranks have exposed a smaller one.
+                selected[18] = [(name, b"A" * size, b"I" * size)
+                                for (name, _, _), size in zip(selected[18], (300000, 350000))]
             if stress == "window-growth":
                 # With one record per chunk, only rank 0's third-window suffix grows.
                 selected[10] = [(name, b"A" * 300000, b"I" * 300000)
@@ -220,19 +307,38 @@ def main():
                 selected = [[(name, b"A" * 300000, b"I" * 300000) for name, _, _ in pair]
                             for pair in selected]
             paths = [tmp / "R1.gz", tmp / "R2.gz"]
+            payload_bytes = 0
             for m, path in enumerate(paths):
                 raw = [b"@" + pair[m][0] + b" comment\n" + pair[m][1] +
                        b"\n+\n" + pair[m][2] + b"\n" for pair in selected]
+                if m < mates:
+                    payload_bytes += sum(map(len, raw))
                 # Member boundaries force later decoder epochs without large fixtures.
                 stride = member_records or max(1, n)
-                path.write_bytes(b"".join(gzip.compress(b"".join(raw[start:start + stride]), mtime=0)
-                                          for start in range(0, max(1, n), stride)))
+                if stress == "source-pressure":
+                    data = b"".join(raw)
+                    width = 16381 if m == 0 else 24571
+                    pieces = [data[start:start + width] for start in range(0, len(data), width)]
+                elif stress in ("source-skew", "source-deferred"):
+                    # Different mate member boundaries split names/records as
+                    # well as decoder epochs, with strongly asymmetric ratios.
+                    data = b"".join(raw)
+                    width = 8191 if m == 0 else 12347
+                    split = 43 if m == 0 else 101
+                    pieces = [b"", data[:split]] + [data[start:start + width]
+                              for start in range(split, len(data), width)] + [b""]
+                else:
+                    pieces = [b"".join(raw[start:start + stride])
+                              for start in range(0, max(1, n), stride)]
+                path.write_bytes(b"".join(encoded(piece, level=0) if stress == "source-pressure" else
+                                          gzip.compress(piece, mtime=0) for piece in pieces))
             expected = b"".join(pair[m][0] + b"\t4\t*\t0\t0\t*\t*\t0\t0\t" + pair[m][1] +
                                 b"\t" + pair[m][2] + f"\tGI:i:{i * mates + m}\n".encode()
                                 for i, pair in enumerate(selected) for m in range(mates))
             output = tmp / ("output.sam.gz" if compressed else "output.sam")
             env = dict(os.environ, SWBWA_GZIP_READY_CHUNKS=str(ready), HYDRA_LAUNCHER="fork",
                        SWBWA_GZIP_PARALLEL_WRITE="1", SWBWA_GZIP_EARLY_FIRST=str(int(args.early_first)))
+            env["SWBWA_GZIP_DYNAMIC_TRANSFER"] = args.dynamic_transfer
             env['SWBWA_GZIP_PREFIX_AHEAD'] = str(int(args.prefix_ahead))
             env['SWBWA_GZIP_PREPARE_AHEAD'] = str(int(args.prepare_ahead))
             env['SWBWA_GZIP_PARALLEL_HISTORY'] = str(args.history_mode)
@@ -253,6 +359,7 @@ def main():
             command = ["mpirun", "-launcher", "fork", "-n", str(ranks), str(binary),
                        str(paths[0]), str(paths[1]) if mates == 2 else "-", str(output), pipeline]
             case = dict(ranks=ranks, ready=ready, pipeline=pipeline, mates=mates, records=n,
+                        transfer=args.dynamic_transfer,
                         stress=stress, member_records=member_records, gzip_output=compressed,
                         drain=drain, prepare=prepare, early_first=args.early_first, prefix_ahead=args.prefix_ahead,
                         prepare_ahead=args.prepare_ahead, sanitizer=args.sanitize, command=command)
@@ -281,6 +388,15 @@ def main():
                 print("EXPECTED_REJECTION", stress or "invalid-drain", repr(drain), compressed, flush=True)
                 continue
             assert process.returncode == 0, case
+            case["chunk_layout"] = check_chunk_trace(process.stderr, n, ranks, args.input_mode)
+            case["remote_payload_bytes"] = check_payload_traffic(
+                process.stderr, ranks, payload_bytes, source_mode)
+            if args.input_mode == "dynamic":
+                case["source_traffic"] = check_source_traffic(
+                    process.stderr, ranks, payload_bytes, args.dynamic_transfer)
+                case["source_windows"] = check_source_frontier(
+                    process.stderr, len(case["chunk_layout"]), ranks, ready, args.dynamic_transfer, case["source_traffic"],
+                    early_first=args.early_first)
             actual = output.read_bytes()
             assert (gzip.decompress(actual) if compressed else actual) == expected, case
             for rank in range(ranks):
@@ -298,6 +414,13 @@ def main():
                     "sets", "clears", "clear_direct_calls")), case
                 observed = reports(process.stderr, f"test pipeline rank={rank}")[0]
                 scheduler = reports(process.stderr, f"MPI gzip rank={rank} scheduler")[-1]
+                if source_mode:
+                    assert int(observed["alltoallv_calls"]) == 0, case
+                    if ranks > 1:
+                        assert int(scheduler["direct_claims"]) == 0, case
+                    else:
+                        assert int(scheduler["direct_claims"]) == int(observed["chunks"]), case
+                        assert int(scheduler["windows"]) == int(scheduler["data_window_builds"]) == 0, case
                 local = reports(process.stderr, f"MPI gzip rank={rank} reader_local")[-1]
                 assert local["exchange_pack_mode"] == "plan_and_local_copy", case
                 assert local["exchange_prepare_mode"] == "direct_wire_fill", case
@@ -305,11 +428,14 @@ def main():
                     "exchange_pack_s", "exchange_prepare_s", "exchange_receive_s")]
                 assert all(value >= 0 for value in exchange_parts), case
                 assert abs(sum(exchange_parts) - float(local["exchange_local_s"])) <= 0.000003, case
-                if ranks == 1:
+                if ranks == 1 or source_mode:
                     assert exchange_parts[1:] == [0, 0], case
                 assert int(scheduler["decode_drain_enabled"]) == int(drain or 0), case
                 assert int(scheduler['early_first_enabled']) == int(args.early_first), case
-                if args.early_first and ranks > 1 and args.input_mode == 'dynamic' and int(observed["chunks"]):
+                if source_mode and ranks > 1:
+                    assert int(scheduler['early_first_chunks']) == (
+                        int(case['source_traffic'][rank]['frontier_chunks']) if args.early_first else 0), case
+                elif args.early_first and ranks > 1 and args.input_mode == 'dynamic' and int(observed["chunks"]):
                     assert int(scheduler['early_first_chunks']) > 0, case
                 if not drain:
                     assert int(scheduler["decode_drains"]) == 0 and float(scheduler["drain_wait_s"]) == 0, case

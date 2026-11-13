@@ -26,7 +26,8 @@ AR  = ar
 # CPE_DISCARD_DIGEST: 0 | 1 (defaults on for FULL discard on non-MPI cross+pool)
 # MPI-only options:
 #   MPI_INPUT_MODE: static | dynamic
-#   MPI_EXACT_READ_INDEX: 0 | 1 (exact n_processed for correctness checks)
+#   MPI_EXACT_READ_INDEX: 0 | 1 (plain FASTQ pre-scan for exact n_processed;
+#                               gzip always counts exact read IDs online)
 #   MPI_TAIL_PERCENT: 0..100 (0 disables dynamic tail refinement entirely)
 EXEC_MODE           ?= single
 CPE_ALLOCATOR       ?= system
@@ -47,8 +48,9 @@ CPE_KERNEL_OPT       ?= $(if $(filter cgs_cross:pool:0,$(EXEC_MODE):$(CPE_ALLOCA
 CPE_LDM_MODE         ?= $(if $(filter cgs_cross:pool:0,$(EXEC_MODE):$(CPE_ALLOCATOR):$(USE_MPI)),3,2)
 ifeq ($(USE_MPI),1)
 MPI_INPUT_MODE       ?= dynamic
-OUTPUT_MODE          ?= single_unordered
-MPI_EXACT_READ_INDEX ?= 1
+# Plain FASTQ ordered output requires dynamic scheduling; preserve static usage.
+OUTPUT_MODE          ?= $(if $(filter static,$(MPI_INPUT_MODE)),single_unordered,single_ordered)
+MPI_EXACT_READ_INDEX ?= 0
 MPI_TAIL_PERCENT     ?= 10
 else
 OUTPUT_MODE          ?= split

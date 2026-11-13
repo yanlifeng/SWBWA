@@ -27,12 +27,22 @@ typedef struct {
  * or NUL. PE names are exact tokens before space/tab, without /1,/2 stripping.
  * The reader checks boundaries; the CPE formatter validates all records and
  * PE names using partitions. Fatal errors call MPI_Abort.
+ * SWBWA_GZIP_DYNAMIC_TRANSFER selects staged (legacy redistribution), direct
+ * (claim then gather fragments from decoder ranks), or local (direct with a
+ * locality-matched first frontier). The latter two require PREPARE_AHEAD=0
+ * and leave the decoder/history strategy unchanged. EARLY_FIRST=1 publishes
+ * the first frontier before preparing its dynamically claimed suffix. They
+ * are used only with dynamic input and more than one MPI rank.
  */
 swbwa_mpi_gzip_reader *swbwa_mpi_gzip_open(const char *path1, const char *path2,
                                         size_t batch_bytes, unsigned workers, int debug);
 /* STATIC: collective in the same order on every rank, READY may be empty.
  * DYNAMIC: independently claim increasing IDs from a bounded ready window;
  * refilling a window is collective, but the numbers of READY calls may differ.
+ * Source-direct modes publish fragments instead of preassembled chunks. Bulk
+ * FASTQ bytes move at most once across ranks, to the actual consumer; small
+ * record-boundary carry transfers are separate. Delivered IDs remain increasing
+ * on each rank, including the locality-matched initial frontier.
  * 1 = READY,
  * 0 = globally validated EOF; -1 is reserved for pre-MPI misuse only.
  * Each nonempty data[] is independently malloc-owned by the caller and has
